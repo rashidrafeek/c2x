@@ -19,6 +19,7 @@ int pfit(double *out, double *phase, double *a, int fft[3], int dir){
   double w,wt,ph,t;
 
   imin=jmin=kmin=0;
+  ph=0; off=0; /* Suppress uninitialised warnings */
   imax=fft[0];
   jmax=fft[1];
   kmax=fft[2];
@@ -27,16 +28,17 @@ int pfit(double *out, double *phase, double *a, int fft[3], int dir){
     imax=fft[0]/2+1;
     off=fft[2]*fft[1];
   }
-  if (dir==1){
+  else if (dir==1){
     jmin=1;
     jmax=fft[1]/2+1;
     off=fft[2];
   }
-  if (dir==2){
+  else if (dir==2){
     kmin=1;
     kmax=fft[2]/2+1;
     off=1;
   }
+  else error_exit("Invalid dir in pfit");
   
   wt=0;
   wph1=wph2=wph3=0;

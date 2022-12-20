@@ -132,7 +132,7 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
   species_charge=NULL;
   gptr2=NULL;
   section=1;
-  ver_maj=0;
+  ver_maj=ver_min=0;
   nspins=1;
 
   if(debug>2) fprintf(stderr,"check_read called with flags=%d\n",flags);

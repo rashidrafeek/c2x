@@ -1,3 +1,40 @@
+2.29
+----
+
+Retain electrons namelist from QE files, scaling conv_thr
+Retain ions namelist from QE files
+Retain cell namelist from QE files
+Retain more from CONTROL namelist of QE file
+Retain occupations and degauss from SYSTEM namelist of QE file
+Accept Fortran's use of 'D' for exponent in QE file
+Fix bug in supercell generation introduced in 2.27a
+Improve treatment of MP grids in super.c
+Add -K for symmetrising kpoint list
+Update Makefile to suppress gcc unused function result warnings
+
+2.28 (7/6/19)
+----
+
+Do not update cell if --point, --schoen or --int given
+When describing sym ops, call a -1 axis an inversion point
+
+2.27a
+-----
+
+Add -N option to normalise fractional coords to 0<=x<1
+Fix bug in --snap when tolerance large
+Fix bug in supercell generation when tolerance large
+
+2.27
+----
+
+Add tetragonal dipole corrections from JPCM doi: 10.1088/1361-648X/ab20e1
+
+2.26c1
+------
+
+Support " as well as ' delimiting strings in qe .in input
+
 2.26b
 -----
 

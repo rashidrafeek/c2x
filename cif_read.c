@@ -136,7 +136,7 @@ void sym_expand(struct unit_cell *c, struct contents *m, struct symmetry *s){
   struct atom b,*satoms;
   
   if (debug>1) fprintf(stderr,"%d atoms before symmetrisation\n",m->n);
-  reduce_cell_tol(m->atoms,m->n,c->basis);
+  reduce_cell_tol(m->atoms,m->n,c->basis,tol);
   wt=malloc(m->n*s->n*sizeof(double)); /* We cannot end up with more atoms
                                           than this */
   if (!wt) error_exit("malloc error in sym_expand");

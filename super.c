@@ -22,6 +22,19 @@
 
 #include "c2xsf.h"
 
+void vcross(double a[3],double b[3],double c[3]);
+double vmod2(double v[3]);
+
+/* Minimum distance between two points in periodic system */
+double dist(double a,double b){
+  double d;
+
+  d=fabs(fmod(a-b,1.0));
+  if (d>0.5) d=1-d;
+
+  return d;
+}
+
 void to235(int *i);
 void grid_interp(struct unit_cell *c, struct grid *grid,int old_fft[3],
                     double old_basis[3][3],double old_recip[3][3]);
@@ -71,6 +84,49 @@ int super(struct unit_cell *c, struct contents *mtf,
 
   /* Try to cope with k-points, else throw them away */
 
+  if (kp && kp->mp){ /* Attempt conversion if axes simply scaled */
+    int new_mp_grid[3],success;
+    double new_mp_disp[3];
+    double vtmp[3];
+    
+    for(i=0;i<3;i++){
+      new_mp_grid[i]=0;
+      vcross(c->basis[i],new_basis[i],vtmp);
+      if (aeq(vmod2(vtmp),0)){ /* New and old vector are parallel */
+        dtmp=sqrt(vmod2(c->basis[i])/vmod2(new_basis[i]));
+        new_mp_grid[i]=dtmp*kp->mp->grid[i];
+        if ((int)((new_mp_grid[i]/dtmp)+0.5)!=kp->mp->grid[i])
+          new_mp_grid[i]=0;
+      
+        new_mp_disp[i]=kp->mp->disp[i];
+        if ((kp->mp->grid[i]&1)==0)
+          new_mp_disp[i]+=1.0/(2*kp->mp->grid[i]); /* For thus says Castep */
+        new_mp_disp[i]/=dtmp;
+        if ((new_mp_grid[i]&1)==0)
+          new_mp_disp[i]+=1.0/(2*new_mp_grid[i]); /* For thus says Castep */
+        new_mp_disp[i]=fmod(new_mp_disp[i],1.0/new_mp_grid[i]);
+      }
+    }
+    success=1;
+    for(i=0;i<3;i++) if (new_mp_grid[i]==0) success=0;
+
+    if (success){
+      for(i=0;i<3;i++)
+        kp->mp->grid[i]=new_mp_grid[i];
+      for(i=0;i<3;i++)
+        kp->mp->disp[i]=new_mp_disp[i];
+      if (debug>1) fprintf(stderr,"New MP grid %dx%dx%d offset (%f,%f,%f)\n",
+                           kp->mp->grid[0],kp->mp->grid[1],kp->mp->grid[2],
+                           kp->mp->disp[0],kp->mp->disp[1],kp->mp->disp[2]);
+    }
+    else{
+      if (debug>1) fprintf(stderr,"Discarding MP grid\n");
+      free(kp->mp->grid);
+      free(kp->mp);
+      kp->mp=NULL;
+    }
+  }
+  
   if (kp && kp->n){
     struct unit_cell rcell,new_cell;
     struct contents rmtf;
@@ -221,18 +277,17 @@ int super(struct unit_cell *c, struct contents *mtf,
                         new_abs[2]*c->recip[l][2];
             new_frac[l]=fmod(new_frac[l],1.0);
 	    if (new_frac[l]<0.0) new_frac[l]+=1.0;
-            if (new_frac[l]>1.0-tol) new_frac[l]=0.0;
+            if (new_frac[l]>1.0-1e-9) new_frac[l]=0.0;
           }
 
   /* add to our list if we have not yet seen it */
           for(l=0;l<na;l++)
-            if(((mtf->atoms[l].frac[0]-new_frac[0])*
-		(mtf->atoms[l].frac[0]-new_frac[0])+
-                (mtf->atoms[l].frac[1]-new_frac[1])*
-		(mtf->atoms[l].frac[1]-new_frac[1])+
-                (mtf->atoms[l].frac[2]-new_frac[2])*
-		(mtf->atoms[l].frac[2]-new_frac[2]))
-                <tol*tol) break;
+            if((dist(mtf->atoms[l].frac[0],new_frac[0])*
+                dist(mtf->atoms[l].frac[0],new_frac[0])+
+                dist(mtf->atoms[l].frac[1],new_frac[1])*
+                dist(mtf->atoms[l].frac[1],new_frac[1])+
+                dist(mtf->atoms[l].frac[2],new_frac[2])*
+                dist(mtf->atoms[l].frac[2],new_frac[2]))<tol*tol) break;
           if (l==na){
             if (na>=mtf->n){
 	      if (quiet) {free(atom_ctr); return 1;}
@@ -240,7 +295,7 @@ int super(struct unit_cell *c, struct contents *mtf,
               else{
                 fprintf(stderr,"Too many atoms found in super.c\n");
                 for (l=0;l<na;l++)
-                  fprintf(stderr,"%d %f %f %f\n",mtf->atoms[l].atno,
+                  fprintf(stderr,"%3d %3d %f %f %f\n",l,mtf->atoms[l].atno,
                           mtf->atoms[l].frac[0],mtf->atoms[l].frac[1],
 			  mtf->atoms[l].frac[2]);
                 fprintf(stderr,"%d %f %f %f\n",old_atoms[at].atno,
@@ -264,6 +319,11 @@ int super(struct unit_cell *c, struct contents *mtf,
           }
 	  else{ /* (l!=na) -- we have seen this atom before, so average */
 	    for(m=0;m<3;m++){
+              /* Need new fractional co-ords to be same as old,
+               * i.e. not -0.2.. and 0.8..., but 0.8... and 0.8...
+               */
+              if (new_frac[m]-mtf->atoms[l].frac[m]>0.5) new_frac[m]-=1.0;
+              if (new_frac[m]-mtf->atoms[l].frac[m]<-0.5) new_frac[m]+=1.0;
 	      mtf->atoms[l].frac[m]=(atom_ctr[l]*mtf->atoms[l].frac[m]+
 				      new_frac[m])/(atom_ctr[l]+1);
 	      mtf->atoms[l].abs[m]=new_frac[0]*c->basis[0][m]+
@@ -278,10 +338,14 @@ int super(struct unit_cell *c, struct contents *mtf,
   }
   free(atom_ctr);
 
+  sort_atoms(mtf,1);
+  #if 0
 #ifdef QSORT
+  fprintf(stderr,"Calling qsort() na=%d\n",na);
   qsort(mtf->atoms,(size_t)na,sizeof(struct atom),atom_sort);
 #endif
-
+#endif
+  
   if (debug>1) fprintf(stderr,"New cell: na=%d, mtf->n=%d\n",na,mtf->n);
 
   if (na!=mtf->n){

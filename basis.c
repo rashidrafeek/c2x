@@ -123,16 +123,16 @@ void reduce_cell(struct atom *a, int na, double b[3][3]){
 
 /* Fix co-ordinates to force everything into 1st unit cell (with tolerance) */
 
-void reduce_cell_tol(struct atom *a, int na, double b[3][3]){
+void reduce_cell_tol(struct atom *a, int na, double b[3][3],double eps){
   int i,j,fixed=0;
 
   for(i=0;i<na;i++){
     for(j=0;j<3;j++){
-      if ((a[i].frac[j]>=0)&&(a[i].frac[j]<1-tol)) continue;
+      if ((a[i].frac[j]>=0)&&(a[i].frac[j]<1-eps)) continue;
       fixed=1;
       a[i].frac[j]=fmod(a[i].frac[j],1.0);
       if (a[i].frac[j]<0) a[i].frac[j]+=1.0;
-      if (a[i].frac[j]>1-tol) a[i].frac[j]=0;
+      if (a[i].frac[j]>1-eps) a[i].frac[j]=0;
     }
   }
 

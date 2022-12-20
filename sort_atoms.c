@@ -26,15 +26,19 @@
 int atom_sort(const void *a, const void *b){ /* This ghastly declaration */
   struct atom *a1 = (struct atom *) a;       /* stops compilers moaning */
   struct atom *a2 = (struct atom *) b;       /* about qsort's prototype */
+  double stol;
+
+  stol=tol;
+  if (stol>0.01) stol=0.01;
 
   if (a1->atno < a2->atno) return(1);
   if (a1->atno > a2->atno) return(-1);
-  if (a1->frac[2] < a2->frac[2]-tol) return(-1);
-  if (a1->frac[2] > a2->frac[2]+tol) return(1);
-  if (a1->frac[1] < a2->frac[1]-tol) return(-1);
-  if (a1->frac[1] > a2->frac[1]+tol) return(1);
-  if (a1->frac[0] < a2->frac[0]-tol) return(-1);
-  if (a1->frac[0] > a2->frac[0]+tol) return(1);
+  if (a1->frac[2] < a2->frac[2]-stol) return(-1);
+  if (a1->frac[2] > a2->frac[2]+stol) return(1);
+  if (a1->frac[1] < a2->frac[1]-stol) return(-1);
+  if (a1->frac[1] > a2->frac[1]+stol) return(1);
+  if (a1->frac[0] < a2->frac[0]-stol) return(-1);
+  if (a1->frac[0] > a2->frac[0]+stol) return(1);
   return(0); /* All co-ords equal! */
 }
 
@@ -42,15 +46,19 @@ int atom_sort(const void *a, const void *b){ /* This ghastly declaration */
 int atom_sort2(const void *a, const void *b){ /* This ghastly declaration */
   struct atom *a1 = (struct atom *) a;       /* stops compilers moaning */
   struct atom *a2 = (struct atom *) b;       /* about qsort's prototype */
+  double stol;
+
+  stol=tol;
+  if (stol>0.01) stol=0.01;
 
   if (a1->atno > a2->atno) return(1);
   if (a1->atno < a2->atno) return(-1);
-  if (a1->frac[2] < a2->frac[2]-tol) return(-1);
-  if (a1->frac[2] > a2->frac[2]+tol) return(1);
-  if (a1->frac[1] < a2->frac[1]-tol) return(-1);
-  if (a1->frac[1] > a2->frac[1]+tol) return(1);
-  if (a1->frac[0] < a2->frac[0]-tol) return(-1);
-  if (a1->frac[0] > a2->frac[0]+tol) return(1);
+  if (a1->frac[2] < a2->frac[2]-stol) return(-1);
+  if (a1->frac[2] > a2->frac[2]+stol) return(1);
+  if (a1->frac[1] < a2->frac[1]-stol) return(-1);
+  if (a1->frac[1] > a2->frac[1]+stol) return(1);
+  if (a1->frac[0] < a2->frac[0]-stol) return(-1);
+  if (a1->frac[0] > a2->frac[0]+stol) return(1);
   return(0); /* All co-ords equal! */
 }
 

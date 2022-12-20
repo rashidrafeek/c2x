@@ -80,7 +80,8 @@ the a axis being the non-periodic axis. Valid values of a: a, b and c.
 .TP
 .B \-Dm=[x,y,z]
 as above, but also report post-hoc energy correction for a molecule in
-a cubic box.
+a cubic box, or for a molecule in a tetragonal box if dipole moment is
+parallel to c.
 .TP
 .B \-e
 read also a corresponding .cst_esp file, and output its contents. The filename
@@ -125,6 +126,12 @@ Do not use this unless you understand why you should not!
 assume input is molecule, not crystal. Try to avoid outputing a cell,
 shift if some co-ordinates are negative, or if a,b,c given shift by
 those numbers of FFT grid cells.
+.TP
+.B \-n
+discard symmetry information. Give twice to discard k-points too.
+.TP
+.B \-N
+normalise by reducing fractional coords to 0<=x<1.
 .TP
 .B \-O
 print band occupancies and evalues to stderr.
@@ -444,8 +451,8 @@ Please report others to MJR.
 
 If you wish to cite, please do so as "C2x: a tool for visualisation
 and input preparation for Castep and other electronic structure
-codes", MJ Rutter, Computer Physics Communications, vol 225C pages
-152-157 (2018).
+codes", MJ Rutter, Computer Physics Communications, vol 225 pages
+174-179 (2018).
 
 Details of spglib can be found at https://atztogo.github.io/spglib/
 

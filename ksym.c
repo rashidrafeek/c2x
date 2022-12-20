@@ -159,9 +159,9 @@ int k_in_list(struct atom *k,struct kpts *kl){
 
   hit=-1;
   for(i=0;i<kl->n;i++){
-    if ((fabs(k->frac[0]-kl->kpts[i].frac[0])<tol)&&
-	(fabs(k->frac[1]-kl->kpts[i].frac[1])<tol)&&
-	(fabs(k->frac[2]-kl->kpts[i].frac[2])<tol)){
+    if ((dist(k->frac[0],kl->kpts[i].frac[0])<tol)&&
+        (dist(k->frac[1],kl->kpts[i].frac[1])<tol)&&
+        (dist(k->frac[2],kl->kpts[i].frac[2])<tol)){
       hit=i;
       break;
     }
@@ -179,6 +179,8 @@ void sym_kpts(struct kpts *k_in, struct kpts *k_out, struct symmetry *s,
 
   hit=0; /* Stop warning re uninitialised variable */
 
+  if ((!s)||(s->n==0)) return;
+  
   k_out->kpts=malloc(k_in->n*sizeof(struct atom));
   if (!k_out) error_exit("Malloc error in sym_kpts");
 

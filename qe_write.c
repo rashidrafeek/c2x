@@ -42,7 +42,7 @@ void qe_write(FILE* outfile, struct unit_cell *c, struct contents *m,
 	      struct kpts *k, struct es *e){
   int nspec,i,j,*spatno,okay,xtra;
   char *fmt,*ptr;
-  double *spspin;
+  double *spspin,dtmp;
   int *spxtra,*atxtra;
 
   if (m->title) fprintf(outfile,"# %s\n\n",m->title);
@@ -59,7 +59,16 @@ void qe_write(FILE* outfile, struct unit_cell *c, struct contents *m,
   }
   if (dict_get(m->dict,"QE_prefix"))
     fprintf(outfile,"  prefix = '%s',\n",(char*)dict_get(m->dict,"QE_prefix"));
-  fprintf(outfile,"  calculation = 'scf',\n");
+  fprintf(outfile,"  calculation = '%s',\n",dict_get(m->dict,"QE_calculation")?
+	  (char*)dict_get(m->dict,"QE_calculation"):"scf");
+  if (dict_get(m->dict,"QE_forc_conv_thr"))
+    fprintf(outfile,"  forc_conv_thr = %g,\n",
+            *(double*)dict_get(m->dict,"QE_forc_conv_thr"));
+  if (dict_get(m->dict,"QE_iprint"))
+    fprintf(outfile,"  iprint = %d,\n",
+            *(int*)dict_get(m->dict,"QE_iprint"));
+  if (dict_get(m->dict,"QE_control_list"))
+    fprintf(outfile,"%s",(char*)dict_get(m->dict,"QE_control_list"));
   fprintf(outfile,"  outdir = '.',\n");
   fprintf(outfile,"  pseudo_dir = '%s'\n",dict_get(m->dict,"QE_pseudo_dir")?
 	  (char*)dict_get(m->dict,"QE_pseudo_dir"):".");
@@ -98,7 +107,7 @@ void qe_write(FILE* outfile, struct unit_cell *c, struct contents *m,
     atxtra[i]=spxtra[j];
   }
 
-  fprintf(outfile,"  ntyp = %d,\n",nspec);
+  fprintf(outfile,"  ntyp  = %d,\n",nspec);
 
   okay=1;  /* Do we have spin? */
   for(i=0;i<nspec;i++)
@@ -107,18 +116,39 @@ void qe_write(FILE* outfile, struct unit_cell *c, struct contents *m,
     fprintf(outfile,"  nspin = 2,\n");
     for(i=0;i<nspec;i++)
       fprintf(outfile,"  starting_magnetization(%d) = %lf,\n",i+1,spspin[i]);
+    if (!dict_get(m->dict,"QE_smearing"))
+      fprintf(outfile,"! c2x default\n  occupations = 'smearing',\n");
+    if (!dict_get(m->dict,"QE_degauss"))
+      fprintf(outfile,"! c2x default\n  degauss = 0.05,\n");
   }
 
+  if (dict_get(m->dict,"QE_occupations"))
+    fprintf(outfile,"  occupations = '%s',\n",
+	    (char*)dict_get(m->dict,"QE_occupations"));
+  if (dict_get(m->dict,"QE_degauss"))
+    fprintf(outfile,"  degauss = %f,\n",
+	    *(double*)dict_get(m->dict,"QE_degauss"));
+  
   if (e->cut_off)
     fprintf(outfile,"  ecutwfc = %f\n",2*e->cut_off/H_eV);
   else
-    fprintf(outfile,"  ecutwfc = 10\n");
+    fprintf(outfile,"! c2x default\n  ecutwfc = 10\n");
 
   fprintf(outfile,"/\n");
 
   fprintf(outfile,"&ELECTRONS\n");
+  if (e->etol)
+    fprintf(outfile,"  conv_thr = %g,\n",(e->etol*m->n)*(H_eV/2));
+  if (dict_get(m->dict,"QE_electron_list"))
+    fprintf(outfile,"%s",(char*)dict_get(m->dict,"QE_electron_list"));
   fprintf(outfile,"/\n");
 
+  if (dict_get(m->dict,"QE_ions_list"))
+    fprintf(outfile,"&IONS\n%s/\n",(char*)dict_get(m->dict,"QE_ions_list"));
+  
+  if (dict_get(m->dict,"QE_cell_list"))
+    fprintf(outfile,"&CELL\n%s/\n",(char*)dict_get(m->dict,"QE_cell_list"));
+  
   if (flags&HIPREC)
     fmt="% 19.15f % 19.15f % 19.15f\n";
   else
@@ -194,9 +224,11 @@ void qe_write(FILE* outfile, struct unit_cell *c, struct contents *m,
     fprintf(outfile,"\nK_POINTS ");
     if (k->mp){
       okay=1;
-      for(i=0;i<3;i++)
-        if ((k->mp->disp[i]!=0)&&(!aeq(k->mp->disp[i],0.5/k->mp->grid[i])))
+      for(i=0;i<3;i++){
+        dtmp=fmod(k->mp->disp[i],1.0/k->mp->grid[i]);
+        if ((dtmp!=0)&&(!aeq(dtmp,0.5/k->mp->grid[i])))
           okay=0;
+      }
       if (okay){
         fprintf(outfile,"automatic\n");
         fprintf(outfile,"  %d %d %d",
@@ -231,5 +263,10 @@ void qe_write(FILE* outfile, struct unit_cell *c, struct contents *m,
               k->kpts[i].frac[1],k->kpts[i].frac[2],k->kpts[i].wt);
     }
   }
+
+  free(spspin);
+  free(atxtra);
+  free(spxtra);
+  free(spatno);
 
 }

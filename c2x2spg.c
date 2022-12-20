@@ -109,6 +109,7 @@ int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
       fprintf(stderr,"CSPG_PRIM_NR returns:\n");
       print_cell(c2,m2);
     }
+
     /* This version does, but may add an unwanted rotation and translation */
     cspq_op(c,m,s,NULL,CSPG_PRIM+CSPG_NO_SORT,tolmin);
     if (debug>2){
@@ -154,6 +155,24 @@ int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
       theta=2*asin(dot);
       vcross(c->basis[0],c2->basis[0],axis);
 
+      /* It is possible for axis to be the zero vector, if theta=pi.
+       * In this case, need to find a different axis perpendicular to a.
+       * The cross product of a with the other basis axis which needs
+       * the greatest rotation is a good answer.
+       */
+
+      if (aeq(theta,M_PI)&&(vmod2(axis)<1e-16)){
+        mod1=0;
+        mod2=0;
+        for(i=0;i<3;i++){
+          mod1+=c->basis[1][i]*c2->basis[1][i];
+          mod2+=c->basis[2][i]*c2->basis[2][i];
+        }
+        k=1;
+        if (mod2<mod1) k=2;
+        vcross(c->basis[0],c->basis[k],axis);
+      }
+      
 #if 0
       /* Will be rhs by construction */
       for(i=0;i<3;i++){
@@ -479,6 +498,16 @@ int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
 
   /* Convert back to c2x-style variables */
 
+  /* If we were asked for info, not a conversion, simply return */
+  if (!(op&(~(CSPG_PNT|CSPG_INT|CSPG_SCH)))){ 
+    free(auid);
+    free(spg_type);
+    free(spg_pos);
+    if (spg) spg_free_dataset(spg);
+    return 0;
+  }
+
+  
   /* First k-points */
 
   if (kp){
@@ -508,7 +537,7 @@ int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
   /* SPG is capable of returning fractional co-ordinates of 1,
    * whereas we like zeros */
 
-  reduce_cell_tol(m->atoms,m->n,c->basis);
+  reduce_cell_tol(m->atoms,m->n,c->basis,1e-9);
   if (!(op&CSPG_NO_SORT)) sort_atoms(m,1);
 
   /* SPG has sym-ops in fractional co-ords, Castep in cartesians */
@@ -516,6 +545,7 @@ int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
     s->ops=sym_frac2abs(spg->rotations,spg->translations,c,s->n);
     if (op&CSPG_LST)
       for(i=0;i<s->n;i++) ident_sym(&s->ops[i],c,stderr);
+    spg_free_dataset(spg);
   }
 
   free(auid);

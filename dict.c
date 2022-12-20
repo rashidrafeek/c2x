@@ -42,3 +42,36 @@ void dict_add(struct dct *dict, char *key, void *value){
   dict->value=value;
 }
 
+/* Concatenate a string to an existing entry, or make a new entry
+ * if no existing entry. Use malloc() always, so can use realloc,
+ * even if called with string constants.
+ */
+void dict_strcat(struct dct *dict, char *key, char *value){
+  char *p;
+
+  if (!dict) error_exit("Null pointer passed to dict_strcat");
+
+  if (!dict_get(dict,key)){
+    p=malloc(strlen(value)+1);
+    if (!p) error_exit("Malloc failed in dict_strcat");
+    strcpy(p,value);
+    dict_add(dict,key,p);
+    return;
+  }
+
+  while(dict){
+    if ((dict->key)&&(!strcmp(dict->key,key))) break;
+    dict=dict->next;
+  }
+
+  if (strcmp(dict->key,key))
+    error_exit("Confusion in dict_strcat");
+
+  dict->value=realloc(dict->value,strlen(dict->value)+strlen(value)+1);
+
+  if (!dict->value)
+    error_exit("Realloc() failed in dict_strcat");
+
+  strcat(dict->value,value);
+  
+}

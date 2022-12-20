@@ -377,6 +377,11 @@ void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
     return;
   }
 
+  if (mult==-1){
+    fprintf(out,"Inversion point at (%f,%f,%f)\n",v[0],v[1],v[2]);
+    return;
+  }
+  
   if (screw)
     fprintf(out,"%d_%d axis along (%6.3f,%6.3f,%6.3f)",mult,screw,
 	    af[0],af[1],af[2]);

@@ -54,11 +54,23 @@ static int qe_int_read(char **ptr,int *n){
 }
 
 static int qe_float_read(char **ptr,double *x){
-  int i;
+  int i,j,ok;
   
   if ((sscanf(*ptr,"%lf%n",x,&i)!=1)&&(sscanf(*ptr," = %lf%n",x,&i)!=1))
     return 0;
 
+  if ((*(*ptr+i)=='d')||(*(*ptr+i)=='D')){ /* Check for Fortran's d notation */
+    ok=1;
+    for(j=0;j<i;j++) if ((*(*ptr+j)=='e')||(*(*ptr+j)=='E')) ok=0;
+    if (ok){
+      *ptr+=i+1;
+      if (sscanf(*ptr,"%d%n",&j,&i)==1)
+        *x*=pow(10.0,(double)j);
+      else
+        *ptr-=1;
+    }
+  }
+  
   *ptr+=i;
   while((*ptr)&&(isspace(**ptr))) (*ptr)++;
   if (**ptr==',') (*ptr)++;
@@ -66,18 +78,43 @@ static int qe_float_read(char **ptr,double *x){
   return 1;
 }
 
+/* Read a string delimited by ' or " */
+static int qe_string_read(char **ptr, char **str){
+  int quote;
+  char *p1,*p2;
+  
+  while ((**ptr)&&(isspace(**ptr))) (*ptr)++;
+
+  quote=0;
+  if (**ptr=='\'') quote='\'';
+  if (**ptr=='"') quote='"';
+  if (!quote) return 0;
+
+  p1=*ptr+1;
+  p2=p1;
+  while ((*p2)&&(*p2!=quote)) p2++;
+  if (*p2!=quote) return 0;
+  *str=malloc(p2-p1+1);
+  if (!(*str)) error_exit("malloc error in qe_string_read");
+  memcpy(*str,p1,p2-p1);
+  (*str)[p2-p1]=0;
+  *ptr=p2+1;
+  return 1; 
+}
+
 void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
              struct kpts *k, struct symmetry *s, struct es *e){
-  int i,j,namelist,len;
+  int i,j,namelist,len,hit;
   int ibrav,ntyp;
   double celldm[7];
   double *abc,x,y,z,c2,alpha,beta,gamma,scale;
-  double tx,ty,tz,u,v;
+  double tx,ty,tz,u,v,dtmp;
   double *magmom;
   char sym[4],*ptr,*p2,*p3;
   char *aspec;
   int atoms_are_abs,off[3];
-
+  char *qe_control_str[]={"verbosity","restart_mode","disk_io",""};
+  
   ntyp=0;
   ibrav=-1;
   namelist=0;
@@ -124,6 +161,7 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
     }
     if ((!namelist)&&(!tokenmatch(&ptr,"&ions"))){
       namelist=QEIONS;
+      dict_strcat(m->dict,"QE_ions_list",""); /* preserve blank list */
       continue;
     }
     if ((!namelist)&&(!tokenmatch(&ptr,"&cell"))){
@@ -135,56 +173,123 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
       if (!tokenmatch(&ptr,"title")){
         while ((*ptr)&&(isspace(*ptr))) ptr++;
         if (*ptr=='=') ptr++;
-        while ((*ptr)&&(isspace(*ptr))) ptr++;
-        if (*ptr!='\'')
-          error_exit("Syntax error for title");
-        ptr++;
-        p2=ptr;
-        while ((*p2)&&(*p2!='\'')) p2++;
-        *p2=0;
-        i=strlen(ptr)+1;
-        m->title=malloc(i);
-        strncpy(m->title,ptr,i);
-        ptr=p2;
+        if (qe_string_read(&ptr,&m->title)==0)
+          fprintf(stderr,"Warning: error parsing title\n");
       }
       else if(!tokenmatch(&ptr,"prefix")){
         while ((*ptr)&&(isspace(*ptr))) ptr++;
         if (*ptr=='=') ptr++;
-        while ((*ptr)&&(isspace(*ptr))) ptr++;
-        if (*ptr!='\'')
-          error_exit("Syntax error for prefix");
-        ptr++;
-        p2=ptr;
-        while ((*p2)&&(*p2!='\'')) p2++;
-        *p2=0;
-        i=strlen(ptr)+1;
-        p3=malloc(i);
-        strncpy(p3,ptr,i);
-	dict_add(m->dict,"QE_prefix",p3);
-        ptr=p2;
+        if (qe_string_read(&ptr,&p3))
+          dict_add(m->dict,"QE_prefix",p3);
+        else fprintf(stderr,"Warning: error parsing QE_prefix\n");
       }
       else if(!tokenmatch(&ptr,"pseudo_dir")){
         while ((*ptr)&&(isspace(*ptr))) ptr++;
         if (*ptr=='=') ptr++;
-        while ((*ptr)&&(isspace(*ptr))) ptr++;
-        if (*ptr!='\'')
-          error_exit("Syntax error for pseudo_dir");
-        ptr++;
-        p2=ptr;
-        while ((*p2)&&(*p2!='\'')) p2++;
-        *p2=0;
-        i=strlen(ptr)+1;
-        p3=malloc(i);
-        strncpy(p3,ptr,i);
-	dict_add(m->dict,"QE_pseudo_dir",p3);
-        ptr=p2;
+        if (qe_string_read(&ptr,&p3))
+          dict_add(m->dict,"QE_pseudo_dir",p3);
+        else fprintf(stderr,"Warning: error parsing QE_pseudo_dir\n");
+      }
+      else if(!tokenmatch(&ptr,"calculation")){
+	while ((*ptr)&&(isspace(*ptr))) ptr++;
+        if (*ptr=='=') ptr++;
+	if (qe_string_read(&ptr,&p3))
+	  dict_add(m->dict,"QE_calculation",p3);
+	else fprintf(stderr,"Warning: error parsing QE_calculation\n");
+      }
+      else  if(!tokenmatch(&ptr,"forc_conv_thr")){
+	while ((*ptr)&&(isspace(*ptr))) ptr++;
+        if (*ptr=='=') ptr++;
+	p3=malloc(sizeof(double));
+	if (qe_float_read(&ptr,(double*)p3))
+	  dict_add(m->dict,"QE_forc_conv_thr",p3);
+	else fprintf(stderr,"Warning: error parsing QE_forc_conv_thr\n");
+      }
+      else  if(!tokenmatch(&ptr,"iprint")){
+	while ((*ptr)&&(isspace(*ptr))) ptr++;
+        if (*ptr=='=') ptr++;
+	p3=malloc(sizeof(int));
+	if (qe_int_read(&ptr,(int*)p3))
+	  dict_add(m->dict,"QE_iprint",p3);
+	else fprintf(stderr,"Warning: error parsing QE_iprint\n");
       }
       else{
-        while ((*ptr)&&(!isspace(*ptr))) ptr++;  /* consume a token */
+        hit=0;
+        for(i=0;qe_control_str[i][0];i++){
+          if(!tokenmatch(&ptr,qe_control_str[i])){
+            hit=1;
+            while ((*ptr)&&(isspace(*ptr))) ptr++;
+            if (*ptr=='=') ptr++;
+            if (qe_string_read(&ptr,&p3)){
+              dict_strcat(m->dict,"QE_control_list","  ");
+              dict_strcat(m->dict,"QE_control_list",qe_control_str[i]);
+              dict_strcat(m->dict,"QE_control_list"," = '");
+              dict_strcat(m->dict,"QE_control_list",p3);
+              dict_strcat(m->dict,"QE_control_list","',\n");
+              free(p3);
+            }
+            else
+              fprintf(stderr,"Warning: error parsing %s\n",qe_control_str[i]);
+            break;
+          }
+        }
+        if (!hit)
+          while ((*ptr)&&(!isspace(*ptr))) ptr++;  /* consume a token */
       }
-    }      
+    }
+    else if (namelist==QEELECTRONS){
+      if (!tokenmatch(&ptr,"conv_thr")){
+        while ((*ptr)&&(isspace(*ptr))) ptr++;
+        if (*ptr=='=') ptr++;
+        if (qe_float_read(&ptr,&dtmp)){
+          e->etol=2*dtmp/H_eV; /* units were Rydberg per cell */
+        }                 /* cannot yet normalise by number of atoms */
+      }
+      else {/* Just tidy indentation */
+        while ((*ptr)&&(isspace(*ptr))) ptr++;
+        if (isalpha(*ptr)){ /* We have some form of token */
+          dict_strcat(m->dict,"QE_electron_list","  ");
+          dict_strcat(m->dict,"QE_electron_list",ptr);
+          dict_strcat(m->dict,"QE_electron_list","\n");
+          while(*ptr) ptr++;
+        }
+      }
+    }
+    else if (namelist==QEIONS){/* Just tidy indentation */
+      while ((*ptr)&&(isspace(*ptr))) ptr++;
+      if (isalpha(*ptr)){ /* We have some form of token */
+        dict_strcat(m->dict,"QE_ions_list","  ");
+        dict_strcat(m->dict,"QE_ions_list",ptr);
+        dict_strcat(m->dict,"QE_ions_list","\n");
+        while(*ptr) ptr++;
+      }
+    }
+    else if (namelist==QECELL){/* Just tidy indentation */
+      while ((*ptr)&&(isspace(*ptr))) ptr++;
+      if (isalpha(*ptr)){ /* We have some form of token */
+        dict_strcat(m->dict,"QE_cell_list","  ");
+        dict_strcat(m->dict,"QE_cell_list",ptr);
+        dict_strcat(m->dict,"QE_cell_list","\n");
+        while(*ptr) ptr++;
+      }
+    }
     else if (namelist==QESYSTEM){
-      if (!tokenmatch(&ptr,"nat")){
+      if(!tokenmatch(&ptr,"occupations")){
+	while ((*ptr)&&(isspace(*ptr))) ptr++;
+        if (*ptr=='=') ptr++;
+	if (qe_string_read(&ptr,&p3))
+	  dict_add(m->dict,"QE_occupations",p3);
+	else fprintf(stderr,"Warning: error parsing QE_occupations\n");
+      }
+      else  if(!tokenmatch(&ptr,"degauss")){
+	while ((*ptr)&&(isspace(*ptr))) ptr++;
+        if (*ptr=='=') ptr++;
+	p3=malloc(sizeof(double));
+	if (qe_float_read(&ptr,(double*)p3))
+	  dict_add(m->dict,"QE_degauss",p3);
+	else fprintf(stderr,"Warning: error parsing QE_degauss\n");
+      }
+      else if (!tokenmatch(&ptr,"nat")){
         if (!qe_int_read(&ptr,&(m->n)))
           error_exit("Error parsing nat");
         m->atoms=malloc(m->n*sizeof(struct atom));
@@ -700,6 +805,12 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
 	m->atoms[i].spin=magmom[j];
     }
   }
+
+  if (aspec) free(aspec);
+
+  /* Normalise etol (will be zero if not read) */
+
+  e->etol/=m->n;
 
 }
 

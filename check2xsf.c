@@ -131,6 +131,10 @@ void dipole(struct unit_cell *c, struct contents *m,
 void es_pot(struct unit_cell *c, struct contents *m,
             struct grid *g, struct es *elect, double musq);
 
+void sym_kpts(struct kpts *k_in, struct kpts *k_out, struct symmetry *s,
+              double basis[3][3]);
+void sym2ksym(struct symmetry *rs, struct symmetry *ks);
+  
 /* Global variables for system description */
 
 int debug,flags;
@@ -160,11 +164,11 @@ void version(){
 int main(int argc, char **argv)
 {
   int i,j,k,opt=1,expand,rotate,half_shift=0,no_mp=0,prim=0,compact=0;
-  int molecule=0;
+  int molecule=0,reduce=0;
   int sort_style=0;
   int no_sym=0;
   int spg_op;
-  int gen_mp=0, failure=0,calc_esp=0;
+  int gen_mp=0, failure=0,calc_esp=0,sym_k=0;
   int format,preserve_c;
   int *i_grid;
   char *optp,*file1=NULL,*file2=NULL,*line_spec=NULL,*pt_spec=NULL;
@@ -419,6 +423,9 @@ int main(int argc, char **argv)
           }
           else flags|=BANDIMAG;
           break;
+        case 'K':
+          sym_k=1;
+          break;
         case 'L':
           flags|=LHS_FUDGE;
           break;
@@ -451,6 +458,9 @@ int main(int argc, char **argv)
           break;
         case 'n':
           no_sym++;
+          break;
+        case 'N':
+          reduce=1;
           break;
         case 'O':
           flags|=OCCUPANCIES;
@@ -923,8 +933,11 @@ int main(int argc, char **argv)
     else fprintf(stderr,"Warning: ignoring -M as no MP parameters found\n");
   }
 
+  
   if (failure) fstar(&kp, &cell, &sym);
 
+  if (reduce) reduce_cell(motif.atoms,motif.n,cell.basis);
+  
   if (molecule) molecule_fix(m_abc,&cell,&motif,&grid1);
 
 
@@ -932,6 +945,28 @@ int main(int argc, char **argv)
 
   if (spg_op) cspq_op(&cell,&motif,&sym,&kp,spg_op,tolmin);
 
+  if ((sym_k)&&(kp.n)){
+    struct kpts kp2;
+    struct symmetry ksym;
+
+    ksym.n=0;
+    sym2ksym(&sym,&ksym);
+    
+    kp2.n=0;
+    addabs(kp.kpts,kp.n,cell.recip);
+    sym_kpts(&kp,&kp2,&ksym,cell.basis);
+    if (kp2.n){
+      free(kp.kpts);
+      kp.kpts=kp2.kpts;
+      if (debug>1) fprintf(stderr,
+                           "Before symmetrisation %d kpoints, after %d\n",
+                           kp.n,kp2.n);
+      kp.n=kp2.n;
+    }
+    free(ksym.ops);
+  }
+
+  
   if (prim) {
     double nb1[3][3];
     primitive(&cell,&motif,nb1);
@@ -1123,6 +1158,7 @@ void help(void){
          "-i=n1,n2,n3  Fourier interpolate 3D grids to specified grid\n"
          "-I[=range]   report inversion symmetries of given bands\n"
          "-k=range     include given k-points (default 1) for bands\n"
+         "-K           symmetrise k-point list\n"
          "-l           list k-points in .cell output, not MP parameters\n"
          "-L           produce (incorrect) left-handed abc output\n");
   printf("-m[=a,b,c]   assume input is molecule, not crystal, and move by\n"
@@ -1133,6 +1169,7 @@ void help(void){
          "               ditto displaced by fraction of mesh cell\n"
          "-n           discard symmetry information\n"
          "               give twice to discard k-points too\n"
+         "-N           normalise by reducing fractional coords to 0<=x<1\n"
          "-O           print band occupancies and eigenvalues\n");
   printf("-P           find primitive cell\n"
          "-P=X:Y:npts  output 1D data with npts points along line\n"
@@ -1263,8 +1300,8 @@ void refs(void){
          "  journal = {Computer Physics Communications},\n"
          "  author = {Rutter, M. J.},\n"
          "  year = {2018},\n"
-         "  volume = {225C},\n"
-         "  pages = {152--157},\n"
+         "  volume = {225},\n"
+         "  pages = {174--179},\n"
          "  doi = \"10.1016/j.cpc.2017.12.008\"\n"
          "}\n");
 #ifdef SPGLIB
@@ -1276,7 +1313,14 @@ void refs(void){
          "  author = {Togo, Atsushi},\n"
          "  url = {https://atztogo.github.io/spglib/}\n"
          "}\n");
+  printf("or https://arxiv.org/abs/1808.01590\n");
 #endif
+  printf("\nThe post hoc dipole correction schemes are described by:\n\n");
+  printf("Slabs:     https://doi.org/10.1103/PhysRevB.46.16067 and\n"
+         "           https://doi.org/10.1103/PhysRevB.59.12301\n");
+  printf("Cubes:     https://doi.org/10.1103/PhysRevB.51.4014 and\n"
+         "           https://doi.org/10.1103/PhysRevB.60.15476\n");
+  printf("Tetragons: https://doi.org/10.1088/1361-648X/ab20e1\n\n");
   exit(0);
 }
 

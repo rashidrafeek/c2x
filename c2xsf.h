@@ -1,4 +1,4 @@
-#define C2XSF_VER "2.26b"
+#define C2XSF_VER "2.29"
 
 /* Global variables for system description */
 
@@ -135,14 +135,14 @@ struct es {int nspins; int nspinors; char *spin_method; double cut_off;
 
 void *dict_get(struct dct *dict, char *key);
 void dict_add(struct dct *dict, char *key, void *value);
-
+void dict_strcat(struct dct *dict, char *key, char *value);
 
 void error_exit(char* msg);
 void real2rec(struct unit_cell *cell);
 void addfrac(struct atom *a,int natoms, double recip[3][3]);
 void addabs(struct atom *a,int natoms, double basis[3][3]);
 void reduce_cell(struct atom *a,int natoms, double basis[3][3]);
-void reduce_cell_tol(struct atom *a,int natoms, double basis[3][3]);
+void reduce_cell_tol(struct atom *a,int natoms, double basis[3][3], double eps);
 void abc2cart(double *abc, struct unit_cell *cell);
 void basis2abc(double basis[3][3], double abc[6]);
 void cart2abc(struct unit_cell *c, struct contents *m, double *abc, 
@@ -185,6 +185,8 @@ extern int igr2hall[];
 int super(struct unit_cell *c, struct contents *m,
            double new_basis[3][3], struct kpts *k, struct symmetry *s,
            struct grid *gptr, int rhs);
+
+double dist(double a,double b);
 
 #ifndef min
 #define min(a,b) ((a)<(b)?(a):(b))

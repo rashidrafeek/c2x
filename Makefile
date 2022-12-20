@@ -33,7 +33,7 @@ LIBS=-lsymspg
 # Don't define QSORT below unless your libc provides qsort()
 
 # Linux / x86_64 / gcc
-CFLAGS=-Wall -g  -DQSORT $(DEFS)
+CFLAGS=-Wall -Wno-unused-result -O -g  -DQSORT $(DEFS)
 
 # Linux / IA32 / gcc
 #CFLAGS=-Wall -Wno-unused-result -O -D_FILE_OFFSET_BITS=64 -DQSORT $(DEFS) -g

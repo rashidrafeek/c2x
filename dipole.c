@@ -1,3 +1,28 @@
+/* Copyright (c) 2019 MJ Rutter 
+ * 
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation, either version 3
+ * of the Licence, or (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see http://www.gnu.org/licenses/
+ */ 
+
+/* References:
+ *
+ * Slab correction: https://doi.org/10.1103/PhysRevB.46.16067
+ * Molecule in cube: https://doi.org/10.1103/PhysRevB.51.4014
+ *               and https://doi.org/10.1103/PhysRevB.60.15476
+ * Molecule in tetragon: https://doi.org/10.1088/1361-648X/ab20e1
+ */
+
+
 #include<stdio.h>
 #include<stdlib.h>
 #include<math.h>
@@ -14,7 +39,7 @@ void dipole_calc(struct unit_cell *c, struct contents *m,
   double ed[3],scale,disp,*ptr,*ptr2,mag;
   double *rgrid;
   double theta;
-
+  
   i_charge=0;
   d[0]=d[1]=d[2]=0;
   for(i=0;i<m->n;i++){
@@ -177,7 +202,8 @@ void dipole(struct unit_cell *c, struct contents *m,
             struct grid *g, struct es *elect){
 
   double dpole[3],mag,E,*dipole_ctr,v[3];
-  int i,dipole_slab_dir;
+  int i,dipole_slab_dir,c_dir;
+  double va,vc,dE,mag2;
 
   dipole_ctr=elect->dip_ctr;
   
@@ -212,13 +238,14 @@ void dipole(struct unit_cell *c, struct contents *m,
     E=0.5*mag*mag/(EPS0*c->vol);
     fprintf(stderr,"Calculated dipole energy correction (%c axis): %f eV\n",
             'a'+dipole_slab_dir,E);
-    if (elect->energy)
+    if (elect->energy){
       if ((elect->dip_corr==NULL)||(elect->dip_corr[0]=='N'))
         fprintf(stderr,"Corrected energy %.6f + %.6f = %.6f eV\n",
                 *elect->energy,E,*elect->energy+E);
       else
         fprintf(stderr,"Reported energy of %.6f appears to include "
                 "a correction already\n",*elect->energy);
+    }
   }
 
   /* Molecules are harder */
@@ -234,22 +261,72 @@ void dipole(struct unit_cell *c, struct contents *m,
         E=mag/(6*EPS0*c->vol);
         fprintf(stderr,"Calculated dipole energy correction (molecule in cube):"
                 " %f eV\n",E);
-        if (elect->energy)
+        if (elect->energy){
           if ((elect->dip_corr==NULL)||(elect->dip_corr[0]=='N'))
             fprintf(stderr,"Corrected energy %.6f + %.6f = %.6f eV\n",
                     *elect->energy,E,*elect->energy+E);
           else
             fprintf(stderr,"Reported energy of %.6f appears to include "
                 "a correction already\n",*elect->energy);      
-        
+        }
       }
-      else
-        fprintf(stderr,"Tetragonal cell: this version of c2x can "
-                "calculate dipole corrections for cubes only\n");
+      else{
+	c_dir=-1;
+	if (aeq(abc[0],abc[1])) c_dir=2;
+	if (aeq(abc[0],abc[2])) c_dir=1;
+	if (aeq(abc[1],abc[2])) c_dir=0;
+	if (c_dir!=-1){
+	  /* Find unit vector corresponding to tetragonal c axis */
+	  for(i=0;i<3;i++)
+	    v[i]=c->basis[c_dir][i];
+	  mag=0;
+	  for(i=0;i<3;i++)
+	    mag+=v[i]*v[i];
+	  mag=sqrt(mag);
+	  for(i=0;i<3;i++)
+	    v[i]/=mag;
+	  /* Now have unit vector, so dot with dipole */
+	  mag=0;
+	  for(i=0;i<3;i++)
+	    mag+=v[i]*dpole[i];
+	  /* Calculate also dipole magnitude */
+	  mag2=0;
+	  for(i=0;i<3;i++)
+	    mag2+=dpole[i]*dpole[i];
+          mag2=sqrt(mag2);
+	  if (mag2>1.05*fabs(mag))
+	    fprintf(stderr,"Warning: only dipole moment parallel "
+		    "to %c axis corrected\n",'a'+c_dir);
+	  vc=abc[c_dir];
+	  va=abc[0];
+	  if (c_dir==0) va=abc[1];
+	  E=((mag*mag)/(EPS0*va*va))*(1/(2*vc)-1/(3*va));
+	  fprintf(stderr,
+		  "Calculated dipole energy correction (%c axis):"
+                  "      %10.6f eV\n",
+		  'a'+c_dir,E);
+	  if (elect->energy){
+	    if ((elect->dip_corr==NULL)||(elect->dip_corr[0]=='N'))
+	      fprintf(stderr,"Corrected energy %14.6f + %10.6f = %14.6f eV\n",
+		      *elect->energy,E,*elect->energy+E);
+	    else
+	      fprintf(stderr,"Reported energy of %.6f appears to include "
+		      "a correction already\n",*elect->energy);
+          }
+	  dE=-4*M_PI*mag*mag*(exp(-2*M_PI)-exp(-2*M_PI*vc/va))/(EPS0*va*va*va);
+	  fprintf(stderr,"Additional correction if point dipole:"
+                  "         %14.6f eV\n",dE);
+	  fprintf(stderr,"Leading to corrected energy of:"
+                  "                %14.6f eV\n",
+		  *elect->energy+E+dE);
+	}
+        else fprintf(stderr,"This version cannot "
+                "calculate dipole corrections for non-tetragonal cells.\n");
+      }
     }
     else
-        fprintf(stderr,"This version of c2x cannot "
-                "calculate dipole corrections for non-cubic cells\n");
+        fprintf(stderr,"This version cannot "
+                "calculate dipole corrections for non-tetragonal cells.\n");
   }
   
 }

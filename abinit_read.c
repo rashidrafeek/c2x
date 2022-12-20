@@ -139,7 +139,7 @@ void abinit_read(FILE* infile, struct unit_cell *c, struct contents *m,
    */
   x=tol;
   tol*=1e-10;
-  reduce_cell_tol(m->atoms,m->n,c->basis);
+  reduce_cell_tol(m->atoms,m->n,c->basis,tol);
   tol=x;
   addabs(m->atoms,m->n,c->basis);
 
