@@ -13,8 +13,9 @@ converts primarily a CASTEP .check file to various output formats,
 additionally extracting densities (charge, spin, band or psi) and forces. It
 can also read CASTEP .cell files and PDB files, Onetep .dat files,
 and several VASP input  and output files. It is a sort of Babel with
-support for gridded data and .check files, and the abilty to transform
-cells.
+support for gridded data and .check files, and the ability to transform
+cells and perform simple analysis (integration, interpolation, dipole
+moment calculation, band parity identification).
 
 .LP
 It may have been compiled to give access to symmetry functions from spglib
@@ -24,16 +25,16 @@ too.
 An input file whose name ends '.pdb' is assumed to be in pdb format,
 ending in '.cif' is assumed to be in cif format, ending in '.res' is
 assumed to be in shelx97, ending '.cub' or '.cube' is assumed to be in
-cube format, ending '.in' is assumed to be an Abinit input file, and
-ending in '.xsf' is assumed to be in xsf format. Input files ending
-CHG, CHGCAR, POSCAR or CONTCAR are assumed to be in VASP 5.x
-format. Otherwise, if the first byte is either zero, 10 or 30 it is
+cube format, ending '.in' is assumed to be an Abinit or Quantum Espresso
+input file, ending '.xml' is assumed to be a Quantum Espresso output
+file, and ending in '.xsf' is assumed to be in xsf format. Input
+files ending CHG, CHGCAR, POSCAR or CONTCAR are assumed to be in VASP
+5.x format. Otherwise, if the first byte is either zero, 10 or 30 it is
 assumed to be a .check file, else it is assumed to be a .cell file. It
 can also read .orbitals files (which are identical to .check files in
-format), and .castep_bin files (which lack
-wavefunctions). Furthermore, it can read .chdiff files and .cst_esp
-files. In these cases it needs a .cell or a .check file as well in
-order to obtain unit cell information.
+format), and .castep_bin files (which lack wavefunctions). Furthermore,
+it can read .chdiff files and .cst_esp files. In these cases it needs
+a .cell or a .check file as well in order to obtain unit cell information.
 
 .SH OPTIONS
 
@@ -72,6 +73,14 @@ contains no axes.
 if charge density read (-c), calculate dipole moment about fractional
 co-ordinates x,y,z, or 0.5,0.5,0.5 if co-ordinates not given. Assumes
 density has been read as eA^-3.
+.TP
+.B \-Da=[x,y,z]
+as above, but also report post-hoc energy correction for slab geometry for
+the a axis being the non-periodic axis. Valid values of a: a, b and c.
+.TP
+.B \-Dm=[x,y,z]
+as above, but also report post-hoc energy correction for a molecule in
+a cubic box.
 .TP
 .B \-e
 read also a corresponding .cst_esp file, and output its contents. The filename
@@ -162,6 +171,10 @@ scale densities from Bohr^-3 to A^-3 when reading .cube files.
 .TP
 .B \-v
 be verbose. Far too much output can be generated if specified more than twice.
+.TP
+.B \-\-version
+print version information. If preceeded by -v, also print internal conversion
+factors.
 .TP
 .B \-w
 weight bands by occupancies, or sqrt(occ) if not calculating density.
@@ -264,7 +277,10 @@ a python dictionary, compatible with the Atoms data structure from ASE.
 a python ASE Atoms data structure.
 .TP
 .B \-\-qe
-Quantum Espresso. Spins not supported.
+Quantum Espresso. Non colinear spins not supported.
+.TP
+.B \-\-qef
+Ditto, atoms in fractional co-ordinates.
 .TP
 .B \-\-shelx
 a subset of the SHELX97 format.
@@ -319,19 +335,24 @@ call spg_refine_cell()
 .B \-\-schoen
 call spg_get_schoenflies()
 .TP
+.B \-\-snap
+call spg_standardize_cell() then expand back to a snapped version of the
+original cell
+.TP
+.B \-\-standardise
+call spg_standardize_cell(no_idealize=1)
+.TP
 .B \-\-symmetry
 call spg_get_dataset() and keep symmetry ops
 
 .SH NOTES
 
 .LP
-For cell and pdb formats, just the unit cell and atomic positions are read or
-written. For the dx and xplor formats, just a single data set is written. For
-the VASP format atomic positions and a data set are written, but information
-regarding atomic species cannot be recorded. For the Gaussian cube format
-atomic positions and at most one data set are recorded, and for the XCrysDen
-format the unit cell, atomic positions, forces, and any number of data sets are
-recorded.
+For the pdb formats, just the unit cell and atomic positions are read or
+written. For the dx and xplor formats, just a single data set is written.
+For the Gaussian cube format atomic positions and at most one data set
+are recorded, and for the XCrysDen format the unit cell, atomic positions,
+forces, and any number of data sets are recorded.
 
 .LP
 Note that the pdb format offers a very low precision for storing co-ordinates,

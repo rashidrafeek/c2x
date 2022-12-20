@@ -73,6 +73,7 @@ void cube_read(FILE* infile, struct unit_cell *c, struct contents *m,
   if(!(m->atoms=malloc(n*sizeof(struct atom))))
     error_exit("Malloc error in cube_read for atoms");
   m->n=n;
+  init_atoms(m->atoms,n);
   
   for(i=0;i<n;i++){
     fgets(buffer,LINE_SIZE,infile);
@@ -80,8 +81,6 @@ void cube_read(FILE* infile, struct unit_cell *c, struct contents *m,
                &(m->atoms[i].chg),t,t+1,t+2)!=5)
       error_exit("Scan error in atom description");
     for(j=0;j<3;j++) m->atoms[i].abs[j]=t[j]*BOHR;
-    m->atoms[i].spin=0;
-    m->atoms[i].label=NULL;
   }
 
   real2rec(c);

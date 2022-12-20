@@ -122,9 +122,7 @@ void shelx_read(FILE* infile, struct unit_cell *c, struct contents *m){
     if(!is_cmd){ /* We have an atom */
       m->atoms=realloc(m->atoms,(m->n+1)*sizeof(struct atom));
       if (!m->atoms) error_exit("realloc error in shelx_read");
-      m->atoms[m->n].spin=0;
-      m->atoms[m->n].chg=0;
-      m->atoms[m->n].label=NULL;
+      init_atoms(m->atoms+m->n,1);
       cnt=sscanf(cptr2+1,"%d %lf %lf %lf",&i,m->atoms[m->n].frac,
 	       m->atoms[m->n].frac+1,m->atoms[m->n].frac+2);
       if (cnt!=4){

@@ -202,7 +202,6 @@ void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
   double v[3],v2[3];
   double det,angle,x;
 
-
   inv=0;
   screw=0;
   for(i=0;i<3;i++) off[i]=0;
@@ -235,6 +234,7 @@ void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
 
   x=0.5*(m[0][0]+m[1][1]+m[2][2]-1);
   if (aeq(x,1.0)) x=1.0; /* Else rounding errors lead to acos(1+epsilon) */
+  if (aeq(x,-1.0)) x=-1.0; 
   angle=acos(x);
   angle*=180/M_PI;
 
@@ -293,25 +293,22 @@ void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
 
   if (s->tr){
     for(i=0;i<3;i++) v[i]=s->tr[i];
-    if(!(aeq(v[0],0)&&aeq(v[1],0)&&aeq(v[2],0))){
+    if(!(aeq(v[0],0)&&aeq(v[1],0)&&aeq(v[2],0))&&(mult>1)){
       x=v[0]*a[0]+v[1]*a[1]+v[2]*a[2];
       if((inv==0)&&(!aeq(x,0))){   /* we have a screw */
 	x/=vmod2(a);  /* dot with unit vector parallel to axis, then divide by
 		       * repeat length in that direction. Hence no sqrt. */
 	for(i=0;i<3;i++) v[i]-=x*a[i];
-	x*=mult;
-	x=fmod(x,1);
-	if (x<0) x+=1;
-	if (x>1-tol) x=0;
-	if (!aeq(x,floor(x+tol))){
+        for (screw=1;screw<=mult;screw++)
+          if(aeq(x*screw,floor(x*screw+0.5))) break;
+        if (screw>mult){
+          screw=0;
 	  fprintf(stderr,"Screw problem, x=%f mult=%d\n",x,mult);
 	  fprintf(stderr,"Axis (%f,%f,%f) Disp (%f,%f,%f)\n",
 		  a[0],a[1],a[2],s->tr[0],s->tr[1],s->tr[2]);
           fprintf(stderr,"Is (%f,%f,%f) a lattice vector?\n",
-                  x*a[0],x*a[1],x*a[2]);
-          screw=-1;
-	}
-        else screw=x+tol;
+                  mult*x*a[0],mult*x*a[1],mult*x*a[2]);
+        }
       }
     }
     if(!(aeq(v[0],0)&&aeq(v[1],0)&&aeq(v[2],0))){ /* we have a translation */

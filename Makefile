@@ -10,7 +10,8 @@ OBJS=check2xsf.o check_read.o xsf_write.o molecule_fix.o cube_write.o \
      cube_read.o cif_read.o c2x2spg.o sort_atoms.o py_write.o \
      xsf_read.o vasp_read.o denfmt_write.o denfmt_read.o parse.o \
      dipole.o fort34_read.o crystal_read.o abinit_read.o abinit_write.o \
-     abinit_in_read.o fdf_read.o qe_write.o qe_read.o parity.o potential.o
+     abinit_in_read.o fdf_read.o qe_write.o qe_read.o parity.o potential.o \
+     qe_rho_read.o qe_xml_read.o dict.o print_cell.o
 
 
 # Recommended: -DQSORT -DSPGLIB

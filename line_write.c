@@ -224,4 +224,5 @@ void line_write(FILE* outfile, struct unit_cell *c,
 
   if (flags&GNUPLOT) fprintf(outfile,"pause -1 \"Press return to exit\"\n");
 
+  free(points);
 }

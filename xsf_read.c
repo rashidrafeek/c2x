@@ -23,10 +23,6 @@
 
 #include "c2xsf.h"
 
-int super(struct unit_cell *c, struct contents *m,
-           double new_basis[3][3], struct kpts *k, struct symmetry *s,
-           struct grid *gptr, int rhs);
-
 #define LINE_SIZE 100
 
 static int xsfreadline(char *buffer, int len, FILE* infile);
@@ -91,6 +87,7 @@ void xsf_read(FILE* infile, struct unit_cell *c, struct contents *m,
 	  error_exit("error parsing first line after primcoord");
 	if(!(m->atoms=malloc(n*sizeof(struct atom))))
 	  error_exit("Malloc error in xsf_read for atoms");
+	init_atoms(m->atoms,n);
 	
 	for(i=0;i<n;i++){
 	  xsfreadatom(m,i,infile);
@@ -319,8 +316,5 @@ static int xsfreadatom(struct contents *m, int i, FILE* infile){
   }
   else	  
     error_exit("error parsing atoms line in xsf_read");
-  m->atoms[i].spin=0;
-  m->atoms[i].chg=0;
-  m->atoms[i].label=NULL;
   return 1;
 }

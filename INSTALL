@@ -1,6 +1,6 @@
 This version of c2x is intended to be built with spglib
 ( https://github.com/atztogo/spglib/releases ).
-It has been tested with spglib 1.9.9.
+It has been tested with spglib 1.9.9 and 1.12.2.
 
 The build of c2x itself is controlled by its Makefile. This can be edited,
 and then one simply types "make" and the result should be an
@@ -12,7 +12,7 @@ There are three options for spglib
 some functionality. For this simply do not define SPGLIB in the
 makefile (i.e. comment out references to "-DSPGLIB").
 
-2/ Use a pre-installed system spglib. For this it should not be
+2/ Use a pre-installed system spglib. It should not be
 necessary to set CPPFLAGS and LDFLAGS, for presumably the relevant
 header files and library files will be found automatically.
 
@@ -44,7 +44,7 @@ C2x itself should build straightforwardly with an ANSI C compiler.
 If one wishes to validate one's build of c2x, a basic test suite is
 available at www.c2x.org.uk.
 
-MJR 1/2017
+MJR 1/2017, 2/2019
 
 
 Further notes on compiling spglib
@@ -78,7 +78,7 @@ Without aclocal / autotools
 
 If you lack aclocal / autoheader / etc., which is likely to be the case
 if you are using MacOS, then the following recipe might also work.
-Again, it has been tested with spglib 1.9.9 and 1.10.3
+It has been tested with spglib 1.9.9, 1.10.3 and 1.12.2.
 
 curl -o spglib.zip https://codeload.github.com/atztogo/spglib/zip/master
 unzip spglib.zip 

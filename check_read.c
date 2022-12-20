@@ -88,20 +88,17 @@ static int endian;
 static int nbands;
 static double *cr_cell_vol;
 
-/* shared with dipole.c (not very elegant...) */
-
-extern int dipole_slab_dir;
-
 void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
                 struct kpts *kp, struct symmetry *s, struct grid *gptr,
                 struct es *elect, int *i_grid){
   int tmp;
   char head[HEAD_LEN+1];
   char cbuff[CBUFF+1];
-  int i,j,k,density,na,fft[3],ion_sym_len,ver_maj,ver_min;
+  int i,j,k,density,na,fft[3],ion_sym_len,ps_pot_len,ver_maj,ver_min;
+  int smisc_size;
   double *dptr1,*dptr2,*column,*castep_basis,conv;
   int *nsp,*nsp_max,*nionsp,*nsymops;
-  char *ion_sym;
+  char *ion_sym,*ps_pots;
   double *ion_pos,*ion_force,*mag_mom,*sym_mat,*sym_disp;
   double *species_charge;
   double *kpts_pos,*wkpts;
@@ -113,7 +110,7 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
   char *spin_method;
   int nspins;
   double cut,x;
-  char *sym,*lab,*cptr;
+  char *sym,*lab,*cptr,*cptr2;
   char dipole_correction[21];
   char dipole_dir;
   
@@ -122,6 +119,7 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
   castep_basis=NULL;
   ion_pos=ion_force=mag_mom=NULL;
   nsp=nsp_max=nionsp=NULL;
+  ps_pots=NULL;
   kpts_pos=NULL;
   nkpts=NULL;
   wkpts=mp_off=NULL;
@@ -233,6 +231,16 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
       SCAN("NUM_SYMMETRY_OPERATIONS",4,nsymops);
       SCAN("SYMMETRY_OPERATIONS",72*(*nsymops),sym_mat);
       SCAN("SYMMETRY_DISPS",24*(*nsymops),sym_disp);
+      if (match(head,"CELL%SPECIES_POT")){ /* We don't really know */
+	fread(&tmp,4,1,infile);            /* the length of this record */
+	if (endian) reverse4(&tmp);
+	ps_pots=malloc(tmp+1);
+	if (!ps_pots) error_exit("Malloc error for ps_pots");
+	fread(ps_pots,tmp,1,infile);
+	ps_pots[tmp]=0; /* .check file will space-pad, we want null term */
+	fseek(infile,4,SEEK_CUR);
+	if (debug>2) fprintf(stderr,"Found CELL%%SPECIES_POT, %d bytes\n",tmp);
+      }
       if (match(head,"BEGIN_ELECTRONIC")){
         fseek(infile,4*12+4,SEEK_CUR);
         fread(&nbands,4,1,infile);
@@ -321,16 +329,20 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
           if (tmp==20){
             fread(dipole_correction,20,1,infile);
             dipole_correction[20]=0;
+            elect->dip_corr=malloc(21);
+            if (!elect->dip_corr) error_exit("Malloc err for char!");
+            strncpy(elect->dip_corr,dipole_correction,21);
             fseek(infile,4,SEEK_CUR);
             fread(&tmp,4,1,infile);
             if (endian) reverse4(&tmp);
             if (tmp==1){
               fread(&dipole_dir,1,1,infile);
               fseek(infile,4,SEEK_CUR);
-              if (dipole_correction[0]!='N'){                
-                dipole_slab_dir=dipole_dir-'X'+1;
-                if (dipole_slab_dir>64) dipole_slab_dir-=64; /* deal with
-                                                                lower case */
+              /* Don't over-ride command-line specified dip_corr_dir */
+              if ((elect->dip_corr_dir==NULL)&&(dipole_correction[0]!='N')){
+                elect->dip_corr_dir=malloc(1);
+                if (!elect->dip_corr_dir) error_exit("Malloc err for char!");
+                *elect->dip_corr_dir=dipole_dir;
               }
               if ((debug&&(dipole_correction[0]!='N'))||(debug>1))
                 fprintf(stderr,"Dipole correction: %s (direction %c)\n",
@@ -351,23 +363,27 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
       break;
     case 2:      /* matches select(section) */
       if (match(head,"END_CELL_GLOBAL")){
-        if (debug>1){
-          double energy;
-          int wave_ok,den_ok;
-          fseek(infile,4,SEEK_CUR);
-          fread(&wave_ok,4,1,infile);
-          fseek(infile,8,SEEK_CUR);
-          fread(&den_ok,4,1,infile);
-          fseek(infile,8,SEEK_CUR);
-          fread(&energy,8,1,infile);
-          if (endian) reverse8n(&energy,1);
-          fprintf(stderr,"Total Energy %.6f eV\n",energy*H_eV);
-          fseek(infile,8,SEEK_CUR);
-          fread(&energy,8,1,infile);
-          if (endian) reverse8n(&energy,1);
-          fprintf(stderr,"Fermi Energy %.6f eV\n",energy*H_eV);
-          fseek(infile,4,SEEK_CUR);
-        }
+        double energy;
+        int wave_ok,den_ok;
+        fseek(infile,4,SEEK_CUR);
+        fread(&wave_ok,4,1,infile);
+        fseek(infile,8,SEEK_CUR);
+        fread(&den_ok,4,1,infile);
+        fseek(infile,8,SEEK_CUR);
+        fread(&energy,8,1,infile);
+        if (endian) reverse8n(&energy,1);
+        if (debug>1) fprintf(stderr,"Total Energy %.6f eV\n",energy*H_eV);
+        elect->energy=malloc(sizeof(double));
+        if (!elect->energy) error_exit("Malloc error for double!");
+        *elect->energy=energy*H_eV;
+        fseek(infile,8,SEEK_CUR);
+        fread(&energy,8,1,infile);
+        if (endian) reverse8n(&energy,1);
+        if (debug>1) fprintf(stderr,"Fermi Energy %.6f eV\n",energy*H_eV);
+        elect->e_fermi=malloc(sizeof(double));
+        if (!elect->e_fermi) error_exit("Malloc error for double!");
+        *elect->e_fermi=energy*H_eV;
+        fseek(infile,4,SEEK_CUR);
         section=3;
         if(!nkpts) error_exit("Aborting: nkpts not set");
       }
@@ -600,7 +616,8 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
   if(!(c->basis=malloc(72))) error_exit("Error in malloc for basis");
   for(i=0;i<=2;i++)
     for(j=0;j<=2;j++) c->basis[i][j]=castep_basis[3*j+i];
-
+  free(castep_basis);
+  
   /* Convert basis to Angstoms */
   for(i=0;i<3;i++)
     for(j=0;j<3;j++) c->basis[i][j]=c->basis[i][j]*BOHR;
@@ -647,6 +664,8 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
   if (!(m->atoms=malloc(m->n*sizeof(struct atom))))
     error_exit("Malloc error in check_read");
 
+  init_atoms(m->atoms,m->n);
+
   na=0;
   for(i=0;i<*nsp;i++){
     sym=ion_sym+ion_sym_len*i;
@@ -686,19 +705,97 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
       na++;
     }
   }
-  if (ion_force) m->forces=1;
 
+  /* Recreate a pseudopot block */
+
+  smisc_size=0;
+  if (ps_pots){
+    i=strlen(ps_pots);
+    if (((i/(*nsp))*(*nsp))!=i)
+      fprintf(stderr,"Unexpected length to pseudopot block -- ignoring\n");
+    ps_pot_len=(i/(*nsp));
+    m->species_misc=realloc(m->species_misc,smisc_size+
+			    strlen("%block SPECIES POT\n")+1);
+    if (!m->species_misc) error_exit("Realloc error in a species_ block");
+    strcpy(m->species_misc+smisc_size,"%block SPECIES POT\n");
+    smisc_size+=strlen("%block SPECIES_POT\n");
+    for(j=0;j<(*nsp);j++){
+      cptr=ps_pots+j*ps_pot_len;
+      cptr2=cptr;
+      while ((*cptr2!=' ')&&(cptr2-cptr)<ps_pot_len) cptr2++;
+      m->species_misc=realloc(m->species_misc,smisc_size+ion_sym_len+1+
+			      (cptr2-cptr)+3);
+      if (!m->species_misc) error_exit("Realloc error in a species_ block");
+      strncpy(m->species_misc+smisc_size,ion_sym+ion_sym_len*j,ion_sym_len);
+      smisc_size+=ion_sym_len;
+      strcpy(m->species_misc+smisc_size," ");
+      smisc_size+=1;
+      strncpy(m->species_misc+smisc_size,cptr,(cptr2-cptr)+1);
+      smisc_size+=(cptr2-cptr)+1;
+      strcpy(m->species_misc+smisc_size,"\n");
+      smisc_size+=1;
+    }      
+    m->species_misc=realloc(m->species_misc,smisc_size+
+			    strlen("%endblock SPECIES_POT\n")+1);
+    if (!m->species_misc) error_exit("Realloc error in a species_ block");
+    strcpy(m->species_misc+smisc_size,"%endblock SPECIES_POT\n");
+    smisc_size+=strlen("%endblock SPECIES_POT\n");
+  }
+  
+  if (ion_force) m->forces=1;
+  if (ion_force) free(ion_force);
+  if (ion_pos) free(ion_pos);
+  if (ion_sym) free(ion_sym);
+  if (species_charge) free (species_charge);
+  if (mag_mom) free(mag_mom);
+  if (nionsp) free(nionsp);
+  if (nsp) free(nsp);
+  if (nsp_max) free(nsp_max);
+  if (nkpts) free(nkpts);
+  if (nsymops) free(nsymops);
+  if (ps_pots) free(ps_pots);
+  
   addabs(m->atoms,m->n,c->basis);
 
   if(endian) reverse8n(s->tol,1);
 /* Castep works in Bohr, we work in Angstroms */
   (*(s->tol))*=BOHR;
 
-  if ((debug>1)&&nsymops){
-    fprintf(stderr,"%d symmetry operations\n",*nsymops);
+  if ((debug>1)&&nsymops){  /* Note nsymops is not a valid pointer here */
+    fprintf(stderr,"%d symmetry operations\n",s->n);
     if (sym_mat) fprintf(stderr,"symmetry matrices read\n");
   }
 
+  
+  /* Worry about dipole corrections */
+
+  /* .check dip_corr_dir is always upper case, and anything on the
+     command line is always lower-case */
+
+  if ((elect->dip_corr_dir)&&(*(elect->dip_corr_dir)<='Z')){
+    if (*elect->dip_corr_dir=='A')  /* all */
+      *elect->dip_corr_dir='m';
+    else{
+      i=*elect->dip_corr_dir-'X';
+      if ((i<0)||(i>=3))
+        fprintf(stderr,"Warning: unexpected value for dipole_dir\n");
+      else{
+        j=1;
+        for(k=0;k<3;k++){
+          if (i==k) continue;
+          if (!aeq(c->basis[i][k],0)){
+            fprintf(stderr,"Warning: dipole_dir=%c, "
+                    "but %c does not lie along %c\n",
+                    *elect->dip_corr_dir,'a'+i,*elect->dip_corr_dir);
+            fprintf(stderr,"  unclear what this means in Castep\n");
+            j=0;
+          }
+        }
+        if (j) *elect->dip_corr_dir='a'+i;
+      }
+    }
+  }
+  
   if(!match(head,"END")){
     fprintf(stderr,"Warning: unexpected end to check file. "
                    "Continuing regardless.\n");
@@ -1227,6 +1324,7 @@ static void wave_read(FILE *infile, int nkpts, double *kpts_pos,
 	  else fseek(infile,16*nplwv+4,SEEK_CUR);
 	} /*for(nspr=...) */
       } /* for(b=...) */
+      if (pwgrid) {free(pwgrid); pwgrid=NULL;}
     } /* for(k=...) */
   } /* for(ns=...) */
   if ((flags&ACCUMULATE)&&g->data){ /* Now move to a new grid */

@@ -1,6 +1,6 @@
 /* Interface between c2x and spglib */
 
-/* Copyright (c) 2014, 2016 MJ Rutter 
+/* Copyright (c) 2014 -- 2019 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -28,6 +28,11 @@
 
 #include "c2xsf.h"
 
+double vmod2(double v[3]);
+void vcross(double a[3],double b[3],double c[3]); /* From ident_sym.c */
+int is_rhs(double b[3][3]); /* From basis.c */
+
+void rotate(double v[3], double axis[3], double theta);
 struct sym_op *sym_frac2abs(int spg_rot[][3][3],double spg_tr[][3],
 			    struct unit_cell *c,int nsym);
 
@@ -58,12 +63,16 @@ int igr2hall[]={ 0,    1,  2,  3,  6,  9, 18, 21, 30, 39,
 
 #ifdef SPGLIB
 int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
-            int op, double tolmin){
-  int i,j,natoms2;
+            struct kpts *kp, int op, double tolmin){
+  int i,j,k,natoms2;
   int dummy[3][3];
-  int result,results,resulti,resultp;
-  double stol;
-
+  int result,results,resulti,resultp,rotation;
+  double stol,dot,mod1,mod2,theta,axis[3],vtmp[3],vtmp1[3],vtmp2[3];
+  double old_basis[3][3],old_frac[3][3],new_basis[3][3];
+  double rhs[3][3],tr[3];
+  struct contents *m2;
+  struct unit_cell *c2;
+  
   /* SPG variables */
   double spg_latt[3][3];
   double (*spg_pos)[3],spg_symprec;
@@ -74,15 +83,225 @@ int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
   struct uniq {int atno; double spin; char *label;} *auid;
   int hit,n_uniq;
 
-  if (debug>1) fprintf(stderr,"Calling spglib with op=%x\n",op);
-  else if(debug) fprintf(stderr,"Calling spglib\n");
+  if (debug>1) fprintf(stderr,"Calling spglib with op=0x%x\n",op);
 
+  if (op&CSPG_SNAP){
+    for(i=0;i<3;i++)
+      for(j=0;j<3;j++)
+	old_basis[i][j]=c->basis[i][j];
+
+    m2=malloc(sizeof(struct contents));
+    if (!m2) error_exit("Malloc error for m2");
+    memcpy(m2,m,sizeof(struct contents));
+    m2->atoms=malloc(m2->n*sizeof(struct atom));
+    if (!m2->atoms) error_exit("Malloc error for m2->atoms");
+    memcpy(m2->atoms,m->atoms,m2->n*sizeof(struct atom));
+    c2=malloc(sizeof(struct unit_cell));
+    if (!c2) error_exit("Malloc error for c2");
+    memcpy(c2,c,sizeof(struct unit_cell));
+    c2->basis=malloc(9*sizeof(double));
+    if (!c2->basis) error_exit("Malloc error for c2->basis");
+    memcpy(c2->basis,c->basis,9*sizeof(double));
+
+    /* This version does not correct cell vector lengths and angles */
+    cspq_op(c2,m2,s,NULL,CSPG_PRIM_NR+CSPG_NO_SORT,tolmin);
+    if (debug>2){
+      fprintf(stderr,"CSPG_PRIM_NR returns:\n");
+      print_cell(c2,m2);
+    }
+    /* This version does, but may add an unwanted rotation and translation */
+    cspq_op(c,m,s,NULL,CSPG_PRIM+CSPG_NO_SORT,tolmin);
+    if (debug>2){
+      fprintf(stderr,"CSPG_PRIM returns:\n");
+      print_cell(c,m);
+    }
+
+    /* Wonder about translation */
+    for(i=0;i<3;i++)
+      tr[i]=m->atoms[0].frac[i]-m2->atoms[0].frac[i];
+
+    if (debug>2)
+      fprintf(stderr,"Translation is %12.8f %12.8f %12.8f\n",
+              tr[0],tr[1],tr[2]);
+    if (vmod2(tr)>0.0){
+      for(i=0;i<m->n;i++)
+        for(j=0;j<3;j++)
+          m->atoms[i].frac[j]-=tr[j];
+
+      reduce_cell(m->atoms,m->n,c->basis);
+      real2rec(c);
+      addabs(m->atoms,m->n,c->basis);
+    }
+    
+
+    /* Wonder if a axis has been rotated */
+    /* Could try evaluating theta as arccos(a.b), but this has accuracy
+     *  issues if a.b is close to 1. So try 2 arcsin |0.5(a-b)|,
+     *  for normalised a and b 
+     */
+    rotation=0;
+
+    mod1=sqrt(vmod2(c->basis[0]));
+    mod2=sqrt(vmod2(c2->basis[0]));
+    if (!aeq(mod1,mod2)) error_exit("Unexpected length differences in a");
+    if (debug>1) fprintf(stderr,"length difference in a: %e\n",mod1-mod2);
+    for(i=0;i<3;i++)
+      vtmp[i]=0.5*(c->basis[0][i]/mod1-c2->basis[0][i]/mod2);
+    dot=sqrt(vmod2(vtmp));
+    
+    if (!aeq(dot,0.0)){ /* Need to rotate a */
+      rotation=1;
+      theta=2*asin(dot);
+      vcross(c->basis[0],c2->basis[0],axis);
+
+#if 0
+      /* Will be rhs by construction */
+      for(i=0;i<3;i++){
+	rhs[0][i]=c->basis[0][i];
+	rhs[1][i]=c2->basis[0][i];
+	rhs[2][i]=axis[i];
+      }
+      if (is_rhs(rhs)) fprintf(stderr,"rhs\n");
+      else fprintf(stderr,"lhs\n");
+#endif
+      
+      if (debug>1) fprintf(stderr,"Rotating a by %lf\n",theta*180/M_PI);
+      for(i=0;i<3;i++)
+	rotate(c->basis[i],axis,theta);
+      /* Did this work? */
+      dot=0;
+      for(i=0;i<3;i++) dot+=c2->basis[0][i]*c->basis[0][i];
+      dot/=(mod1*mod2);
+      if ((dot-1)<1e-12) dot=1;
+      theta=acos(dot);
+      if (debug>1) fprintf(stderr,"Required rotation now %lf\n",theta*180/M_PI);
+      if (debug>2){
+        fprintf(stderr,"New cell vectors of:\n");
+	print_cell(c,NULL);
+      }
+    }
+
+    /* a axis now okay, what about b? */
+
+    mod1=sqrt(vmod2(c->basis[1]));
+    mod2=sqrt(vmod2(c2->basis[1]));
+    if (!aeq(mod1,mod2)) error_exit("Unexpected length differences in b");
+    if (debug>1) fprintf(stderr,"length difference in b: %e\n",mod1-mod2);
+    for(i=0;i<3;i++)
+      vtmp[i]=0.5*(c->basis[1][i]/mod1-c2->basis[1][i]/mod2);
+    dot=sqrt(vmod2(vtmp));
+
+    if (!aeq(dot,0.0)){/* Need to rotate b */
+      rotation=1;
+      /* a should be preserved: make it the axis */
+      for(i=0;i<3;i++) axis[i]=c->basis[0][i];
+      mod1=sqrt(vmod2(axis));
+      for(i=0;i<3;i++) axis[i]/=mod1;
+
+      dot=0;
+      for(i=0;i<3;i++) dot+=c->basis[1][i]*axis[i];
+      for(i=0;i<3;i++) vtmp1[i]=c->basis[1][i]-dot*axis[i];
+      mod1=sqrt(vmod2(vtmp1));
+
+      dot=0;
+      for(i=0;i<3;i++) dot+=c2->basis[1][i]*axis[i];
+      for(i=0;i<3;i++) vtmp2[i]=c2->basis[1][i]-dot*axis[i];
+      mod2=sqrt(vmod2(vtmp2));
+
+      for(i=0;i<3;i++)
+        vtmp[i]=0.5*(vtmp1[i]/mod1-vtmp2[i]/mod2);
+      dot=sqrt(vmod2(vtmp));
+
+      for(i=0;i<3;i++){
+	rhs[0][i]=c->basis[1][i];
+	rhs[1][i]=c2->basis[1][i];
+	rhs[2][i]=axis[i];
+      }
+      if (is_rhs(rhs)) theta=2*asin(dot);
+      else theta=-2*asin(dot);
+      if (debug>1) fprintf(stderr,"Rotating b by %lf\n",theta*180/M_PI);
+
+      for(i=0;i<3;i++)
+	rotate(c->basis[i],axis,theta);
+
+      /* Did this work? */
+      dot=0;
+      for(i=0;i<3;i++) dot+=c2->basis[1][i]*c->basis[1][i];
+      mod1=sqrt(vmod2(c->basis[1]));
+      mod2=sqrt(vmod2(c2->basis[1]));
+      dot/=(mod1*mod2);
+      if ((dot-1)<1e-12) dot=1;
+      theta=acos(dot);
+      if (debug>1) fprintf(stderr,"Required rotation now %lf\n",theta*180/M_PI);
+      
+    }    
+
+    if (rotation){
+      if (debug>1){
+	fprintf(stderr,"*****New basis:\n");
+	print_cell(c,NULL);
+      }
+      real2rec(c);
+      addabs(m->atoms,m->n,c->basis);
+    }
+    
+    /* Work out old basis in terms of new */
+
+    for(i=0;i<3;i++){
+      for(j=0;j<3;j++){
+	old_frac[i][j]=0;
+	for(k=0;k<3;k++)
+	  old_frac[i][j]+=old_basis[i][k]*c->recip[j][k];
+      }
+    }
+
+    /* These should all be integer... */
+
+    for(i=0;i<3;i++){
+      for(j=0;j<3;j++){
+	if (!aeq(old_frac[i][j],floor(old_frac[i][j]+0.5))){
+	  fprintf(stderr,"Unexpected transformation from primitive cell\n");
+	  for(k=0;k<3;k++)
+	    fprintf(stderr,"%6lf %6lf %6lf\n",old_frac[k][0],
+		    old_frac[k][1],old_frac[k][2]);
+	  exit(1);
+	}
+      }
+    }
+
+    /* Work out snapped old basis */
+
+    for(i=0;i<3;i++){
+      for(j=0;j<3;j++){
+	old_basis[i][j]=0;
+	for(k=0;k<3;k++)
+	  old_basis[i][j]+=floor(old_frac[i][k]+0.5)*c->basis[k][j];
+      }
+    }
+
+    if (debug>2){
+      fprintf(stderr,"Snapped old basis:\n");
+      for(i=0;i<3;i++)
+	fprintf(stderr,"% 15.11f % 15.11f % 15.11f\n",old_basis[i][0],
+		old_basis[i][1],old_basis[i][2]);
+    }
+
+    super(c,m,old_basis,NULL,s,NULL,0);
+
+    free(c2->basis);
+    free(c2);
+    free(m2->atoms);
+    free(m2);
+    
+    return 0;
+    
+  } /* end if (op&CSPG_SNAP) */
 
   spg=NULL;
   result=0;
 
   /* spg_refine_cell can return four times as many atoms as is passed */
-  if (op&CSPG_REF){
+  if ((op&CSPG_REF)||(op&CSPG_STD)){
     spg_pos=malloc(4*3*m->n*sizeof(double));
     spg_type=malloc(4*m->n*sizeof(int));
   }
@@ -158,6 +377,20 @@ int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
       }
     }
 
+    if (op&CSPG_STD){
+      natoms2=spg_standardize_cell(spg_latt,spg_pos,spg_type,m->n,
+                                   0,1,spg_symprec);
+      if (natoms2==0){
+        fprintf(stderr,"spglib finds no standardisation\n");
+        natoms2=m->n;
+        if (op==CSPG_STD) return 0;
+      }
+      else{
+        m->n=natoms2;
+        s->n=0;
+      }
+    }
+    
     if (op&CSPG_PRIM){
       natoms2=spg_find_primitive(spg_latt,spg_pos,spg_type,m->n,spg_symprec);
       if (natoms2==0){
@@ -171,6 +404,18 @@ int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
       }
     }
 
+    /* This one will not rotate basis vectors in Cartesian space */
+    if (op&CSPG_PRIM_NR){
+      natoms2=spg_standardize_cell(spg_latt,spg_pos,spg_type,m->n,
+                                   1,1,spg_symprec);
+      if (natoms2==0)
+	error_exit("spglib finds no primitive cell\n");
+      else{
+        m->n=natoms2;
+        s->n=0;
+      }
+    }
+    
     if (op&CSPG_SCH){
       result=spg_get_schoenflies(spg_sym,spg_latt,spg_pos,spg_type,m->n,
                                  spg_symprec);
@@ -228,10 +473,21 @@ int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
       }
     }
   }
-    
-  m->n=natoms2;
+
+  
+  if (debug) fprintf(stderr,"SPGlib returns %d atoms\n",m->n);
 
   /* Convert back to c2x-style variables */
+
+  /* First k-points */
+
+  if (kp){
+    for(i=0;i<3;i++)
+      for(j=0;j<3;j++)
+        new_basis[j][i]=spg_latt[i][j];
+    super(c,m,new_basis,kp,NULL,NULL,4);
+  }
+  
   for(i=0;i<3;i++)
     for(j=0;j<3;j++)
       c->basis[j][i]=spg_latt[i][j];
@@ -253,7 +509,7 @@ int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
    * whereas we like zeros */
 
   reduce_cell_tol(m->atoms,m->n,c->basis);
-  sort_atoms(m,1);
+  if (!(op&CSPG_NO_SORT)) sort_atoms(m,1);
 
   /* SPG has sym-ops in fractional co-ords, Castep in cartesians */
   if ((op&(CSPG_SYM|CSPG_PNT))&&(s->n)) {
@@ -263,6 +519,8 @@ int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
   }
 
   free(auid);
+  free(spg_type);
+  free(spg_pos);
   return 0;
 
 }
@@ -369,4 +627,63 @@ int spgr_is_double(int spgr){
     i++;
   }
   return hit;
+}
+
+
+void rotate(double v[3], double axis[3], double theta){
+  int i,j;
+  double basis[3][3],frac[3];
+  double tmp;
+
+  if (debug>1)
+    fprintf(stderr,"Rotating (%lf,%lf,%lf) by %lf about (%lf,%lf,%lf)\n",
+	    v[0],v[1],v[2],theta,axis[0],axis[1],axis[2]);
+  
+
+  /* First basis vector is rotation axis */
+  
+  tmp=sqrt(vmod2(axis));
+  for(i=0;i<3;i++) basis[0][i]=axis[i]/tmp;
+
+  /* Second basis vector is residual from vector to be rotated */
+
+  tmp=0;
+  for(i=0;i<3;i++) tmp+=v[i]*basis[0][i];
+
+  for(i=0;i<3;i++) basis[1][i]=v[i]-tmp*basis[0][i];
+
+  tmp=sqrt(vmod2(basis[1]));
+
+  if (tmp<1e-10) return; /* v and axis are parallel -- nothing to do */
+  for(i=0;i<3;i++) basis[1][i]/=tmp;
+
+  /* Third basis vector is cross product of other two */
+  
+  vcross(basis[0],basis[1],basis[2]);
+  tmp=sqrt(vmod2(basis[2]));  /* Unnecessary -- should be 1 anyway */
+  for(i=0;i<3;i++) basis[2][i]/=tmp;
+
+  /* New basis is orthogonal, so easy to convert v into it */
+
+  for(i=0;i<3;i++){
+    frac[i]=0;
+    for(j=0;j<3;j++)
+      frac[i]+=v[j]*basis[i][j];
+  }
+
+  /* Now rotate -- frac[2] will be zero at this point */
+  /* and frac[0] will be unchanged */
+  
+  frac[2]=frac[1]*sin(theta);
+  frac[1]=frac[1]*cos(theta);
+
+  /* And convert back to v */
+
+  for(i=0;i<3;i++){
+    v[i]=0;
+    for(j=0;j<3;j++)
+      v[i]+=frac[j]*basis[j][i];
+  }
+
+  
 }

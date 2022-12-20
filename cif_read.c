@@ -28,7 +28,7 @@
 #define LINE_SIZE 2049
 
 static char* cif_loop(FILE *infile, struct unit_cell *c, struct contents *m,
-		      struct symmetry *s);
+		      struct symmetry *s, int *need_abs);
 
 int scmp(char *s1, char *s2){
   return (strncasecmp(s1,s2,strlen(s2))==0)?1:0;
@@ -36,7 +36,7 @@ int scmp(char *s1, char *s2){
 
 void cif_read(FILE* infile, struct unit_cell *c, struct contents *m,
 	      struct symmetry *s){
-  int have_data=0,have_basis=0,hit,i,no_read,sym_warn=0;
+  int have_data=0,have_basis=0,hit,i,no_read,sym_warn=0,need_abs=0;
   double abc[6];
   char buffer[LINE_SIZE+1], *buff;
 
@@ -59,6 +59,7 @@ void cif_read(FILE* infile, struct unit_cell *c, struct contents *m,
     buff=buffer;
     while (*buff==' ') buff++;
     if(buff[0]=='\n') continue;
+    if(buff[0]=='\r') continue;
     if(buff[0]=='#') continue;
 
     if (!have_data){
@@ -88,7 +89,7 @@ void cif_read(FILE* infile, struct unit_cell *c, struct contents *m,
     else if (scmp(buff,"_symmetry"))
       sym_warn=1;
     else if (scmp(buff,"loop_")){
-      buff=cif_loop(infile,c,m,s);
+      buff=cif_loop(infile,c,m,s,&need_abs);
       if (buff){
 	strncpy(buffer,buff,LINE_SIZE);
 	no_read=1;
@@ -113,8 +114,12 @@ void cif_read(FILE* infile, struct unit_cell *c, struct contents *m,
 
   if (m->n==0) error_exit("No atoms found");
 
-  addabs(m->atoms,m->n,c->basis);
-
+  real2rec(c);
+  if (need_abs==1)
+    addabs(m->atoms,m->n,c->basis);
+  if (need_abs==-1)
+    addfrac(m->atoms,m->n,c->recip);
+  
   if ((sym_warn)&&(s->n==0)){
     fprintf(stderr,"Warning: CIF file contains symmetry information, but\n"
 	    "no list of symmetry operations. Symmetry information ignored.\n");
@@ -170,13 +175,14 @@ void sym_expand(struct unit_cell *c, struct contents *m, struct symmetry *s){
 
 
 static char* cif_loop(FILE *infile, struct unit_cell *c, struct contents *m,
-		      struct symmetry *s){
+		      struct symmetry *s, int *need_abs){
   int i,j,maxfield,first;
   int fx,fy,fz,fsym,flab,fsym_as_xyz,*f;
+  int cx,cy,cz;
   static char buffer[LINE_SIZE];
-  char*p1,sym[4],*buff;
-
-  fx=fy=fz=fsym=flab=fsym_as_xyz=-1;
+  char *p1,sym[4],*buff;
+  
+  fx=fy=fz=fsym=flab=fsym_as_xyz=cx=cy=cz=-1;
   f=NULL;
   i=0;
   if (debug>2) fprintf(stderr,"loop_ being parsed\n");
@@ -193,9 +199,12 @@ static char* cif_loop(FILE *infile, struct unit_cell *c, struct contents *m,
     if (scmp(buff,"_atom_site_type_symbol")||
 	scmp(buff,"_atom_site.type_symbol"))
       fsym=i;
+    else if (scmp(buff,"_atom_site_label_atom_id")||
+	scmp(buff,"_atom_site.label_atom_id"))
+      flab=i;
     else if (scmp(buff,"_atom_site_label")||
 	scmp(buff,"_atom_site.label"))
-      flab=i;
+      {if (isspace(buff[strlen("_atom_site.label")])) flab=i;}
     else if (scmp(buff,"_atom_site_fract_x")||
              scmp(buff,"_atom_site.fract_x"))
       fx=i;
@@ -205,6 +214,15 @@ static char* cif_loop(FILE *infile, struct unit_cell *c, struct contents *m,
     else if (scmp(buff,"_atom_site_fract_z")||
 	     scmp(buff,"_atom_site.fract_z"))
       fz=i;
+    else if (scmp(buff,"_atom_site_cartn_x")||
+             scmp(buff,"_atom_site.cartn_x"))
+      cx=i;
+    else if (scmp(buff,"_atom_site_cartn_y")||
+	     scmp(buff,"_atom_site.cartn_y"))
+      cy=i;
+    else if (scmp(buff,"_atom_site_cartn_z")||
+	     scmp(buff,"_atom_site.cartn_z"))
+      cz=i;
     else if (scmp(buff,"_symmetry_equiv_pos_as_xyz")||
 	     scmp(buff,"_symmetry_equiv.pos_as_xyz"))
       fsym_as_xyz=i;
@@ -230,15 +248,33 @@ static char* cif_loop(FILE *infile, struct unit_cell *c, struct contents *m,
     if (fx>maxfield) maxfield=fx;
     if (fy>maxfield) maxfield=fy;
     if (fz>maxfield) maxfield=fz;
+    if (cx>maxfield) maxfield=cx;
+    if (cy>maxfield) maxfield=cy;
+    if (cz>maxfield) maxfield=cz;
     if (fsym>maxfield) maxfield=fsym;
     if (flab>maxfield) maxfield=flab;
     /* We must either have all of the below, or none */
     if (maxfield!=-1){
-      if (fx==-1) error_exit("_atom_site frac_x not found");
-      if (fy==-1) error_exit("_atom_site frac_y not found");
-      if (fz==-1) error_exit("_atom_site frac_z not found");
+      if ((fx==-1)&&(cx==-1))
+        error_exit("neither _atom_site frac_x nor cartn_x found");
+      if ((fy==-1)&&(cy==-1))
+        error_exit("neither _atom_site frac_y nor cartn_y found");
+      if ((fz==-1)&&(cz==-1))
+        error_exit("neither _atom_site frac_z nor cartn_z found");
       if (fsym==-1)
 	error_exit("Neither _atom_site type_symbol nor label found");
+      if ((cx==-1)||(cy==-1)||(cz==-1)){
+        if ((fx!=-1)&&(fy!=-1)&&(fz!=-1))
+          *need_abs=1;
+        else
+          error_exit("Mixed fractional and cartesian atomic co-ords");
+      }
+      if ((fx==-1)||(fy==-1)||(fz==-1)){
+        if ((cx!=-1)&&(cy!=-1)&&(cz!=-1))
+          *need_abs=-1;
+        else
+          error_exit("Mixed fractional and cartesian atomic co-ords");
+      }
     }
   }
 
@@ -258,6 +294,7 @@ static char* cif_loop(FILE *infile, struct unit_cell *c, struct contents *m,
     buff=buffer;
     while (*buff==' ') buff++;
     if (*buff=='\n') continue;
+    if (*buff=='\r') continue;
     if (*buff=='#') continue;
     if (*buff=='_') break;
     if (scmp(buff,"loop_")) break;
@@ -279,7 +316,11 @@ static char* cif_loop(FILE *infile, struct unit_cell *c, struct contents *m,
       else while((*p1!=' ')&&(*p1!=0)) p1++;
       if (*p1==0) break;
     }
-    if (i<maxfield) error_exit("short of fields in _loop");
+    if (i<maxfield) {
+      fprintf(stderr,"short of fields in _loop, %d found, %d expected\n",
+              i,maxfield);
+      exit(1);
+    }
 
     if (fsym_as_xyz!=-1){
       s->ops=realloc(s->ops,(s->n+1)*sizeof(struct sym_op));
@@ -292,12 +333,14 @@ static char* cif_loop(FILE *infile, struct unit_cell *c, struct contents *m,
 
     m->atoms=realloc(m->atoms,(m->n+1)*sizeof(struct atom));
     if(!m->atoms) error_exit("realloc error in cif_read");
+    init_atoms(m->atoms+m->n,1);
     
-    m->atoms[m->n].spin=0;
-    m->atoms[m->n].chg=0;
-    sscanf(buff+f[fx],"%lf",m->atoms[m->n].frac);
-    sscanf(buff+f[fy],"%lf",m->atoms[m->n].frac+1);
-    sscanf(buff+f[fz],"%lf",m->atoms[m->n].frac+2);
+    if (fx!=-1) sscanf(buff+f[fx],"%lf",m->atoms[m->n].frac);
+    if (fy!=-1) sscanf(buff+f[fy],"%lf",m->atoms[m->n].frac+1);
+    if (fz!=-1) sscanf(buff+f[fz],"%lf",m->atoms[m->n].frac+2);
+    if (cx!=-1) sscanf(buff+f[cx],"%lf",m->atoms[m->n].abs);
+    if (cy!=-1) sscanf(buff+f[cy],"%lf",m->atoms[m->n].abs+1);
+    if (cz!=-1) sscanf(buff+f[cz],"%lf",m->atoms[m->n].abs+2);
 
     /* The symbol field ends on a space, the symbol part of the label
        field ends on a non-alpha, so we can read the symbol in the same
@@ -309,12 +352,14 @@ static char* cif_loop(FILE *infile, struct unit_cell *c, struct contents *m,
     }
     sym[i]=0;
     m->atoms[m->n].atno=atsym2no(sym);
-    m->atoms[m->n].label=NULL;
 
     m->n++;
 
   }
 
+  /* Cannot add fractional / absolute co-ords, as might not have basis yet */
+  
+  
   free(f);
   return(buffer);
 

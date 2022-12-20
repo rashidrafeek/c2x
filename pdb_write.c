@@ -1,6 +1,6 @@
 /* Write a PDB file */
 
-/* Copyright (c) 2007 MJ Rutter 
+/* Copyright (c) 2007, 2019 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -58,6 +58,9 @@ void pdb_write(FILE* outfile, struct unit_cell *c, struct contents *m){
   int i,*n_in_el=NULL;
   double abc[6];
 
+  if (m->n>99999)
+    error_exit("Cannot write pdb file with more than 99,999 atoms");
+  
   if (flags&PDBN){
     n_in_el=calloc(MAX_ELS+1,sizeof(int));
     if (!n_in_el) error_exit("Calloc error in pdbn_write");
@@ -74,7 +77,7 @@ void pdb_write(FILE* outfile, struct unit_cell *c, struct contents *m){
 
   for(i=0;i<m->n;i++)
     if (flags&PDBN){
-      fprintf(outfile,"ATOM   %4d ",i+1);
+      fprintf(outfile,"ATOM  %5d ",i+1);
       if(++n_in_el[min(m->atoms[i].atno,MAX_ELS)]<=99)
           fprintf(outfile,"%2s%02d",atno2sym(m->atoms[i].atno),
                   n_in_el[min(m->atoms[i].atno,MAX_ELS)]);
@@ -88,7 +91,7 @@ void pdb_write(FILE* outfile, struct unit_cell *c, struct contents *m){
                      m->atoms[i].abs[0],
                      m->atoms[i].abs[1],m->atoms[i].abs[2],atno2sym(m->atoms[i].atno));
     }
-    else fprintf(outfile,"ATOM   %4d %2s     X     1     %7.3f %7.3f %7.3f"
+    else fprintf(outfile,"ATOM  %5d %2s     X     1     %7.3f %7.3f %7.3f"
                    "                      %2s\n",
                      i+1,atno2sym(m->atoms[i].atno),m->atoms[i].abs[0],
                      m->atoms[i].abs[1],m->atoms[i].abs[2],atno2sym(m->atoms[i].atno));

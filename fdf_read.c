@@ -122,7 +122,7 @@ void fdf_read(FILE* in, struct unit_cell *c, struct contents *m,
       ptr2=ptr;
       while (*ptr2&&(*ptr2!=' ')) ptr2++;
       format=malloc(ptr2-ptr+1);
-      strncpy(format,ptr,ptr2-ptr);
+      strncpy(format,ptr,(ptr2-ptr)+1);
       continue;
     }
 
@@ -240,11 +240,15 @@ void fdf_read(FILE* in, struct unit_cell *c, struct contents *m,
     for(i=0;i<3;i++)
       for(j=0;j<3;j++)
         c->basis[i][j]=vec[3*i+j]*latticeconstant;
+    free(vec);
+    vec=NULL;
   }
   else if (abc){
     for(i=0;i<3;i++)
       abc[i]*=latticeconstant;
     abc2cart(abc,c);
+    free(abc);
+    abc=NULL;
   }
   else{
     for(i=0;i<3;i++)
@@ -282,6 +286,7 @@ void fdf_read(FILE* in, struct unit_cell *c, struct contents *m,
     fprintf(stderr,"Unrecognised atomic coord format: %s\n",format);
     exit(1);
   }
+  if (format) free(format);
 
   if (scale){
     for(i=0;i<m->n;i++)
@@ -295,7 +300,8 @@ void fdf_read(FILE* in, struct unit_cell *c, struct contents *m,
         m->atoms[i].frac[j]=atomcoords[3*i+j]+shift[j];
     addabs(m->atoms,m->n,c->basis);
   }    
-    
+  free(atomcoords);
+  
   /* Add atomic numbers */
 
   if (!atomspecies)
@@ -303,16 +309,23 @@ void fdf_read(FILE* in, struct unit_cell *c, struct contents *m,
   
   for(i=0;i<m->n;i++)
     m->atoms[i].atno=species_to_atno[atomspecies[i]];
+  free(atomspecies);
+  free(species_to_atno);
 
   /* Add spins */
   
-  if (atomspins)
+  if (atomspins){
     for(i=0;i<m->n;i++)
       m->atoms[i].spin=atomspins[i];
-
+    free(atomspins);
+  }
+  
   /* Miscellaneous */
 
-  if (dmetol) e->etol=(*dmetol)/m->n;
+  if (dmetol) {
+    e->etol=(*dmetol)/m->n;
+    free(dmetol);
+  }
 }
 
 int fdfreadline(char *buffer, int len){
@@ -416,7 +429,7 @@ static void fdfinclude(char *ptr){
   files->next->next=NULL;
   files->next->f=fopen(ptr,"r");
   files=files->next;
-  files->name=malloc(strlen(ptr+1));
+  files->name=malloc(strlen(ptr)+1);
   strcpy(files->name,ptr);
   files->line=0;
   files->include=1; /* This gets set to zero if a block include which

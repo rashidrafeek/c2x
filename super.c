@@ -35,7 +35,7 @@ int atom_sort(const void *a, const void *b);
 int super(struct unit_cell *c, struct contents *mtf,
            double new_basis[3][3], struct kpts *kp, struct symmetry *s, 
            struct grid *gptr, int flags){
-  int i,j,k,l,m,na,at,old_fft[3],same,rhs,quiet;
+  int i,j,k,l,m,na,at,old_fft[3],same,rhs,quiet,kpts_only;
   double old_basis[3][3],old_recip[3][3],old_vol,dtmp;
   double new_in_old[3][3],abc[6];
   struct atom *old_atoms;
@@ -47,16 +47,27 @@ int super(struct unit_cell *c, struct contents *mtf,
 
   rhs=flags&1;
   quiet=flags&2;
+  kpts_only=flags&4;
 
+  /* Correct new basis if not rhs and rhs wanted */
+  /* Correction is exchange of 2nd and 3rd vectors */
+  if (rhs){
+    if (!is_rhs(new_basis)){
+      for(i=0;i<3;i++){
+        dtmp=new_basis[1][i];
+        new_basis[1][i]=new_basis[2][i];
+        new_basis[2][i]=dtmp;
+      }
+    }
+  }
+
+  
   same=1;
   for(i=0;i<3;i++)
     for(j=0;j<3;j++)
       if (!aeq(c->basis[i][j],new_basis[i][j])) same=0;
 
-  if (same){
-    if (rhs==0) return 0;
-    if (is_rhs(c->basis)) return 0;
-  }
+  if (same) return 0;
 
   /* Try to cope with k-points, else throw them away */
 
@@ -102,8 +113,12 @@ int super(struct unit_cell *c, struct contents *mtf,
       if (kp->kpts)  {free(kp->kpts);kp->kpts=NULL;}
     }
     if (kp->mp)    {free(kp->mp);kp->mp=NULL;}
+    free(new_cell.basis);
+    free(rcell.basis);
   }
 
+  if (kpts_only) return 0;
+  
   /* Save old cell */
 
   for(i=0;i<3;i++){
@@ -125,17 +140,8 @@ int super(struct unit_cell *c, struct contents *mtf,
 
   real2rec(c); /* This will also update c->vol */
 
-  if (c->vol<0){
-    if (rhs){ /* Wrong hand set. Reverse two... */
-      for(i=0;i<3;i++){
-        dtmp=c->basis[1][i];
-        c->basis[1][i]=c->basis[2][i];
-        c->basis[2][i]=dtmp;
-      }
-      real2rec(c);
-    }
-    else c->vol=fabs(c->vol);
-  }
+  c->vol=fabs(c->vol);
+
 
   if (debug) fprintf(stderr,"New cell volume %f (%g times old)\n",
                c->vol,c->vol/old_vol);
@@ -285,6 +291,8 @@ int super(struct unit_cell *c, struct contents *mtf,
     mtf->n=na;
   }
 
+  free(old_atoms);
+  
   /* Worry about grids */
 
   while((gptr)&&(gptr->data)){

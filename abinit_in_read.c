@@ -361,6 +361,10 @@ void abinit_in_read(FILE* infile, struct unit_cell *c, struct contents *m,
       free(xcart);
       xcart=NULL;
     }
+    free(typat);
+    typat=NULL;
+    free(znucl);
+    znucl=NULL;
   }
 
   /* spin */
@@ -486,6 +490,8 @@ void abinit_in_read(FILE* infile, struct unit_cell *c, struct contents *m,
         k->mp->disp[i]-=0.5;
       k->mp->disp[i]/=ngkpt[i];
     }
+    if (nshiftk) {free(shiftk); shiftk=NULL;}
+    if (ngkpt) {free(ngkpt); ngkpt=NULL;}
   }
   else if ((nkpt)&&(*nkpt==1)){
     k->n=1;
@@ -501,6 +507,7 @@ void abinit_in_read(FILE* infile, struct unit_cell *c, struct contents *m,
   }
 
   if (kpt) free(kpt);
+  if (nkpt) free(nkpt);
   
   /* misc */
 

@@ -1,6 +1,6 @@
 /* Read a PWscf input file */
 
-/* Copyright (c) 2018 MJ Rutter 
+/* Copyright (c) 2018, 2019 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -68,13 +68,14 @@ static int qe_float_read(char **ptr,double *x){
 
 void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
              struct kpts *k, struct symmetry *s, struct es *e){
-  int i,j,namelist;
+  int i,j,namelist,len;
   int ibrav,ntyp;
   double celldm[7];
   double *abc,x,y,z,c2,alpha,beta,gamma,scale;
   double tx,ty,tz,u,v;
-  char sym[4],*ptr,*p2;
-  int *aspec;
+  double *magmom;
+  char sym[4],*ptr,*p2,*p3;
+  char *aspec;
   int atoms_are_abs,off[3];
 
   ntyp=0;
@@ -82,6 +83,7 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
   namelist=0;
   abc=NULL;
   aspec=NULL;
+  magmom=NULL;
   atoms_are_abs=0;
   for(i=0;i<7;i++)celldm[i]=0;
   ptr="";
@@ -145,6 +147,38 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
         strncpy(m->title,ptr,i);
         ptr=p2;
       }
+      else if(!tokenmatch(&ptr,"prefix")){
+        while ((*ptr)&&(isspace(*ptr))) ptr++;
+        if (*ptr=='=') ptr++;
+        while ((*ptr)&&(isspace(*ptr))) ptr++;
+        if (*ptr!='\'')
+          error_exit("Syntax error for prefix");
+        ptr++;
+        p2=ptr;
+        while ((*p2)&&(*p2!='\'')) p2++;
+        *p2=0;
+        i=strlen(ptr)+1;
+        p3=malloc(i);
+        strncpy(p3,ptr,i);
+	dict_add(m->dict,"QE_prefix",p3);
+        ptr=p2;
+      }
+      else if(!tokenmatch(&ptr,"pseudo_dir")){
+        while ((*ptr)&&(isspace(*ptr))) ptr++;
+        if (*ptr=='=') ptr++;
+        while ((*ptr)&&(isspace(*ptr))) ptr++;
+        if (*ptr!='\'')
+          error_exit("Syntax error for pseudo_dir");
+        ptr++;
+        p2=ptr;
+        while ((*p2)&&(*p2!='\'')) p2++;
+        *p2=0;
+        i=strlen(ptr)+1;
+        p3=malloc(i);
+        strncpy(p3,ptr,i);
+	dict_add(m->dict,"QE_pseudo_dir",p3);
+        ptr=p2;
+      }
       else{
         while ((*ptr)&&(!isspace(*ptr))) ptr++;  /* consume a token */
       }
@@ -169,7 +203,7 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
       else if (!tokenmatch(&ptr,"ecutwfc")){
         if (!qe_float_read(&ptr,&(e->cut_off)))
           error_exit("Error parsing ecutwfc");
-        e->cut_off*=H_eV;
+        e->cut_off*=0.5*H_eV;   /* Units are Rydbergs */
       }
       else if (!strncasecmp(ptr,"celldm(",7)){
         ptr+=7;
@@ -212,6 +246,21 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
           error_exit("Error parsing cosBC");
         abc[3]=acos(x)*180/M_PI;
       }
+      else if (!strncasecmp(ptr,"starting_magnetization(",
+			    strlen("starting_magnetization("))){
+	if (!ntyp) error_exit("starting_magnetization before ntyp");
+	if (!magmom) {
+	  magmom=malloc(ntyp*sizeof(double));
+	  for(j=0;j<ntyp;j++) magmom[j]=0;
+	}
+	ptr+=strlen("starting_magnetization(");
+	if (sscanf(ptr,"%d",&i)!=1)
+          error_exit("Error parsing starting_magnetisation");
+	i--;
+        ptr+=2;
+	if (!qe_float_read(&ptr,magmom+i))
+          error_exit("Error parsing starting_magnetisation");
+      }
       else{
         while ((*ptr)&&(!isspace(*ptr))) ptr++;
       }
@@ -219,21 +268,28 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
     else if (namelist==0){
       if (!tokenmatch(&ptr,"atomic_species")){
         if (ntyp==0) error_exit("atomic_species found before ntyp");
-        aspec=malloc(ntyp*sizeof(int));
+        aspec=malloc(ntyp*4*sizeof(char)); /* QE says label cannot exceed */
+	for(j=0;j<ntyp*4;j++) aspec[j]=0;  /* 3 characters */
+        len=1;
+	p2=malloc(1);
+        *p2=0;
         for(i=0;i<ntyp;i++){
           qe_readline(&ptr,infile);
+	  /* Take a copy of this block */
+	  len=len+strlen(ptr)+2;
+	  p2=realloc(p2,len);
+	  strcat(p2," ");
+	  strcat(p2,ptr);
+	  strcat(p2,"\n");
+	  /* And parse it */
           sym[3]=0;
           for(j=0;j<3;j++){
-            sym[j]=0;
-            if (!isalpha(*ptr)) break;
-            sym[j]=*(ptr++);
-          }
-          for(j=3;j>0;j++){
-            sym[j]=0;
-            aspec[i]=atsym2no(sym);
-            if (aspec[i]) break;
+	    if (*ptr<=' ') break;
+            aspec[4*i+j]=*ptr;
+	    ptr++;
           }
         }
+	dict_add(m->dict,"QE_atomic_species",p2);
       }
       else if (!tokenmatch(&ptr,"atomic_positions")){
         while (*ptr==' ') ptr++;
@@ -263,19 +319,22 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
         for(i=0;i<m->n;i++){
           qe_readline(&ptr,infile);
           /* process label */
-          sym[3]=0;
+          sym[3]=sym[2]=sym[1]=0;
           for(j=0;j<3;j++){
             sym[j]=0;
-            if (!isalpha(*ptr)) break;
+            if (*ptr<=' ') break;
             sym[j]=*(ptr++);
           }
-          for(j=3;j>0;j++){
-            sym[j]=0;
-            m->atoms[i].atno=atsym2no(sym);
-            if (m->atoms[i].atno) break;
-          }
-          /* Eat any trailing non-alpha on symbol */
-          if ((*ptr)&&(!isspace(*ptr))) ptr++;
+	  m->atoms[i].atno=atsym2no(sym);
+	  if (m->atoms[i].atno==0){
+	    m->atoms[i].label=malloc(4);
+	    for(j=0;j<3;j++) m->atoms[i].label[j]=sym[j];
+	    for(j=3;j>0;j--){
+	      sym[j]=0;
+	      m->atoms[i].atno=atsym2no(sym);
+	      if (m->atoms[i].atno) break;
+	    }
+	  }
           if (atoms_are_abs){
             if (multi_scan(ptr,m->atoms[i].abs,3,NULL)!=3)
               error_exit("Error parsing atomic positions");
@@ -629,6 +688,18 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
     addfrac(m->atoms,m->n,c->recip);
   else
     addabs(m->atoms,m->n,c->basis);
+
+  /* Sort out mag moments */
+  if (magmom){
+    for (i=0;i<m->n;i++){
+      ptr=m->atoms[i].label;
+      if (!ptr) ptr=atno2sym(m->atoms[i].atno);
+      for(j=0;j<ntyp;j++)
+	if (!strcasecmp(ptr,aspec+4*j)) break;
+      if (!strcasecmp(ptr,aspec+4*j))
+	m->atoms[i].spin=magmom[j];
+    }
+  }
 
 }
 

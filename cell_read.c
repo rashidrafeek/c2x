@@ -222,9 +222,7 @@ void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
       for(i=0;;i++){
 	m->atoms=realloc(m->atoms,(i+1)*sizeof(struct atom));
 	if (!m->atoms) error_exit("realloc error in cell_read");
-        m->atoms[i].spin=0;
-        m->atoms[i].chg=0;
-        m->atoms[i].label=NULL;
+	init_atoms(m->atoms+i,1);
         if (frac) dptr=m->atoms[i].frac;
         else dptr=m->atoms[i].abs;
         if ((flags&ONETEP)&&(nlabels)){
@@ -262,7 +260,8 @@ void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
         else{ /* Not ONETEP */
           if(!strncasecmp(ptr,"%endblock",9)) break;
           /* Try to read symbol / atomic number */
-          else if(sscanf(buffer,"%d%n",&m->atoms[i].atno,&n)>=1){
+          sym[1]=sym[2]=sym[3]=0;
+          if(sscanf(buffer,"%d%n",&m->atoms[i].atno,&n)>=1){
             ;
           }
           else if (sscanf(buffer,"%12s%n",sym,&n)>=1){

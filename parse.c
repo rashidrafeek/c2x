@@ -47,8 +47,12 @@ static int op_ptr,st_ptr;
 
 /* Return zero on failure, one on success, like sscan */
 int ascan(char *in, double *result){
+  int i;
   if (parse(in)) return 0;
-  return (!evaluate_st(result));
+  i=evaluate_st(result);
+  if (stack) {free(stack); stack=NULL;}
+  if (op_stack) {free (op_stack); op_stack=NULL;}
+  return (!i);
 }
 
 /* act like sscanf(buff,"%lf%n",x,n)
@@ -353,5 +357,6 @@ int evaluate_st(double *result){
   }
   *result=num_st[0];
   if (debug>2) fprintf(stderr,"Result returned: %lf\n",*result);
+  free(num_st);
   return (0);
 }

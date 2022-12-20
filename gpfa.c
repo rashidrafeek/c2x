@@ -102,10 +102,10 @@ void m1fft(double* a, int n, int str, int dir, int rep, int rstr){
   int nf,f,f1,f2,i,j;
   int *factors=0,*powers=0;
 
-    nf=nfactors(n);
-    factors=malloc(nf*sizeof(int));
-    powers=malloc(nf*sizeof(int));
-    factor(n,factors,powers);
+  nf=nfactors(n);
+  factors=malloc(nf*sizeof(int));
+  powers=malloc(nf*sizeof(int));
+  factor(n,factors,powers);
 
   for(f=0;f<nf;f++){
     f1=pow(factors[f],powers[f]);
@@ -115,6 +115,9 @@ void m1fft(double* a, int n, int str, int dir, int rep, int rstr){
       m1spfar(a,factors[f],powers[f],dir,j*str,f2*str,n*str,f2,rep,rstr);
     }
   }
+
+  free(powers);
+  free(factors);
 
 }
 

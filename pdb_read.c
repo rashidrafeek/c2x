@@ -67,10 +67,8 @@ void pdb_read(FILE* infile, struct unit_cell *c, struct contents *m){
     if ((strcasecmp(buff2,"ATOM")==0)||(strcasecmp(buff2,"HETATM")==0)){
       m->atoms=realloc(m->atoms,(m->n+1)*sizeof(struct atom));
       if (!m->atoms) error_exit("realloc error in pdb_read");
+      init_atoms(m->atoms+m->n,1);
       strnncpy(buff2,buffer+30,24); /* grab co-ords section */
-      m->atoms[m->n].spin=0;
-      m->atoms[m->n].chg=0;
-      m->atoms[m->n].label=NULL;
       dptr=m->atoms[m->n].abs;
       if (sscanf(buff2," %lf %lf %lf",dptr,dptr+1,dptr+2)!=3){
 	fprintf(stderr,"Error parsing line\n%s\n",buffer);

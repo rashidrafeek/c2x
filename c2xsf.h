@@ -1,17 +1,20 @@
-#define C2XSF_VER "2.20a"
+#define C2XSF_VER "2.26b"
 
 /* Global variables for system description */
 
-/* Used to use 0.5291772109, 
- *        then 0.529177208114511
- * now this best reflects Castep (16.11)
+/* Note Castep 8, 16 and 17 use CODATA 2010
+ *                18 and 19 use CODATA 2014
+ *
+ * See https://physics.nist.gov/cuu/Constants/index.html
  */
 
-#define BOHR 0.5291772101121114
+#define BOHR 0.52917721067   /* CODATA 2014 */
+          /* 0.52917721092   is CODATA 2010 */
+          /* 0.5291772101121114 is c2x <=2.20a */
 
-#define H_eV 27.21138342902473  /* Right or wrong, it's Castep's value
-                                 * physics.nist.gov gives 27.2113845(23)
-                                 */
+#define H_eV 27.21138602  /* CODATA 2014 */
+          /* 27.21138505  is CODATA 2010 */
+          /* 27.21138342902473 is c2x <=2.20a */
 
 /* epsilon_0 is 8.8541878e-12 Fm^-1 or C V^-1 m-1
  * We want A not m, and e not C, so
@@ -66,7 +69,7 @@
 #define SHELX_AIRSS 2048
 #define LITTLE_OUT 4096
 #define BANDPARITY 8192
-#define BANDU 16384     /* unused? */
+#define FRAC 16384
 #define CST_ESP 32768
 #define AU 65536
 #define GNUPLOT 131072
@@ -97,7 +100,12 @@
 #define CSPG_SYM 16
 #define CSPG_PNT 32
 #define CSPG_LST 64
+#define CSPG_STD 128
+#define CSPG_SNAP 256
+#define CSPG_PRIM_NR 512
+#define CSPG_NO_SORT 1024
 
+struct dct {char *key; void *value; struct dct *next;};
 struct cmt {char *txt; struct cmt *next;};
 /* Currently atom.labels leak and should not be freed, as pointers for
    two different atoms may poin to the same location */
@@ -116,11 +124,18 @@ struct vector {double v[3]; double mod2;};
 struct sym_op {double mat[3][3]; double *tr;};
 struct unit_cell {double (*basis)[3]; double recip[3][3]; double vol;};
 struct contents {int n; int forces; struct atom *atoms; char *title;
-  struct cmt *comment; char *block_species; char *species_misc;};
+  struct cmt *comment; char *block_species; char *species_misc;
+  struct dct *dict;};
 struct kpts {int n; struct atom *kpts; struct mp_grid *mp;};
 struct symmetry {int n; double *tol; int *gen; struct sym_op *ops;};
 struct es {int nspins; int nspinors; char *spin_method; double cut_off;
-  double etol; char *band_range; char *kpt_range; char *spin_range;};
+  double etol; char *band_range; char *kpt_range; char *spin_range;
+  char *dip_corr; char *dip_corr_dir; double *dip_ctr;
+  double *energy; double *e_fermi;};
+
+void *dict_get(struct dct *dict, char *key);
+void dict_add(struct dct *dict, char *key, void *value);
+
 
 void error_exit(char* msg);
 void real2rec(struct unit_cell *cell);
@@ -149,6 +164,9 @@ void add_cmt(struct cmt *comment, char *txt);
 void sym_expand(struct unit_cell *c, struct contents *m, struct symmetry *s);
 int tokenmatch(char **s1, const char *s2);
 void inv_parity(double *d,int fft[3], int band, double kpt[3]);
+void dipole_calc(struct unit_cell *c, struct contents *m,
+                 struct grid *g, double *dipole_ctr, double *dpole);
+void print_cell(struct unit_cell *c, struct contents *m);
 
 unsigned int atsym2no(char* sym);
 char* atno2sym(unsigned no);
@@ -163,6 +181,10 @@ int multi_scan(char *buff, double *x, int rep, int *n);
 void mp_gen(struct kpts *ks, struct unit_cell *c);
 
 extern int igr2hall[];
+
+int super(struct unit_cell *c, struct contents *m,
+           double new_basis[3][3], struct kpts *k, struct symmetry *s,
+           struct grid *gptr, int rhs);
 
 #ifndef min
 #define min(a,b) ((a)<(b)?(a):(b))

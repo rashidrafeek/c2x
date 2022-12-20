@@ -5,7 +5,7 @@
  */
 
 
-/* Copyright (c) 2007 -- 2018 MJ Rutter 
+/* Copyright (c) 2007 -- 2019 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -108,12 +108,16 @@ void abinit_in_read(FILE* infile, struct unit_cell *c, struct contents *m,
                  struct kpts *k, struct symmetry *s, struct es *e);
 void fdf_read(FILE* in, struct unit_cell *c, struct contents *m,
                struct kpts *kp, struct es *e);
+void qe_rho_read(FILE* infile, struct unit_cell *c, struct contents *m,
+                struct kpts *k, struct symmetry *s, struct grid *g,
+                struct es *elect, int *i_grid);
+void qe_xml_read(FILE* infile, char *filename, struct unit_cell *c,
+		 struct contents *m,
+                struct kpts *k, struct symmetry *s, struct grid *g,
+                struct es *elect, int *i_grid);
 
 void molecule_fix(int* m_abc, struct unit_cell *c, struct contents *m,
                   struct grid *g);
-int super(struct unit_cell *c, struct contents *m,
-           double new_basis[3][3], struct kpts *k, struct symmetry *s,
-           struct grid *gptr, int rhs);
 void rotation(struct unit_cell *c, struct contents *m, double new_basis[3][3]);
 void primitive(struct unit_cell *c, struct contents *m, double basis[3][3]);
 void shorten(double basis[3][3]);
@@ -121,11 +125,11 @@ void interpolate3d(struct grid *old_grid, struct grid *new_grid);
 double interpolate0d(struct grid *gptr,double x[3]);
 void fstar(struct kpts *ks, struct unit_cell *c, struct symmetry *rs);
 int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
-            int op, double tolmin);
+            struct kpts *k, int op, double tolmin);
 void dipole(struct unit_cell *c, struct contents *m,
-            struct grid *g, double *dipole_ctr);
+            struct grid *g, struct es *elect);
 void es_pot(struct unit_cell *c, struct contents *m,
-            struct grid *g, double musq);
+            struct grid *g, struct es *elect, double musq);
 
 /* Global variables for system description */
 
@@ -142,6 +146,14 @@ void version(){
 #else
   printf("Not linked with spglib\n");
 #endif
+
+  if (debug){
+    printf("Internal conversion factors:\n");
+    printf("  One Hartree = %.11f eV\n",H_eV);
+    printf("     One Bohr = %.14f A\n",BOHR);
+    printf("      1/eps_0 = %.11f e^-1 V A\n",1/EPS0);
+  }
+
   exit(0);
 }
 
@@ -160,7 +172,6 @@ int main(int argc, char **argv)
   FILE *infile,*outfile;
   double abc[6],new_cell[3][3],new_cell_rel[3][3],*new_mp,zpt[3],g_cut;
   double tolmin=1e-4,ionic_charge,musq;
-  double *dipole_ctr;
   int *m_abc;
   struct grid *gptr;
   struct unit_cell cell,nc;
@@ -180,7 +191,12 @@ int main(int argc, char **argv)
   elect.spin_method=NULL;
   elect.cut_off=0;
   elect.etol=0;
-
+  elect.dip_corr=NULL;
+  elect.dip_corr_dir=NULL;
+  elect.dip_ctr=NULL;
+  elect.energy=NULL;
+  elect.e_fermi=NULL;
+  
   motif.atoms=NULL;
   motif.n=motif.forces=0;
   motif.title=NULL;
@@ -189,6 +205,9 @@ int main(int argc, char **argv)
   motif.comment=malloc(sizeof(struct cmt));
   motif.comment->txt=NULL;
   motif.comment->next=NULL;
+  motif.dict=malloc(sizeof(struct dct));
+  motif.dict->key=NULL;
+  motif.dict->next=NULL;
   cell.basis=NULL;
   cell.vol=0;
   sym.tol=NULL;
@@ -207,7 +226,6 @@ int main(int argc, char **argv)
   grid1.next=NULL;
   grid1.data=NULL;
   grid1.name=NULL;
-  dipole_ctr=NULL;
   flags=0;
 
   opt=1;
@@ -261,10 +279,14 @@ int main(int argc, char **argv)
         else if (!strcmp(optp,"--den_fmt")) format=DENFMT;
         else if (!strcmp(optp,"--abinit")) format=ABINIT;
         else if (!strcmp(optp,"--qe")) format=QE;
+        else if (!strcmp(optp,"--qef")) {format=QE; flags|=FRAC;}
         else if (!strcmp(optp,"--null")) format=CNULL;
 
         else if (!strcmp(optp,"--primitive")) spg_op|=CSPG_PRIM;
         else if (!strcmp(optp,"--refine")) spg_op|=CSPG_REF;
+        else if (!strcmp(optp,"--standardise")) spg_op|=CSPG_STD;
+        else if (!strcmp(optp,"--standardize")) spg_op|=CSPG_STD;
+        else if (!strcmp(optp,"--snap")) spg_op|=CSPG_SNAP;
         else if (!strcmp(optp,"--int")) spg_op|=CSPG_INT;
         else if (!strcmp(optp,"--schoen")) spg_op|=CSPG_SCH;
         else if (!strcmp(optp,"--symmetry")) spg_op|=CSPG_SYM;
@@ -331,11 +353,18 @@ int main(int argc, char **argv)
           flags|=CHDIFF;
           break;
         case 'D':
-          dipole_ctr=malloc(3*sizeof(double));
+          elect.dip_ctr=malloc(3*sizeof(double));
+          if(((*(optp+1)>='a')&&(*(optp+1)<='c'))||(*(optp+1)=='m')){
+            elect.dip_corr_dir=malloc(1);
+            if (!elect.dip_corr_dir) error_exit("Malloc error for char!");
+            *elect.dip_corr_dir=*(optp+1);
+            optp++;
+          }
           if(*(optp+1)=='='){
-            i=sscanf(optp+2,"%lf,%lf,%lf",dipole_ctr,dipole_ctr+1,
-                     dipole_ctr+2);
-            if ((i==0)||(i==EOF)) dipole_ctr[0]=dipole_ctr[1]=dipole_ctr[2]=0.5;
+            i=sscanf(optp+2,"%lf,%lf,%lf",elect.dip_ctr,elect.dip_ctr+1,
+                     elect.dip_ctr+2);
+            if ((i==0)||(i==EOF))
+              elect.dip_ctr[0]=elect.dip_ctr[1]=elect.dip_ctr[2]=0.5;
             else if (i!=3) error_exit("malformed option -D=");
             while(*((++optp)+1));
           }
@@ -604,11 +633,17 @@ int main(int argc, char **argv)
     pdb_read(infile,&cell,&motif);
   else if ((i==7)&&(!strcmp(file1,"fort.34")))
     fort34_read(infile,&cell,&motif,&sym);
+  else if ((i==18)&&(!strcmp(file1,"charge-density.dat")))
+    qe_rho_read(infile,&cell,&motif,&kp,&sym,&grid1,&elect,i_grid);
+  else if ((i>4)&&(!strcmp(file1+i-4,".xml")))
+    qe_xml_read(infile,file1,&cell,&motif,&kp,&sym,&grid1,&elect,i_grid);
   else if ((i>2)&&(!strcmp(file1+i-2,"12")))
     crystal_read(infile,&cell,&motif,&sym);
   else if ((i>4)&&(!strcmp(file1+i-4,".res")))
     shelx_read(infile,&cell,&motif);
   else if ((i>4)&&(!strcmp(file1+i-4,".cif")))
+    cif_read(infile,&cell,&motif,&sym);
+  else if ((i>6)&&(!strcmp(file1+i-6,".mmcif")))
     cif_read(infile,&cell,&motif,&sym);
   else if ((i>4)&&(!strcmp(file1+i-4,".cub")))
     cube_read(infile,&cell,&motif,&grid1);
@@ -761,7 +796,7 @@ int main(int argc, char **argv)
 
   }
 
-  if ((dipole_ctr)&&(grid1.data)) dipole(&cell,&motif,&grid1,dipole_ctr);
+  if ((elect.dip_ctr)&&(grid1.data)) dipole(&cell,&motif,&grid1,&elect);
 
   if (debug>2){
     fprintf(stderr,"Ionic positions, fractional\n");
@@ -840,7 +875,7 @@ int main(int argc, char **argv)
           gptr->data=ng.data;
           for(i=0;i<3;i++) gptr->size[i]=ng.size[i];
         }
-        es_pot(&cell,&motif,&grid1,musq);
+        es_pot(&cell,&motif,&grid1,&elect,musq);
         calc_esp=0;
       }
 
@@ -871,7 +906,7 @@ int main(int argc, char **argv)
     gptr=gptr->next;
   }
 
-  if ((calc_esp)&&(grid1.data)) es_pot(&cell,&motif,&grid1,musq);
+  if ((calc_esp)&&(grid1.data)) es_pot(&cell,&motif,&grid1,&elect,musq);
     
   if (pt_spec){
     lscan(&pt_spec,&motif,zpt);
@@ -895,7 +930,7 @@ int main(int argc, char **argv)
 
   if (half_shift) xplor_fudge(&cell,&motif,&grid1);
 
-  if (spg_op) cspq_op(&cell,&motif,&sym,spg_op,tolmin);
+  if (spg_op) cspq_op(&cell,&motif,&sym,&kp,spg_op,tolmin);
 
   if (prim) {
     double nb1[3][3];
@@ -1054,7 +1089,7 @@ int main(int argc, char **argv)
       fprintf(stderr,"This cannot happen. Sorry\n");
   }
 
-  return(0);
+  exit(0); /* valgrind prefers this to return(0); */
 }
 
 void help(void){
@@ -1073,6 +1108,10 @@ void help(void){
          "               the .cell or .check file given\n"
          "-D=[x,y,z]   calculate dipole moment about fractional co-ordinates\n"
          "               x,y,z (default .5,.5,.5) assuming -c also given\n"
+         "-Da=[x,y,z]  ditto, and apply post-hoc slab energy correction with\n"
+         "               perpendicular axis a. Valid values a, b and c.\n"
+         "-Dm=[x,y,z]  ditto, but apply post-hoc correction for molecule in\n"
+         "               cubic box\n"
          "-e           read also a .cst_esp file, constructing its name from\n"
          "               the .cell or .check file given\n"
          "-e=eps       set tolerance for supercell operations. Default=%g\n"
@@ -1152,7 +1191,8 @@ void help(void){
          "                  pdbn      PDB with atoms numbered\n"
          "                  py        python dictionary\n"
          "                  pya       python ASE Atoms\n"
-         "                  qe        Quantum Espresso\n"
+         "                  qe        Quantum Espresso .in\n"
+         "                  qef            ditto, fractional atomic coords\n"
          "                  refs      List BibTeX references for this code "
          "and exit\n"
          "                  shelx     SHELX97\n"
@@ -1166,6 +1206,9 @@ void help(void){
          "   int            call spg_get_dataset()"
          " and report international symbol\n"
          "   schoen         call spg_get_schoenflies()\n"
+	 "   snap           call spg_standardize_cell() then expand back\n"
+	 "                     to a snapped version of the original cell\n"
+         "   standardise    call spg_standardize_cell(no_idealize=1)\n"
          "   symmetry       call spg_get_dataset() and keep symmetry ops\n"
          "   list           call spg_get_dataset() and list symmetry ops\n"
          "   point          call spg_get_dataset() followed by "
@@ -1174,7 +1217,8 @@ void help(void){
   printf("range specifies band numbers as \"a,b-c,d\"\n"
          "-b and -B are mutually exclusive. Only one of the x and t"
          " options may be given\n\n");
-  printf("Input files ending .cif are assumed to be in a cif format,\n"
+  printf("Input files ending .cif or .mmcif are assumed to be in "
+            "a cif format,\n"
 	 "            ending .cub, .cube or _CUBE are assumed to be in "
             "cube format,\n"
 	 "            ending .fdf are assumed to be in Siesta format,\n"
@@ -1182,6 +1226,7 @@ void help(void){
          "              Quantum Espresso format,\n"
          "            ending .pdb are assumed to be in pdb format,\n"
          "            ending .res are assumed to be in shelx97 format,\n"
+	 "            ending .xml are assumed to be QE PWscf output,\n"
          "            ending .xsf are assumed to be in xsf format,\n"
 	 "            ending POT or DEN are assumed to be in "
 	 "Abinit binary format,\n");
@@ -1199,11 +1244,15 @@ void help(void){
          " licenced under the GPL v3.\n\n");
   printf("If useful to a published paper, please consider citing using the\n"
          "references shown with the --refs argument.\n\n");
-  printf("This version is "
-#ifndef SPGLIB
-         "not "
+  printf("This version is ");
+#ifdef SPGLIB
+  printf("linked with spglib version %d.%d.%d\n",
+         spg_get_major_version(),
+         spg_get_minor_version(),
+         spg_get_micro_version());
+#else
+  printf("not linked with spglib\n");
 #endif
-         "linked against spglib.\n\n");
   exit(0);
 }
 

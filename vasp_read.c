@@ -201,7 +201,8 @@ void vasp_read(FILE* infile, struct unit_cell *c, struct contents *m,
   m->n=natoms;
   m->atoms=malloc(natoms*sizeof(struct atom));
   if(!m->atoms) error_exit("Malloc error for m->atoms in vasp_read");
-
+  init_atoms(m->atoms,m->n);
+  
   k=0;
   for(i=0;i<nspec;i++){
     for(j=0;j<nionsp[i];j++){
@@ -221,9 +222,6 @@ void vasp_read(FILE* infile, struct unit_cell *c, struct contents *m,
         }
       }
       m->atoms[k].atno=species[i];
-      m->atoms[k].spin=0;
-      m->atoms[k].chg=0;
-      m->atoms[k].label=NULL;
       k++;
     }
   }

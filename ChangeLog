@@ -1,4 +1,45 @@
-2.20a
+2.26b
+-----
+
+Fix translation bug in --snap
+
+2.26a (29/3/19)
+-----
+
+Fix kpoints after calling spglib
+Fix misc off-by-one memory errors
+Add a few free()s to stop minor leaks
+
+2.26 (27/3/19)
+----
+
+Readers for QE output: xml and non-hdf5 charge-density.dat
+Read starting_magnetization from QE .in, write to QE .in
+Add --qef output: QE with fractional atomic coords
+Read pseudopots from .check file, and add block if writing .cell file
+Add dict structure, read prefix and pseudo dir from QE files
+Use init_atoms() to initialise atoms in all readers
+Add --standardise for SPGlib standardize_cell(no_idealize=1)
+Add --snap for SPGlib standardize_cell() followed by expansion to a
+  snapped version of original cell
+Fix bug in ident_sym which might give error on 2 and -2 axes
+Fix bug in ident_sym which prevented identification of screw axes
+Change return(0) in main() to exit(0) to keep valgrind happy
+
+2.25 (22/2/19)
+----
+
+Refactor dipole code, and remove a global variable
+Add -Da= syntax for a=a, b or c
+Thus calculate post-hoc slab correction
+Introduce -Dm= for cubic boxes only
+Update defn of Hartree to CODATA 2014
+Limit on number of atoms in PDB file written raised from 9,999 to 99,999
+Error given if above limit exceeded
+Improvements to cif reader: recognises cartn_x as well as frac_x
+Improvements to cif reader: better treatment of DOS line endings
+
+2.20a (11/2/2019)
 -----
 
 Correct _atom_site type_label to  _atom_site label in cif reader

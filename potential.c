@@ -9,11 +9,15 @@ void ion_recrho(struct unit_cell *c, struct contents *m,
                 int fft[3], double *cgrid, double musq);
 
 void es_pot(struct unit_cell *c, struct contents *m,
-            struct grid *g, double musq){
+            struct grid *g, struct es *elect, double musq){
   int i,j,k,ii,jj,kk,ngx,ngy,ngz;
-  int grid_size,fft[3],ffft[3];
+  int grid_size,fft[3],ffft[3],ind[3],dipole_slab_dir;
   double *cgrid,*cigrid,gvec[3],scale,gsq;
+  double dpole[3],field,off,*dipole_ctr;
+  double vec[3],mag;
 
+  dipole_ctr=elect->dip_ctr;
+  
   if (debug) fprintf(stderr,"Calculating ES potential\n");
   
   /* First calculate electronic contribution to the ES potential */
@@ -97,6 +101,45 @@ void es_pot(struct unit_cell *c, struct contents *m,
 
   fft3d(cgrid,ffft,1);
 
+  if (dipole_ctr){ /* Need to correct for dipole */
+    dipole_calc(c,m,g,dipole_ctr,dpole);
+    dipole_slab_dir=-1;
+    if (elect->dip_corr_dir){
+      dipole_slab_dir=elect->dip_corr_dir[0]-'a';
+    }
+    if ((dipole_slab_dir>=0)&&(dipole_slab_dir<3)){
+      /* Find unit vector in dipole_slab_dir */
+      for(i=0;i<3;i++)
+        vec[i]=c->basis[dipole_slab_dir][i];
+      mag=0;
+      for(i=0;i<3;i++)
+        mag+=vec[i]*vec[i];
+      mag=sqrt(mag);
+      /* Dot dipole with this to find field */
+      field=0;
+      for(i=0;i<3;i++)
+        field+=dpole[i]*vec[i]/mag;
+      field=field/(EPS0*c->vol);
+      fprintf(stderr,"Adding dipole correction of %.3f V/A to potential\n",
+              field);
+      field=field*mag; /* in volt/unit cell */
+      field=field/g->size[dipole_slab_dir];  /* in volt/grid cell */
+      fprintf(stderr,"g->size=[%d,%d,%d]\n",g->size[0],g->size[1],
+              g->size[2]);
+      for(i=0;i<ngx;i++){
+        ind[0]=i;
+        for(j=0;j<ngy;j++){
+          ind[1]=i;
+          for(k=0;k<ngz;k++){
+            ind[2]=k;
+            off=(ind[dipole_slab_dir]-0.5*g->size[dipole_slab_dir])*field;
+            cgrid[2*(k+fft[2]*(j+i*fft[1]))]+=off;
+          }
+        }
+      }
+    }
+  }
+
   /* copy back to real grid */
   
   for(i=0;i<grid_size;i++){
@@ -104,7 +147,7 @@ void es_pot(struct unit_cell *c, struct contents *m,
   }
 
   free(cgrid);
-
+  
   g->name=malloc(30);
   if (!g->name) error_exit("Malloc error for grid name");
   sprintf(g->name,"Potential_Volts");
