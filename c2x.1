@@ -134,12 +134,17 @@ assume input is molecule, not crystal. Try to avoid outputing a cell,
 shift if some co-ordinates are negative, or if a,b,c given shift by
 those numbers of FFT grid cells.
 .TP
+.B \-m[=a,b,c]
+assume input is molecule, not crystal. Try to avoid outputing a cell,
+shift atoms by fractional co-ordinates given.
+.TP
 .B \-n
 discard symmetry information, and, if output is XSF, discard forces. Give
 twice to discard k-points too.
 .TP
 .B \-N
-normalise by reducing fractional coords to 0<=x<1.
+normalise by reducing fractional coords to 0<=x<1. In conjunction with -m,
+do output a cell.
 .TP
 .B \-O
 print band occupancies and evalues to stderr.
@@ -206,6 +211,9 @@ factors.
 .TP
 .B \-w
 weight bands by occupancies, or sqrt(occ) if not calculating density.
+.TP
+.B \-w=k
+weight bands by k-point weight, but not occupancy.
 .TP
 .B \-W
 weight bands by occupancies and k-point weight, or sqrt thereof if not
@@ -410,8 +418,14 @@ call spg_get_schoenflies()
 call spg_standardize_cell() then expand back to a snapped version of the
 original cell
 .TP
+.B \-\-snap_tr
+ditto, but include any translation introduced by spglib
+.TP
 .B \-\-standardise
 call spg_standardize_cell(no_idealize=1)
+.TP
+.B \-\-std_ideal
+call spg_standardize_cell(no_idealize=0)
 .TP
 .B \-\-symmetry
 call spg_get_dataset() and keep symmetry ops
@@ -436,11 +450,11 @@ coordinates, a rotation is likely to be required to place
 .B a
 on the cartesian
 .B x
-axis, etc. If so, it will be done automatically. The same is true for the abc
-varients of the cell format and for the Xplor file format. This rotation can be
-specified explicitly for other formats. Additionally the axes must form
-a right-handed set. If this is not the case, two axes will be interchanged.
-By default,
+axis, etc. If so, it will be done automatically. The same is true for
+the abc varients of the cell format and for the Xplor and cif file
+formats. This rotation can be specified explicitly for other
+formats. Additionally the axes must form a right-handed set. If this
+is not the case, two axes will be interchanged.  By default,
 .B b
 and
 .B c

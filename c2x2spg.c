@@ -76,6 +76,7 @@ int cspg_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
   double rhs[3][3],tr[3];
   struct contents *m2;
   struct unit_cell *c2;
+  struct symmetry stmp;
   
   /* SPG variables */
   double spg_latt[3][3];
@@ -121,6 +122,11 @@ int cspg_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
       fprintf(stderr,"CSPG_PRIM returns:\n");
       print_cell(c,m);
     }
+    if (debug){
+      fprintf(stderr,"In primitive cell, ");
+      cspg_op(c,m,&stmp,NULL,CSPG_INT,tolmin);
+      fprintf(stderr,"(%d symmetry operations)\n",stmp.n);
+    }      
 
     /* Wonder about translation */
     for(i=0;i<3;i++)
@@ -129,14 +135,18 @@ int cspg_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
     if (debug>2)
       fprintf(stderr,"Translation is %12.8f %12.8f %12.8f\n",
               tr[0],tr[1],tr[2]);
-    if (vmod2(tr)>0.0){
-      for(i=0;i<m->n;i++)
-        for(j=0;j<3;j++)
-          m->atoms[i].frac[j]-=tr[j];
 
-      reduce_cell(m->atoms,m->n,c->basis);
-      real2rec(c);
-      addabs(m->atoms,m->n,c->basis);
+    if (!(op&CSPG_SNAP_TR)){
+      if (debug>1) fprintf(stderr,"Discarding translation\n");
+      if (vmod2(tr)>0.0){
+	for(i=0;i<m->n;i++)
+	  for(j=0;j<3;j++)
+	    m->atoms[i].frac[j]-=tr[j];
+
+	reduce_cell(m->atoms,m->n,c->basis);
+	real2rec(c);
+	addabs(m->atoms,m->n,c->basis);
+      }
     }
     
 
@@ -324,7 +334,7 @@ int cspg_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
   spg=NULL;
 
   /* spg_refine_cell can return four times as many atoms as is passed */
-  if ((op&CSPG_REF)||(op&CSPG_STD)){
+  if ((op&CSPG_REF)||(op&CSPG_STD)||(op&CSPG_STD_IDEAL)){
     spg_pos=malloc(4*3*m->n*sizeof(double));
     spg_type=malloc(4*m->n*sizeof(int));
   }
@@ -397,13 +407,13 @@ int cspg_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
     }
   }
 
-  if (op&CSPG_STD){
+  if ((op&CSPG_STD)||(op&CSPG_STD_IDEAL)){
     natoms2=spg_standardize_cell(spg_latt,spg_pos,spg_type,m->n,
-				 0,1,spg_symprec);
+				 0,(op&CSPG_STD_IDEAL)?0:1,spg_symprec);
     if (natoms2==0){
       fprintf(stderr,"spglib finds no standardisation\n");
       natoms2=m->n;
-      if (op==CSPG_STD) return 0;
+      if ((op==CSPG_STD)||(op==CSPG_STD_IDEAL)) return 0;
     }
     else{
       m->n=natoms2;
@@ -581,8 +591,8 @@ int cspg_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
   }
 
 #else
-  int cspg_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
-	      int op){
+int cspg_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
+            struct kpts *kp, int op, double tolmin){
     fprintf(stderr,"Error: spglib functionality not available"
 	    " in this version of c2x\n");
     exit(1);

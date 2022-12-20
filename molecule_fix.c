@@ -33,7 +33,8 @@
 
 #include "c2xsf.h"
 
-void molecule_fix(int* m_abc, struct unit_cell *c, struct contents *m,
+void molecule_fix(int m_abc[3], double m_rel[3], struct unit_cell *c,
+		  struct contents *m,
                   struct grid *gptr){
   int i,j,k,ii,jj,kk,off1,off2;
   int fft[3],shift[3];
@@ -49,20 +50,26 @@ void molecule_fix(int* m_abc, struct unit_cell *c, struct contents *m,
 
   if(!m_abc){ /* We are expected to determine the shift automatically */
 
-    for(k=0;k<3;k++){
-      amin=1000;
-      amax=-1000;
-      for(i=0;i<m->n;i++){
-        if (m->atoms[i].frac[k]>amax)
-          amax=m->atoms[i].frac[k];
-        if (m->atoms[i].frac[k]<amin)
-          amin=m->atoms[i].frac[k];
+    if (m_rel){
+      for(i=0;i<3;i++) ashift[i]=m_rel[i];
+    }
+    else{
+      for(k=0;k<3;k++){
+	amin=1000;
+	amax=-1000;
+	for(i=0;i<m->n;i++){
+	  if (m->atoms[i].frac[k]>amax)
+	    amax=m->atoms[i].frac[k];
+	  if (m->atoms[i].frac[k]<amin)
+	    amin=m->atoms[i].frac[k];
+	}
+	ashift[k]=0.5-0.5*(amax+amin);
       }
-      ashift[k]=0.5-0.5*(amax+amin);
     }
     if (!gptr->data){
-      fprintf(stderr,"Shifting by (%.6f,%.6f,%.6f)\n",ashift[0],
-              ashift[1],ashift[2]);
+      if ((!m_rel)||(debug))
+	fprintf(stderr,"Shifting by (%.6f,%.6f,%.6f)\n",ashift[0],
+		ashift[1],ashift[2]);
       for(i=0;i<m->n;i++)
         for(k=0;k<3;k++)
           m->atoms[i].frac[k]+=ashift[k];

@@ -5,14 +5,14 @@ This program should convert CASTEP's .check, .castep_bin, orbitals and
 .cell to various other formats, particularly so that they can be
 visualised with Jmol (http://www.jmol.org), XCrysDen
 (http://www.xcrysden.org), gnuplot and other programs. It can extract
-change and spin densities, wavefunctions, symmetry operations, and
-much else besides. It also interfaces with VASP, Siesta, and
-other electronic structure codes. Examples of c2x's use
+charge and spin densities, wavefunctions, symmetry operations, and
+much else besides. It also interfaces with Abinit, Quantum Espresso, Siesta,
+VASP, and other electronic structure codes. Examples of c2x's use
 can be found at http://www.c2x.org.uk/ and further documentation is in
 the included man page (c2x.1).
 
-The code can also manipulate .cell and .pdb files, building supercells
-or performing shifts.
+The code can also manipulate .cell and .pdb files, building supercells,
+performing shifts, adding vacuum and rolling nanotubes.
 
 Assuming it has been linked with the spglib library, it can also 
 provide the symmetry analysis functions of spglib.
@@ -26,4 +26,4 @@ in the code.
 The code should build easily if one sets CFLAGS and CC in the Makefile
 correctly. Further instructions are in the INSTALL file.
 
-MJR 8/2007, 1/2012, 12/2017, 2/2019
+MJR 8/2007--11/2020

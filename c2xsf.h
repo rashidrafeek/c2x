@@ -1,4 +1,4 @@
-#define C2XSF_VER "2.34d"
+#define C2XSF_VER "2.35a"
 
 /* Global variables for system description */
 
@@ -63,6 +63,7 @@
 #define BXSF 28
 #define FDF_BP 29
 #define ELK 30
+#define NPY 31
 
 /* flags for reading and output */
 #define CHDEN 1
@@ -119,6 +120,8 @@
 #define CSPG_SNAP 256
 #define CSPG_PRIM_NR 512
 #define CSPG_NO_SORT 1024
+#define CSPG_SNAP_TR 2048
+#define CSPG_STD_IDEAL 4096
 
 struct dct {char *key; void *value; struct dct *next;};
 struct cmt {char *txt; struct cmt *next;};
@@ -180,6 +183,8 @@ void abc2cart(double *abc, struct unit_cell *cell);
 void basis2abc(double basis[3][3], double abc[6]);
 void cart2abc(struct unit_cell *c, struct contents *m, double *abc, 
               struct grid *g, int fix);
+void cart2abc_sym(struct unit_cell *c, struct contents *m, double *abc, 
+                  struct grid *g, int fix, struct symmetry *s);
 void init_atoms(struct atom *a, int n);
 void print_globals(int level);
 void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out);
@@ -204,6 +209,8 @@ void print_occ(struct es *elect, struct kpts *kp);
 void print_elect(struct es *elect);
 void print_basis(double basis[3][3]);
 void print_bandwidths(struct es *elect, struct kpts *kp);
+void print_energy(double e);
+double calc_efermi(struct es *elect, struct kpts *kpt, double nel);
 void old_in_new(double old_basis[3][3],double new_recip[3][3]);
 
 unsigned int atsym2no(char* sym);
@@ -241,6 +248,8 @@ void simple_super(struct unit_cell *c, struct contents *m,
 double dist(double a,double b);
 double atom_dist(struct atom *a, struct atom *b, double basis[3][3]);
 double vmod2(double v[3]);
+void make_rhs(struct unit_cell *c, struct contents *m, double *abc,
+              struct grid *gptr);
 void cell_check(struct unit_cell *c, struct contents *m);
 void include_file(struct infiles **file, char *dir, char *ptr);
 void sym2ksym(struct symmetry *rs, struct symmetry *ks);

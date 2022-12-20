@@ -1,6 +1,6 @@
 /* A very simplistic .pdb reader */
 
-/* Copyright (c) 2007 MJ Rutter 
+/* Copyright (c) 2007-2020 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -16,6 +16,21 @@
  * along with this program; if not, see http://www.gnu.org/licenses/
  */ 
 
+/* Note that PDB files records are defined by the columns they occupy,
+ * and spaces between them are not required. A subset of the fields in
+ * the ATOM record is:
+ *
+ *  1-6    record name
+ * 13-16   atom name
+ * 31-38   x coord
+ * 39-46   y coord
+ * 47-54   z coord
+ * 61-66   temperature factor, may be used for other quantities
+ * 77-78   element symbol, right justified
+ * 79-80   charge on atom (optional, string, single digit integer
+ *                         followed by sign, e.g. 2+, 1-
+ */
+
 #include<stdio.h>
 #include<stdlib.h> /* malloc */
 #include<string.h>
@@ -30,23 +45,28 @@ static int strnncpy(char *dest, char *src, int n);
 void add_basis(struct unit_cell *c, struct contents *m);
 
 void pdb_read(FILE* infile, struct unit_cell *c, struct contents *m){
-  double abc[6],*dptr;
-  int have_basis,i;
+  double abc[6],*dptr,net_charge;
+  int have_basis,i,line;
   char buffer[LINE_SIZE+1],buff2[LINE_SIZE+1],*cptr,*cptr2;
 
   have_basis=0;
   m->n=0;
-
+  net_charge=0;
+  
   if (debug>2) fprintf(stderr,"pdb_read called\n");
 
   if (!(c->basis=malloc(72)))
     error_exit("Malloc error in pdb_read for c->basis");
 
+  line=0;
+  
   while(1){
    for(i=0;i<LINE_SIZE;i++) buffer[i]=0;
     if (!fgets(buffer,LINE_SIZE,infile)) break;
+    line++;
 /* First six characters are record name */
     strnncpy(buff2,buffer,6);
+    buff2[6]=0;
 
     if (!strcasecmp(buff2,"REMARK")) continue;
     if (!strcasecmp(buff2,"TER")) continue;
@@ -83,14 +103,16 @@ void pdb_read(FILE* infile, struct unit_cell *c, struct contents *m){
       if (!m->atoms) error_exit("realloc error in pdb_read");
       init_atoms(m->atoms+m->n,1);
       strnncpy(buff2,buffer+30,24); /* grab co-ords section */
+      buff2[24]=0;
       dptr=m->atoms[m->n].abs;
       if (sscanf(buff2," %lf %lf %lf",dptr,dptr+1,dptr+2)!=3){
-	fprintf(stderr,"Error parsing line\n%s\n",buffer);
+	fprintf(stderr,"Error parsing line %d\n%s\n",line,buffer);
 	fprintf(stderr,"buff2 was '%s'\n",buff2);
 	exit(1);
       }
 /* The atomic symbol ought to be in columns 77 to 78, right justified */
       strnncpy(buff2,buffer+76,2);
+      buff2[2]=0;
       if (buff2[0])
 	m->atoms[m->n].atno=atsym2no(buff2);
 /* Now we have a problem. The "atom name" is in cols 13-16, but 
@@ -116,6 +138,7 @@ void pdb_read(FILE* infile, struct unit_cell *c, struct contents *m){
 /* This should be better, on average... */
       else {
 	strnncpy(buff2,buffer+12,2);
+	buff2[2]=0;
 	cptr=buff2;
 	cptr[2]=0;
         /* I have seen things (mostly H) prefixed by a digit */
@@ -128,23 +151,35 @@ void pdb_read(FILE* infile, struct unit_cell *c, struct contents *m){
         if ((cptr[1]>='0')&&(cptr[1]<='9')) cptr[1]=0;
 	if ((cptr[0]==' ')&&(cptr[1]==' ')){
 	  strnncpy(buff2,buffer+14,2);
+	  buff2[2]=0;
 	  cptr=buff2;
 	}
 	m->atoms[m->n].atno=atsym2no(cptr);
       }
 #endif
+      if (dict_get(m->dict,"PDB_has_charge")){
+	strncpy(buff2,buffer+60,6);
+	buff2[6]=0;
+	if (sscanf(buff2,"%lf",&(m->atoms[m->n].site_chg))!=1)
+	  fprintf(stderr,"Charge parse error line %d\n",line);
+	net_charge+=m->atoms[m->n].site_chg;
+      }
       m->n++;
       continue;
     }
-
+    
     if (debug)
-      fprintf(stderr,"Warning, ignoring PDB line entitled '%s'\n",buff2);
+      fprintf(stderr,"Warning, ignoring PDB line %d entitled '%s'\n",
+	      line,buff2);
   }
 
   if(have_basis==0) add_basis(c,m);
 
   if (debug>1) fprintf(stderr,"%d atoms read\n",m->n);
 
+  if ((debug>1)&&(net_charge))
+    fprintf(stderr,"Read net charge of %lf\n",net_charge);
+  
   real2rec(c);
   addfrac(m->atoms,m->n,c->recip);
 

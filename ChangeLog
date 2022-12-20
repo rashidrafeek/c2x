@@ -1,9 +1,40 @@
+2.35a (23/12/2020)
+-----
+
+Adjust .npy writing to work with numpy on Ubuntu 20.04 as well as 18.04
+Fix missing _ in .check to .cell conversion
+
+2.35  (7/12/2020)
+----
+
+Support reading Castep .elf electron localisation function
+Support reading Castep .elf_fmt
+Support two spins in reading den_fmt / pot_fmt / elf_fmt
+Fix compiling without spglib
+Minor improvements to progress messages when reading bands
+Do not scale data when writing den_fmt if -R given
+Add "-w=k" option for weighting bands by kpoint weight only
+Fix error in -r .cif generation
+Fix error when listing sym ops in cell_abc output
+Add --snap_tr option
+Fix bug in reading of symmetry operations from Abinit input
+Add Abinit _EIG reader
+Add recognition of Abinit _DDB file
+Improve abinit .in reader
+Add -m=(x,y,z) for fractional shifts in relative units
+Peform -m shifts earlier in processing sequence
+Let -O -W scale occupancies by kpoint weight
+Add --gap option for printing bandgap
+Add --efermi option for calculating Fermi energy
+Minor improvements to bxsf_write()
+Add numpy writer
+
 2.34d (17/7/20)
 -----
 
 Increase periodic table from 103 atoms to 118
 Read VASP LOCPOT files
-Try to obtain pseudocharges from Vasp POTCAR file
+Try to obtain pseudocharges from VASP POTCAR file
 Recognise .dat as a Onetep-style .cell file
 Arithmetic parser now supports ^ (exponentiation)
 Arithmetic parser supports the constants pi, Ha, Ry and B

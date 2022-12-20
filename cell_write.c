@@ -209,7 +209,7 @@ void cell_write_abc(FILE* outfile, struct unit_cell *c, struct contents *m,
                     struct kpts *k, struct symmetry *s){
   double abc[6];
 
-  cart2abc(c,m,abc,NULL,1);
+  cart2abc_sym(c,m,abc,NULL,1,s);
 
   if (m->title)
     fprintf(outfile,"#TITL %s\n",m->title);
@@ -245,7 +245,7 @@ void cell_write_abc_abs(FILE* outfile, struct unit_cell *c, struct contents *m,
                         struct kpts *k, struct symmetry *s){
   double abc[6];
 
-  cart2abc(c,m,abc,NULL,1);
+  cart2abc_sym(c,m,abc,NULL,1,s);
 
   if (m->title)
     fprintf(outfile,"#TITL %s\n",m->title);

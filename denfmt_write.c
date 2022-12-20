@@ -27,7 +27,7 @@
 
 void denfmt_write(FILE* outfile, struct unit_cell *c, struct contents *m,
                 struct grid *g){
-  double abc[6];
+  double abc[6],scale;
   unsigned int i,j,k,ii,offset,ngrids,nfft[3],same;
   char *fmt;
   struct grid *gptr;
@@ -106,6 +106,14 @@ void denfmt_write(FILE* outfile, struct unit_cell *c, struct contents *m,
 
   /* Now write the data */
 
+  scale=c->vol;
+  if ((ngrids<=2)&&(!strncmp(g->name,"ELF",3))) scale=1;
+  if ((ngrids<=2)&&(!strncmp(g->name,"ESP",3))) scale=1/H_eV;
+  if ((ngrids<=2)&&(!strncmp(g->name,"Potential",9))) scale=1/H_eV;
+  if (flags&RAW) scale=1;
+
+  if (debug) fprintf(stderr,"Scaling on writing by %lf\n",scale);
+  
   for(i=1;i<=nfft[2];i++)
     for(j=1;j<=nfft[1];j++)
       for(k=1;k<=nfft[0];k++){
@@ -113,7 +121,7 @@ void denfmt_write(FILE* outfile, struct unit_cell *c, struct contents *m,
         gptr=g;
         offset=(i-1)+(j-1)*nfft[2]+(k-1)*nfft[2]*nfft[1];
         for(ii=0;ii<ngrids;ii++){
-          fprintf(outfile,fmt,gptr->data[offset]*c->vol);
+          fprintf(outfile,fmt,gptr->data[offset]*scale);
           gptr=gptr->next;
         }
         fprintf(outfile,"\n");

@@ -1,11 +1,11 @@
-/* Read an abinit .in file */
+/* Read an abinit .in or _DDB file */
 
 /* Abinit does not regard end of line as special -- there may be
  * multiple keywords on a single line, or data for a single keyword
  * spread across multiple lines.
  */
 
-/* Copyright (c) 2018 MJ Rutter 
+/* Copyright (c) 2018-2020 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -49,24 +49,34 @@ void sym_expand(struct unit_cell *c, struct contents *m, struct symmetry *s);
 void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
              struct kpts *k, struct symmetry *s, struct es *e);
 
+/* from abinit_read */
+void abinit_header_read(FILE* infile, struct unit_cell *c,
+			struct contents *m, struct kpts *kp,
+			struct es *elect, 
+			int fft[3], int **gamma, int *fileform);
+
 void abinit_in_read(FILE* in, struct unit_cell *c, struct contents *m,
 		    struct kpts *k, struct symmetry *s, struct es *e){
   
   double *acell,*rprim,*scalecart,*znucl,*xcart,*xred,*kpt,*wtk,*shiftk;
-  double *ecut,*toldfe,*spinat,*tnons,*kptnrm;
+  double *ecut,*toldfe,*spinat,*tnons,*kptnrm,*zion;
   double x,xa,xc,angles[3],mat[3][3];
   char line[LINE_SIZE+1];
   char *ptr,*p2;
-  int i,j,jj,success;
+  int i,j,jj,success,ignore;
   int *natom,*typat,*ntypat,*nkpt,*ngkpt,*nshiftk,*kptopt,*ndtset;
   int *nspden,*nsppol,*nsym,*symrel,*natrd,*spgroup,*spgaxor,*spgorig;
   int hall;
   struct infiles *files;
   FILE *infile;
   char *dir;
-
+  /* list tokens read on second pass, so no warning when ignored on
+   * first pass */
+  char *pass2[]={"typat","xangst","xcart","xred","znucl","zion","spinat",
+		 "kpt","wtk","shiftk","symrel","tnons",""};
+  
   acell=rprim=scalecart=znucl=xcart=xred=kpt=wtk=shiftk=NULL;
-  ecut=toldfe=spinat=tnons=kptnrm=NULL;
+  ecut=toldfe=spinat=tnons=kptnrm=zion=NULL;
   natom=typat=ntypat=nkpt=ngkpt=nshiftk=kptopt=ndtset=NULL;
   nspden=nsppol=nsym=symrel=natrd=spgroup=spgaxor=spgorig=NULL;
   ptr=line;
@@ -111,6 +121,19 @@ void abinit_in_read(FILE* in, struct unit_cell *c, struct contents *m,
       return;
     }
 
+    /* Next two ifs for _DDB files */
+    
+    if (!strncmp(ptr,"**** Database",13)) {
+      while (*ptr) ptr++;
+      break;
+    }
+
+    if ((!strncmp(ptr,"****",4))||(!strncmp(ptr,"Note :",6))||
+	(!strncmp(ptr,"+DDB",4))||(!strncmp(ptr,"No info",7))){
+      while (*ptr) ptr++;
+      continue;
+    }
+    
     if (!tokenmatch(&ptr,"include")){
       ptr+=ab_string_read(ptr,0,&p2);
       include_file(&files,dir,p2);
@@ -191,7 +214,8 @@ void abinit_in_read(FILE* in, struct unit_cell *c, struct contents *m,
       if (!ndtset) ndtset=malloc(sizeof(int));
       ptr=line+ab_int_read(line,ptr-line,ndtset,1,infile);
       if (*ndtset!=1)
-	error_exit("Cannot parse abinit .in files with multiple datasets");
+	fprintf(stderr,"Warning: reading only common section of abinit"
+		" .in file with multiple datasets\n");
     }
     else if (!tokenmatch(&ptr,"natom")){
       natom=malloc(sizeof(int));
@@ -267,8 +291,16 @@ void abinit_in_read(FILE* in, struct unit_cell *c, struct contents *m,
     else{
       i=0;
       while (*(ptr+i)&&(!isspace(*(ptr+i)))) i++;
-      if ((debug)&&(isalpha(*ptr)))
-	fprintf(stderr,"Warning, ignoring token %.*s\n",i,ptr);
+      if ((debug)&&(isalpha(*ptr))){
+	ignore=0;
+	for(j=0;pass2[j][0];j++){
+	  if (!strncasecmp(pass2[j],ptr,strlen(pass2[j]))){
+	    ignore=1;
+	    break;
+	  }
+	}
+	if (!ignore) fprintf(stderr,"Warning, ignoring token %.*s\n",i,ptr);
+      }
       ptr+=i;
     }
   }
@@ -279,6 +311,8 @@ void abinit_in_read(FILE* in, struct unit_cell *c, struct contents *m,
   if (!natrd) error_exit("natom/natrd not found");
 
   rewind(infile);
+  ptr=line;
+  *ptr=0;
   
   while(1){
     /* remove leading spaces */
@@ -300,6 +334,15 @@ void abinit_in_read(FILE* in, struct unit_cell *c, struct contents *m,
       if (!success) break;
     }
 
+    /* Next two ifs for _DDB files */
+
+    if (!strncmp(ptr,"**** Database",13)) break;
+
+    if ((!strncmp(ptr,"****",4))||(!strncmp(ptr,"Note :",6))){
+      while (*ptr) ptr++;
+      continue;
+    }
+
     if (!tokenmatch(&ptr,"include")){
       ptr+=ab_string_read(ptr,0,&p2);
       include_file(&files,dir,p2);
@@ -309,50 +352,66 @@ void abinit_in_read(FILE* in, struct unit_cell *c, struct contents *m,
     }
     else if (!tokenmatch(&ptr,"typat")){
       typat=malloc(*natrd*sizeof(int));
+      if (!typat) error_exit("malloc error in abinit_in_read");
       ptr=line+ab_int_read(line,ptr-line,typat,*natrd,infile);
     }
     else if (!tokenmatch(&ptr,"xangst")){
       xcart=malloc(*natrd*3*sizeof(double));
+      if (!xcart) error_exit("malloc error in abinit_in_read");
       ptr=line+ab_float_read(line,ptr-line,xcart,3*(*natrd),infile);
     }
     else if (!tokenmatch(&ptr,"xcart")){
       xcart=malloc(*natrd*3*sizeof(double));
+      if (!xcart) error_exit("malloc error in abinit_in_read");
       ptr=line+ab_len_read(line,ptr-line,xcart,3*(*natrd),infile);
     }
     else if (!tokenmatch(&ptr,"xred")){
       xred=malloc(*natrd*3*sizeof(double));
+      if (!xred) error_exit("malloc error in abinit_in_read");
       ptr=line+ab_float_read(line,ptr-line,xred,3*(*natrd),infile);
     }
     else if (!tokenmatch(&ptr,"znucl")){
       znucl=malloc(*ntypat*sizeof(double));
+      if (!znucl) error_exit("malloc error in abinit_in_read");
       ptr=line+ab_float_read(line,ptr-line,znucl,*ntypat,infile);
+    }
+    else if (!tokenmatch(&ptr,"zion")){
+      zion=malloc(*ntypat*sizeof(double));
+      if (!zion) error_exit("malloc error in abinit_in_read");
+      ptr=line+ab_float_read(line,ptr-line,zion,*ntypat,infile);
     }
     else if (!tokenmatch(&ptr,"spinat")){
       spinat=malloc(3*(*natrd)*sizeof(double));
+      if (!spinat) error_exit("malloc error in abinit_in_read");
       ptr=line+ab_float_read(line,ptr-line,spinat,*natrd*3,infile);
     }
     else if (!tokenmatch(&ptr,"kpt")){
       if (!nkpt) error_exit("kpt found without nkpt");
       kpt=malloc(*nkpt*3*sizeof(double));
+      if (!kpt) error_exit("malloc error in abinit_in_read");
       ptr=line+ab_float_read(line,ptr-line,kpt,3*(*nkpt),infile);
     }
     else if (!tokenmatch(&ptr,"wtk")){
       if (!nkpt) error_exit("wtk found without nkpt");
       wtk=malloc(*nkpt*sizeof(double));
+      if (!wtk) error_exit("malloc error in abinit_in_read");
       ptr=line+ab_float_read(line,ptr-line,wtk,*nkpt,infile);
     }
     else if (!tokenmatch(&ptr,"shiftk")){
       shiftk=malloc(*nshiftk*3*sizeof(double));
+      if (!shiftk) error_exit("malloc error in abinit_in_read");
       ptr=line+ab_float_read(line,ptr-line,shiftk,3*(*nshiftk),infile);
     }
     else if (!tokenmatch(&ptr,"symrel")){
       if (!nsym) error_exit("symrel found without nsym");
       symrel=malloc(*nsym*9*sizeof(int));
+      if (!symrel) error_exit("malloc error in abinit_in_read");
       ptr=line+ab_int_read(line,ptr-line,symrel,9*(*nsym),infile);
     }
     else if (!tokenmatch(&ptr,"tnons")){
       if (!nsym) error_exit("tnons found without nsym");
       tnons=malloc(*nsym*3*sizeof(double));
+      if (!tnons) error_exit("malloc error in abinit_in_read");
       ptr=line+ab_float_read(line,ptr-line,tnons,3*(*nsym),infile);
     }
     else{ /* skip token */
@@ -412,6 +471,7 @@ void abinit_in_read(FILE* in, struct unit_cell *c, struct contents *m,
 	for (j=0;j<3;j++)
 	  m->atoms[i].frac[j]=xred[3*i+j];
 	m->atoms[i].atno=(int)znucl[typat[i]-1];
+	if (zion) m->atoms[i].chg=zion[typat[i]-1];
       }
       addabs(m->atoms,m->n,c->basis);
       free(xred);
@@ -422,6 +482,7 @@ void abinit_in_read(FILE* in, struct unit_cell *c, struct contents *m,
 	for (j=0;j<3;j++)
 	  m->atoms[i].abs[j]=xcart[3*i+j];
 	m->atoms[i].atno=(int)znucl[typat[i]-1];
+	if (zion) m->atoms[i].chg=zion[typat[i]-1];
       }
       addfrac(m->atoms,m->n,c->recip);
       free(xcart);
@@ -498,7 +559,7 @@ void abinit_in_read(FILE* in, struct unit_cell *c, struct contents *m,
     for(i=0;i<s->n;i++){
       for(j=0;j<3;j++)
 	for(jj=0;jj<3;jj++)
-	  mat[j][jj]=symrel[9*i+3*j+jj];
+	  mat[j][jj]=symrel[9*i+3*jj+j];
       mat_f2a(mat,s->ops[i].mat,c->basis,c->recip);
       if (tnons){
 	if ((tnons[3*i]!=0)||(tnons[3*i+1]!=0)||(tnons[3*i+2]!=0)){
@@ -794,4 +855,143 @@ static int ab_readline(char *buffer, char **p, FILE* infile){
 
   return 1;
   
+}
+
+void abinit_eig_read(FILE* infile, struct unit_cell *c, struct contents *m,
+		    struct kpts *k, struct symmetry *s, struct es *e){
+  double scale,dtmp,coord[3];
+  int itmp,i,j,isp,dummy,*gamma,fft[3],fileform;
+  char buffer[LINE_SIZE+1],*ptr,*ptr2,*newfile;
+  FILE *f;
+  struct kpts old_k;
+  
+  /* read header */
+
+  scale=0;
+  while(1){
+    if (!fgets(buffer,LINE_SIZE,infile)) error_exit("Unexpected EOF");
+    ptr=strstr(buffer,"Fermi");
+    if ((ptr)&&((ptr-buffer)<6)){
+      scale=0;
+      ptr2=index(buffer,'=');
+      ptr=strstr(buffer,"hartree");
+      if ((ptr)&&(ptr<ptr2)) scale=H_eV;
+      ptr=strstr(buffer,"eV");
+      if ((ptr)&&(ptr<ptr2)) scale=1;
+      if (scale==0){
+	fprintf(stderr,"Failed to identify units for Hartree energy,"
+		" ignoring\n");
+      }
+      else{
+	if (sscanf(ptr2+1,"%lf",&dtmp)==1){
+	  dtmp*=scale;
+	  e->e_fermi=malloc(sizeof(double));
+	  if (!e->e_fermi) error_exit("malloc error");
+	  *(e->e_fermi)=dtmp;
+	}
+	else fprintf(stderr,"Warning, failed to read Fermi energy\n");
+      }
+      continue;
+    }
+    ptr=strstr(buffer,"Eigenvalues");
+    if ((ptr)&&((ptr-buffer)<6)){
+      scale=0;
+      ptr2=index(buffer,'=');
+      ptr=strstr(buffer,"hartree");
+      if ((ptr)&&(ptr<ptr2)) scale=H_eV;
+      ptr=strstr(buffer,"eV");
+      if ((ptr)&&(ptr<ptr2)) scale=1;
+      if (scale==0){
+	fprintf(stderr,"Failed to identify units for eigenvalues,"
+		" assuming eV\n");
+	scale=1;
+      }
+
+      if (sscanf(ptr2+1,"%d",&itmp)==1){
+	k->n=itmp;
+	k->kpts=malloc(itmp*sizeof(struct atom));
+	if (!k->kpts) error_exit("Malloc error for kpoints");
+	}
+      else error_exit("Failed to read number of kpts");
+
+      if (strstr(buffer,"SPIN"))
+	e->nspins=e->nbspins=2;
+      else
+	e->nspins=e->nbspins=1;
+
+      break;
+    }
+  }
+
+  if (debug) fprintf(stderr,"Reading %d kpoints with %d spins\n",k->n,
+		     e->nspins);
+
+  for (isp=0;isp<e->nspins;isp++){
+    for(i=0;i<k->n;i++){
+      if (!fgets(buffer,LINE_SIZE,infile)) error_exit("Unexpected EOF");
+      if (sscanf(buffer," kpt# %d, nband= %d, wtk= %lf, kpt= %lf %lf %lf",
+		 &itmp,&dummy,&dtmp,coord,coord+1,coord+2)!=6){
+	fprintf(stderr,"Error parsing kpt# line for kpt %d\n",i+1);
+	fprintf(stderr,"Buffer is: %s\n",buffer);
+	exit(1);
+      }
+      if (itmp!=i+1) error_exit("kpt# out of sequence?");
+      if ((isp==0)&&(i==0)){
+	e->nbands=dummy;
+	if (debug) fprintf(stderr,"Reading %d bands\n",e->nbands);
+	e->eval=malloc(e->nbands*e->nspins*k->n*sizeof(double));
+	if (!e->eval) error_exit("Malloc error for eigenvalues");
+      }
+      if (dummy!=e->nbands) error_exit("Varying number of bands");
+      if (isp==0){
+	for(j=0;j<3;j++) k->kpts[i].frac[j]=coord[j];
+	k->kpts[i].wt=dtmp;
+      }
+      if (!fgets(buffer,LINE_SIZE,infile)) error_exit("Unexpected EOF");
+      ab_float_read(buffer,0,e->eval+e->nbands*isp+e->nbands*e->nspins*i,
+		    e->nbands,infile);
+      for(j=0;j<e->nbands;j++)
+	e->eval[j+e->nbands*isp+e->nbands*e->nspins*i]*=scale;
+    }
+  }
+
+    /* Look for a corresponding _DDB file */
+
+  if (dict_get(m->dict,"in_file")){
+    newfile=strrsubs(dict_get(m->dict,"in_file"),"EIG","DDB");
+    if (newfile){
+      f=fopen(newfile,"r");
+      if (f){
+	fprintf(stderr,"Additionally reading %s\n",newfile);
+	old_k=*k;
+	abinit_in_read(f,c,m,k,s,e);
+	fclose(f);
+	if (old_k.n!=k->n)
+	  error_exit("nkpts differ in EIG and DDB");
+	free(old_k.kpts);
+      }
+      else{ /* look for DEN or WFK files */
+	newfile=strrsubs(dict_get(m->dict,"in_file"),"EIG","DEN");
+	f=NULL;
+	if (newfile) f=fopen(newfile,"rb");
+	if (!f){
+	  if (newfile) free(newfile);
+	  newfile=strrsubs(dict_get(m->dict,"in_file"),"EIG","WFK");
+	  if (newfile) f=fopen(newfile,"rb");
+	}
+	if (f){
+	  fprintf(stderr,"Additionally reading header from %s\n",newfile);
+	  old_k=*k;
+	  abinit_header_read(f,c,m,k,e,fft,&gamma,&fileform);
+	  fclose(f);
+	  if (old_k.n!=k->n)
+	    error_exit("nkpts differ in EIG and binary header");
+	  free(old_k.kpts);
+	  free(gamma);
+	}
+      }
+      free(newfile);
+    }
+  }
+      
 }

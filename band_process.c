@@ -280,7 +280,8 @@ void band_store(struct grid **gp, double *dptr, double occ, double wkpt,
     if (flags&K_WEIGHT) w*=wkpt;
     /* If we want densities, and we do not have spins, each
      * band is doubly occupied */
-    if ((elect->nspins==1)&&(elect->nspinors==1)&&(flags&BANDDEN))
+    if ((elect->nspins==1)&&(elect->nspinors==1)&&
+	(flags&BANDDEN)&&(flags&OCC_WEIGHT))
       w*=2;
     if ((w!=1)&&(!(flags&BANDDEN))) w=sqrt(w);
     if (debug)
@@ -291,6 +292,16 @@ void band_store(struct grid **gp, double *dptr, double occ, double wkpt,
     
     if (w!=1)
       for(i=0;i<nfft_pts;i++) dptr[i]*=w;
+  }
+
+  if (debug) {
+    fprintf(stderr,"Processing band %d kpoint %d",b,k);
+    if (elect->nspinors==2)
+      fprintf(stderr," spin %d\n",nspr);
+    else if (elect->nspins==2)
+      fprintf(stderr," spin %d\n",ns);
+    else
+      fprintf(stderr,"\n");
   }
   
   if (!(flags&ACCUMULATE)){

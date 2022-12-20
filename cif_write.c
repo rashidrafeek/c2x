@@ -26,6 +26,11 @@
 
 #include "c2xsf.h"
 
+/* From c2x2spg.c */
+
+struct sym_op *sym_frac2abs(int spg_rot[][3][3],double spg_tr[][3],
+			    struct unit_cell *c,int nsym);
+
 extern int periodic_max_el;
 
 struct contents *reduce_atoms(struct contents *m, struct symmetry *s,
@@ -61,7 +66,9 @@ void cif_write(FILE* outfile, struct unit_cell *c, struct contents *m,
 
   if (m->title) fprintf(outfile,"_struct%ctitle %s\n",sep,m->title);
 
-  cart2abc(c,m,abc,NULL,1);
+  make_rhs(c,m,NULL,NULL);
+  cart2abc(c,NULL,abc,NULL,1);
+
   fprintf(outfile,"\n");
   fprintf(outfile,"_cell%clength_a      %.*f\n",sep,prec,abc[0]);
   fprintf(outfile,"_cell%clength_b      %.*f\n",sep,prec,abc[1]);
@@ -197,6 +204,8 @@ struct contents *reduce_atoms(struct contents *m, struct symmetry *s,
 		m2->atoms[i].frac[0],m2->atoms[i].frac[1],m2->atoms[i].frac[2]);
 	fprintf(stderr,"Sym op ");
 	ident_sym(s->ops+j,c,stderr);
+	fprintf(stderr,"New atom at (%lf,%lf,%lf)\n",new_atom.frac[0],
+		new_atom.frac[1],new_atom.frac[2]);
 	exit(1);
       }
       if (hit==i) continue;

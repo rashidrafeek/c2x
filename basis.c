@@ -210,115 +210,33 @@ void abc2cart(double *abc, struct unit_cell *c){
 /* If m and gptr are NULL, and fix==0, just calculate a,b,c,alpha,beta,gamma */
 /* If m not NULL, rotate axes to a along x, b in x-y plane, etc */
 
+/* Note: basis2abc implies a rotation in Cartesian space if one
+ *        believes that a is along x, b in the x-y plane, etc.
+ *
+ * The fractional co-ordinates in the motif remain valid whatever
+ *
+ * If the rotation happens, then the Cartesian real and recip basis
+ *   must be updated, along with the Cartesian atomic positions,
+ *   and the symmetry operations expressed in Cartesians.
+ *
+ * However, if one just wants the values of abc[6], and does not
+ * care that abc2cart would produce a rotation of the contents of
+ * m, c and s, then there is no need to worry.
+ */
+
 void cart2abc(struct unit_cell *c, struct contents *m, double *abc, 
               struct grid *gptr, int fix){
-  int i,j,k,itmp,preserve_c;
-  double dtmp,b[3][3],*dptr,*dptr2,*new_grid;
-
-  preserve_c=(flags&PRESERVE_C)>>PC_SHIFT;
 
   if (debug>2) fprintf(stderr,"cart2abc called with motif %s\n",
                        m?"present":"absent");
 
-  for(i=0;i<3;i++)
-    for(j=0;j<3;j++)
-      b[i][j]=c->basis[i][j];
-
-  for(i=0;i<3;i++)
-    abc[i]=sqrt(b[i][0]*b[i][0]+b[i][1]*b[i][1]+
-                b[i][2]*b[i][2]);
-
-  for(i=3;i<6;i++){
-    j=(i+1)%3;
-    k=(i+2)%3;
-    abc[i]=acos((b[j][0]*b[k][0]+b[j][1]*b[k][1]+
-                 b[j][2]*b[k][2])/(abc[j]*abc[k]))*180/M_PI;
-  }
-
+  basis2abc(c->basis,abc);
+  
   /* We may now have a different orientation to the original, so,
      if we were passed a motif: */
 
   if (m){
-    if (is_rhs(b)==0){ /* We are trying to convert a lhs of vectors
-                            * to abc format.
-               * We should warn people,
-               * Exchange second and third axes
-               * Exchange second and third fractional co-ords
-               */
-      if (flags&LHS_FUDGE) {
-         fprintf(stderr,"Need rh set of vectors for abc output.\n"
-                        "Have lh set, and exchange prohibitted...\n");
-      }
-      else {
-        fprintf(stderr,"Need rh set of vectors for abc output. "
-                       "Exchanging basis vectors %d and %d.\n",
-                       (1+preserve_c)%3+1,(2+preserve_c)%3+1);
-
-        for(i=0;i<3;i++){
-          dtmp=b[(1+preserve_c)%3][i];
-          b[(1+preserve_c)%3][i]=b[(2+preserve_c)%3][i];
-          b[(2+preserve_c)%3][i]=dtmp;
-        }
-	
-        real2rec(c);
-        for(i=0;i<m->n;i++){
-          dtmp=m->atoms[i].frac[(1+preserve_c)%3];
-          m->atoms[i].frac[(1+preserve_c)%3]=m->atoms[i].frac[(2+preserve_c)%3];
-          m->atoms[i].frac[(2+preserve_c)%3]=dtmp;
-        }
-
-        dtmp=abc[(1+preserve_c)%3];
-        abc[(1+preserve_c)%3]=abc[(2+preserve_c)%3];
-        abc[(2+preserve_c)%3]=dtmp;
-
-        dtmp=abc[(1+preserve_c)%3+3];
-        abc[(1+preserve_c)%3+3]=abc[(2+preserve_c)%3+3];
-        abc[(2+preserve_c)%3+3]=dtmp;
-
-        while((gptr)&&(gptr->data)){
-          if (debug>1) fprintf(stderr,"Exchanging axes for 3D grid %dx%dx%d\n",
-			     gptr->size[0],gptr->size[1],gptr->size[2]);
-
-          itmp=gptr->size[(1+preserve_c)%3];
-          gptr->size[(1+preserve_c)%3]=gptr->size[(2+preserve_c)%3];
-          gptr->size[(2+preserve_c)%3]=itmp;
-
-          new_grid=malloc(gptr->size[0]*gptr->size[1]*gptr->size[2]*
-                          sizeof(double));
-          if (!new_grid) error_exit("Malloc error in cart2abc");
-          dptr=new_grid;
-          if (preserve_c==2){
-            for(k=0;k<gptr->size[0];k++){
-              for(j=0;j<gptr->size[1];j++){
-                dptr2=gptr->data+((j*gptr->size[0])+k)*gptr->size[2];
-                dptr=new_grid+((k*gptr->size[1])+j)*gptr->size[2];
-                for(i=0;i<gptr->size[2];i++){
-                  *(dptr++)=*(dptr2++);
-                }
-              }
-            }
-          }
-	  else if (preserve_c==0){
-            for(k=0;k<gptr->size[0];k++){
-              for(j=0;j<gptr->size[1];j++){
-                dptr2=gptr->data+k*gptr->size[1]*gptr->size[2];
-                dptr=new_grid+((k*gptr->size[1])+j)*gptr->size[2];
-                for(i=0;i<gptr->size[2];i++){
-                  *(dptr++)=*(dptr2+j+i*gptr->size[1]);
-                }
-              }
-            }
-	  }
-	  else error_exit("Unsupported value of preserve_c in grid_interp");
-
-	  free(gptr->data);
-	  gptr->data=new_grid;
-	  
-          gptr=gptr->next;
-        }
-      }
-    } /* if (m) */
-
+    if (is_rhs(c->basis)==0) make_rhs(c,m,abc,gptr);
     abc2cart(abc,c);
     real2rec(c);
     addabs(m->atoms,m->n,c->basis);
@@ -326,6 +244,59 @@ void cart2abc(struct unit_cell *c, struct contents *m, double *abc,
 
 }
 
+/* As cart2abc, but also correct symmetry operations for any rotation
+   which occurs */
+
+void cart2abc_sym(struct unit_cell *c, struct contents *m, double *abc, 
+		  struct grid *gptr, int fix, struct symmetry *s){
+  int i,j,k;
+  double basis_t[3][3],recip_t[3][3];
+  double (*rot)[3][3],(*tr)[3];
+
+  if (s){
+    rot=malloc(9*s->n*sizeof(double));
+    tr=malloc(3*s->n*sizeof(double));
+
+    for(i=0;i<s->n;i++){
+      mat_a2f(s->ops[i].mat,rot[i],c->basis,c->recip);
+
+      for(j=0;j<3;j++){
+	tr[i][j]=0;
+	if (s->ops[i].tr)
+	  for(k=0;k<3;k++)
+	    tr[i][j]+=s->ops[i].tr[k]*c->recip[j][k];
+      }
+    }
+  }
+
+  cart2abc(c,m,abc,gptr,fix);
+
+  if (s){
+
+    for(i=0;i<3;i++)
+      for(j=0;j<3;j++)
+	basis_t[i][j]=c->basis[j][i];
+    
+    for(i=0;i<3;i++)
+      for(j=0;j<3;j++)
+	recip_t[i][j]=c->recip[j][i];
+    
+    
+    for(i=0;i<s->n;i++){
+      mat_a2f(rot[i],s->ops[i].mat,recip_t,basis_t);
+
+      if (s->ops[i].tr){
+	for(j=0;j<3;j++){
+	  s->ops[i].tr[j]=0;
+	  for(k=0;k<3;k++)
+	    s->ops[i].tr[j]+=tr[i][k]*c->basis[k][j];
+	}
+      }
+    }
+    free(tr);
+    free(rot);
+  }
+}
 
 /* Convert from cartesian basis set to a,b,c,alpha,beta,gamma */
 void basis2abc(double b[3][3], double abc[6]){
@@ -341,6 +312,104 @@ void basis2abc(double b[3][3], double abc[6]){
     abc[i]=acos((b[j][0]*b[k][0]+b[j][1]*b[k][1]+
                  b[j][2]*b[k][2])/(abc[j]*abc[k]))*180/M_PI;
   }
+}
+
+/* Make a set of axes into a rhs */
+void make_rhs(struct unit_cell *c, struct contents *m, double *abc,
+              struct grid *gptr){
+  int i,j,k,itmp,preserve_c;
+  double dtmp,(*b)[3],*dptr,*dptr2,*new_grid;
+
+  preserve_c=(flags&PRESERVE_C)>>PC_SHIFT;
+  
+  //  for(i=0;i<3;i++)
+  //    for(j=0;j<3;j++)
+  //      b[i][j]=c->basis[i][j];
+  b=c->basis;
+  
+  if (is_rhs(b)==1) return;
+
+  /* We are trying to convert a lhs of vectors
+   * to abc format.
+   * We should warn people,
+   * Exchange second and third axes
+   * Exchange second and third fractional co-ords
+   */
+  if (flags&LHS_FUDGE) {
+    fprintf(stderr,"Need rh set of vectors for abc output.\n"
+	    "Have lh set, and exchange prohibitted...\n");
+  }
+  else {
+    fprintf(stderr,"Need rh set of vectors for abc output. "
+	    "Exchanging basis vectors %d and %d.\n",
+	    (1+preserve_c)%3+1,(2+preserve_c)%3+1);
+
+    for(i=0;i<3;i++){
+      dtmp=b[(1+preserve_c)%3][i];
+      b[(1+preserve_c)%3][i]=b[(2+preserve_c)%3][i];
+      b[(2+preserve_c)%3][i]=dtmp;
+    }
+	
+    real2rec(c);
+    for(i=0;i<m->n;i++){
+      dtmp=m->atoms[i].frac[(1+preserve_c)%3];
+      m->atoms[i].frac[(1+preserve_c)%3]=m->atoms[i].frac[(2+preserve_c)%3];
+      m->atoms[i].frac[(2+preserve_c)%3]=dtmp;
+    }
+
+    if (abc){
+      dtmp=abc[(1+preserve_c)%3];
+      abc[(1+preserve_c)%3]=abc[(2+preserve_c)%3];
+      abc[(2+preserve_c)%3]=dtmp;
+
+      dtmp=abc[(1+preserve_c)%3+3];
+      abc[(1+preserve_c)%3+3]=abc[(2+preserve_c)%3+3];
+      abc[(2+preserve_c)%3+3]=dtmp;
+    }
+    
+    while((gptr)&&(gptr->data)){
+      if (debug>1) fprintf(stderr,"Exchanging axes for 3D grid %dx%dx%d\n",
+			   gptr->size[0],gptr->size[1],gptr->size[2]);
+
+      itmp=gptr->size[(1+preserve_c)%3];
+      gptr->size[(1+preserve_c)%3]=gptr->size[(2+preserve_c)%3];
+      gptr->size[(2+preserve_c)%3]=itmp;
+
+      new_grid=malloc(gptr->size[0]*gptr->size[1]*gptr->size[2]*
+		      sizeof(double));
+      if (!new_grid) error_exit("Malloc error in cart2abc");
+      dptr=new_grid;
+      if (preserve_c==2){
+	for(k=0;k<gptr->size[0];k++){
+	  for(j=0;j<gptr->size[1];j++){
+	    dptr2=gptr->data+((j*gptr->size[0])+k)*gptr->size[2];
+	    dptr=new_grid+((k*gptr->size[1])+j)*gptr->size[2];
+	    for(i=0;i<gptr->size[2];i++){
+	      *(dptr++)=*(dptr2++);
+	    }
+	  }
+	}
+      }
+      else if (preserve_c==0){
+	for(k=0;k<gptr->size[0];k++){
+	  for(j=0;j<gptr->size[1];j++){
+	    dptr2=gptr->data+k*gptr->size[1]*gptr->size[2];
+	    dptr=new_grid+((k*gptr->size[1])+j)*gptr->size[2];
+	    for(i=0;i<gptr->size[2];i++){
+	      *(dptr++)=*(dptr2+j+i*gptr->size[1]);
+	    }
+	  }
+	}
+      }
+      else error_exit("Unsupported value of preserve_c in grid_interp");
+
+      free(gptr->data);
+      gptr->data=new_grid;
+	  
+      gptr=gptr->next;
+    }
+  }
+
 }
 
 /* Minimum distance between two points in periodic system */
@@ -459,6 +528,12 @@ void cell_check(struct unit_cell *c, struct contents *m){
 
   if (m->n<=1) return;
 
+  if (((m->n>2000)&&(debug<1))||((m->n>10000)&&(debug<2))
+      ||((m->n>50000)&&(debug<3))){
+    fprintf(stderr,
+	    "Skipping minimum distance check due to high number of atoms\n");
+    return;
+  }
 
   compact_cell.basis=malloc(9*sizeof(double));
   if (!compact_cell.basis) error_exit("Malloc error in cell_check");
@@ -483,7 +558,7 @@ void cell_check(struct unit_cell *c, struct contents *m){
       for(k=0;k<3;k++){
         frac[k]=fmod(frac[k],1.0);
         if (frac[k]>0.5) frac[k]-=1;
-        if (frac[k]<-0.5) frac[k]+=1;
+        else if (frac[k]<-0.5) frac[k]+=1;
       }
       for(ii=0;ii<3;ii++){
         vec[ii]=0;
@@ -491,7 +566,7 @@ void cell_check(struct unit_cell *c, struct contents *m){
           vec[ii]+=frac[k]*compact_cell.basis[k][ii];
       }
       
-      dtmp=sqrt(vmod2(vec));
+      dtmp=vmod2(vec);
       if (dtmp<min_dist) {
 	min_dist=dtmp;
 	n1=i;
@@ -500,6 +575,8 @@ void cell_check(struct unit_cell *c, struct contents *m){
     }
   }
 
+  min_dist=sqrt(min_dist);
+  
   if (min_dist<0.2)
     fprintf(stderr,"*** WARNING: closest atoms separation %g A\n",min_dist);
   else if (debug)

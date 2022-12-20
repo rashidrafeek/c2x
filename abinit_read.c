@@ -51,10 +51,10 @@
 
 #include "c2xsf.h"
 
-static void abinit_header_read(FILE* infile, struct unit_cell *c,
-			       struct contents *m, struct kpts *kp,
-			       struct es *elect,
-			       int fft[3], int **gamma, int *fileform){
+void abinit_header_read(FILE* infile, struct unit_cell *c,
+		        struct contents *m, struct kpts *kp,
+		        struct es *elect,
+		        int fft[3], int **gamma, int *fileform){
   int i,j,tmp,reclen;
   char version[9];
   int headform;

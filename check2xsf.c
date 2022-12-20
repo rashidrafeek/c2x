@@ -98,7 +98,8 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
                 struct kpts *k, struct symmetry *s, struct grid *g,
                 struct es *elect, int *i_grid);
 void chdiff_read(FILE* infile, struct grid *g);
-void esp_read(FILE* infile, struct grid *g, struct es *elect);
+void esp_read(FILE* infile, struct contents *m, struct grid *g,
+	      struct es *elect);
 void pdb_read(FILE* infile, struct unit_cell *c, struct contents *m);
 void shelx_read(FILE* infile, struct unit_cell *c, struct contents *m);
 void cif_read(FILE* infile, struct unit_cell *c, struct contents *m,
@@ -116,8 +117,8 @@ void vasp_psi_read(FILE* infile, char * filename, struct unit_cell *c,
 		struct es *elect, int *i_grid);
 void vasp_eigenval_read(FILE *infile, struct unit_cell *c, struct contents *m,
 			struct kpts *k, struct es *e);
-void denfmt_read(FILE* infile, struct unit_cell *c, struct grid *gptr,
-                 int rescale);
+void denfmt_read(FILE* infile, struct unit_cell *c, struct contents *m,
+		 struct grid *gptr, struct es *elect, int rescale);
 void fort34_read(FILE* infile, struct unit_cell *c, struct contents *m,
               struct symmetry *s);
 void crystal_read(FILE* infile, struct unit_cell *c, struct contents *m,
@@ -126,6 +127,8 @@ void abinit_charge_read(FILE* infile, struct unit_cell *c, struct contents *m,
                  struct kpts *kp, struct grid *gptr, struct es *elect);
 void abinit_in_read(FILE* infile, struct unit_cell *c, struct contents *m,
                  struct kpts *k, struct symmetry *s, struct es *e);
+void abinit_eig_read(FILE* infile, struct unit_cell *c, struct contents *m,
+		     struct kpts *k, struct symmetry *s, struct es *e);
 void abinit_psi_read(FILE* infile, struct unit_cell *c,
                      struct contents *m, struct kpts *kp, struct grid *gptr,
                      struct es *elect, int *i_grid);
@@ -143,9 +146,10 @@ void bands_read(FILE* infile, struct unit_cell *c, struct contents *m,
 void gcoeff_read(FILE *infile, struct unit_cell *c, struct contents *m,
                  struct kpts *k, struct grid *g, struct es *e,
 		 int *i_grid);
+void npy_write(FILE* outfile, struct grid *g);
 
-void molecule_fix(int* m_abc, struct unit_cell *c, struct contents *m,
-                  struct grid *g);
+void molecule_fix(int m_abc[3], double m_rel[3],struct unit_cell *c,
+		  struct contents *m, struct grid *g);
 void rotation(struct unit_cell *c, struct contents *m, double new_basis[3][3]);
 void primitive(struct unit_cell *c, struct contents *m, double basis[3][3]);
 void shorten(double basis[3][3]);
@@ -172,7 +176,7 @@ void bxsf_write(FILE* outfile, struct unit_cell *c, struct contents *m,
                 struct es *elect, struct kpts *kp,
                 struct symmetry *rs);
 void tube(struct unit_cell *c, struct contents *m, int rpt[3], double spacing);
-
+void print_gap(struct es *elect, struct kpts *kpt, struct contents *m);
 double lda(double dens);
 
 /* Global variables for system description */
@@ -207,12 +211,12 @@ void version(){
 int main(int argc, char **argv)
 {
   int i,j,k,opt=1,expand,rotate,half_shift=0,no_mp=0,prim=0,compact=0;
-  int molecule=0,reduce=0,vexpand=0,lflags=0,pr_occ=0,xc=0;
-  int sort_style=0;
+  int molecule=0,reduce=0,vexpand=0,lflags=0,pr_occ=0,pr_gap=0,xc=0;
+  int sort_style=0,calc_ef=0;
   int no_sym=0;
   int circ[3];
   int spg_op;
-  int gen_mp=0, failure=0,calc_esp=0,sym_k=0,charge_correction=0;
+  int gen_mp=0, failure=0,calc_esp=0,sym_k=0;
   int keep_velocities=0;
   int format,preserve_c,mask;
   int *i_grid;
@@ -222,7 +226,7 @@ int main(int argc, char **argv)
   FILE *infile,*outfile;
   double abc[6],new_cell[3][3],new_cell_rel[3][3],*new_mp,zpt[3],g_cut;
   double new_abc[3],dtmp,scale,rescale;
-  double tolmin=1e-4,ionic_charge,musq,tube_spacing;
+  double tolmin=1e-4,ionic_charge,musq,tube_spacing,*m_rel,chg;
   int *m_abc;
   struct grid *gptr;
   struct unit_cell cell,nc;
@@ -277,6 +281,7 @@ int main(int argc, char **argv)
   sym.ops=NULL;
   sym.n=0;
   m_abc=i_grid=NULL;
+  m_rel=NULL;
   kp.n=0;
   kp.kpts=NULL;
   kp.mp=NULL;
@@ -365,6 +370,7 @@ int main(int argc, char **argv)
         else if (!strcmp(optp,"--denfmt")) format=DENFMT;
         else if (!strcmp(optp,"--den_fmt")) format=DENFMT;
         else if (!strcmp(optp,"--abinit")) format=ABINIT;
+        else if (!strcmp(optp,"--npy")) format=NPY;
         else if (!strcmp(optp,"--qe")) format=QE;
         else if (!strcmp(optp,"--qef")) {format=QE; flags|=FRAC;}
         else if (!strcmp(optp,"--bands")) {
@@ -399,10 +405,14 @@ int main(int argc, char **argv)
         else if (!strcmp(optp,"--refine")) spg_op|=CSPG_REF;
         else if (!strcmp(optp,"--standardise")) spg_op|=CSPG_STD;
         else if (!strcmp(optp,"--standardize")) spg_op|=CSPG_STD;
+        else if (!strcmp(optp,"--std")) spg_op|=CSPG_STD;
+        else if (!strcmp(optp,"--std_ideal")) spg_op|=CSPG_STD_IDEAL;
         else if (!strcmp(optp,"--snap")) spg_op|=CSPG_SNAP;
+        else if (!strcmp(optp,"--snap_tr")) spg_op|=CSPG_SNAP+CSPG_SNAP_TR;
         else if (!strcmp(optp,"--int")) spg_op|=CSPG_INT;
         else if (!strcmp(optp,"--schoen")) spg_op|=CSPG_SCH;
         else if (!strcmp(optp,"--symmetry")) spg_op|=CSPG_SYM;
+        else if (!strcmp(optp,"--sym")) spg_op|=CSPG_SYM;
         else if (!strcmp(optp,"--point")) spg_op|=CSPG_PNT;
         else if (!strcmp(optp,"--list")) spg_op|=(CSPG_LST|CSPG_SYM);
 
@@ -419,7 +429,15 @@ int main(int argc, char **argv)
           exit(0);
         }
         else if (!strcmp(optp,"--vel")) keep_velocities=1;
-       else {
+        else if (!strcmp(optp,"--gap")) {
+	  flags|=OCCUPANCIES;
+	  pr_gap=1;
+	}
+        else if (!strcmp(optp,"--efermi")) {
+          flags|=OCCUPANCIES;
+	  calc_ef=1;
+	}
+	else {
           fprintf(stderr,"Invalid option %s.\n%s -h for usage.\n",
                    optp,argv[0]);
           exit(1);
@@ -567,14 +585,23 @@ int main(int argc, char **argv)
           }
           break;
         case 'm':
+          molecule=1;
           if(*(optp+1)=='='){
-            m_abc=malloc(3*sizeof(int));
-            if (!m_abc) error_exit("malloc error for three ints!");
-            if (sscanf(optp+2,"%d,%d,%d",m_abc,m_abc+1,m_abc+2)!=3)
-              error_exit("malformed option -m=");
+	    if (*(optp+2)=='('){
+	      m_rel=malloc(3*sizeof(double));
+	      if (!m_rel) error_exit("malloc error for three doubles!");
+	      if (sscanf(optp+3,"%lf,%lf,%lf",m_rel,m_rel+1,m_rel+2)!=3)
+		error_exit("malformed option -m=(");
+              molecule=0;
+	    }
+	    else{
+	      m_abc=malloc(3*sizeof(int));
+	      if (!m_abc) error_exit("malloc error for three ints!");
+	      if (sscanf(optp+2,"%d,%d,%d",m_abc,m_abc+1,m_abc+2)!=3)
+		error_exit("malformed option -m=");
+	    }
             while(*((++optp)+1));
           }
-          molecule=1;
           break;
         case 'n':
           no_sym++;
@@ -588,6 +615,7 @@ int main(int argc, char **argv)
           break;
         case 'p':
           flags|=BANDPHASE;
+	  dict_strcat(motif.dict,"PDB_has_charge","");
           break;
         case 'P':
           if(*(optp+1)=='='){
@@ -599,7 +627,7 @@ int main(int argc, char **argv)
           else prim++;
           break;
         case 'q':
-          charge_correction=1;
+	  dict_strcat(motif.dict,"charge_correction","");
 	  elect.dip_corr_dir=malloc(1);
 	  if (!elect.dip_corr_dir) error_exit("Malloc error for char!");
 	  *elect.dip_corr_dir='m';
@@ -682,7 +710,12 @@ int main(int argc, char **argv)
           flags|=DE_AU;
           break;
         case 'w':
-          flags|=OCC_WEIGHT;
+	  if ((*(optp+1)=='=')&&(*(optp+2)=='k')){
+	    optp+=2;
+	    flags|=K_WEIGHT;
+	  }
+	  else
+	    flags|=OCC_WEIGHT;
           break;
         case 'W':
           flags|=OCC_WEIGHT;
@@ -923,16 +956,27 @@ int main(int argc, char **argv)
     abinit_charge_read(infile,&cell,&motif,&kp,&grid1,&elect);
   else if ((i>=3)&&(!strcmp(file1+i-3,"WFK")))
     abinit_psi_read(infile,&cell,&motif,&kp,&grid1,&elect,i_grid);
+  else if ((i>=3)&&(!strcmp(file1+i-3,"DDB")))
+    abinit_in_read(infile,&cell,&motif,&kp,&sym,&elect);
   else if ((i>=3)&&(!strcmp(file1+i-3,".in")))
     abinit_in_read(infile,&cell,&motif,&kp,&sym,&elect);
   else if ((i>=4)&&(!strcmp(file1+i-4,".abi")))
     abinit_in_read(infile,&cell,&motif,&kp,&sym,&elect);
+  else if ((i>=3)&&(!strcmp(file1+i-3,"EIG")))
+    abinit_eig_read(infile,&cell,&motif,&kp,&sym,&elect);
   else if ((i>=7)&&(!strcmp(file1+i-7,"den_fmt")))
-    denfmt_read(infile,&cell,&grid1,1);
+    denfmt_read(infile,&cell,&motif,&grid1,&elect,1);
   else if ((i>=7)&&(!strcmp(file1+i-7,"pot_fmt")))
-    denfmt_read(infile,&cell,&grid1,2);
+    denfmt_read(infile,&cell,&motif,&grid1,&elect,2);
+  else if ((i>=7)&&(!strcmp(file1+i-7,"elf_fmt")))
+    denfmt_read(infile,&cell,&motif,&grid1,&elect,0);
   else if ((i>=7)&&(!strcmp(file1+i-7,"cst_esp")))
-    esp_read(infile,&grid1,&elect);
+    esp_read(infile,&motif,&grid1,&elect);
+  else if ((i>=4)&&(!strcmp(file1+i-4,".elf"))){
+    flags|=RAW;
+    dict_add(motif.dict,"grid_name","ELF");
+    esp_read(infile,&motif,&grid1,&elect);
+  }
   else if ((i>=5)&&(!strcmp(file1+i-5,"bands")))
     bands_read(infile,&cell,&motif,&kp,&sym,&elect);
   else if ((i>=5)&&(!strcmp(file1+i-5,".geom")))
@@ -1003,7 +1047,7 @@ int main(int argc, char **argv)
       fprintf(stderr,"Error, unable to open %s for reading.\n",cdfile);
       exit(1);
     }
-    esp_read(infile,&grid1,&elect);
+    esp_read(infile,&motif,&grid1,&elect);
     fclose(infile);
     free(cdfile);
   }
@@ -1012,7 +1056,9 @@ int main(int argc, char **argv)
   i=strlen(file1);
   if (((i>=7)&&(!strcmp(file1+i-7,"den_fmt")))||
       ((i>=7)&&(!strcmp(file1+i-7,"pot_fmt")))||
-      ((i>=7)&&(!strcmp(file1+i-7,"cst_esp")))){
+      ((i>=7)&&(!strcmp(file1+i-7,"elf_fmt")))||
+      ((i>=7)&&(!strcmp(file1+i-7,"cst_esp")))||
+      ((i>=4)&&(!strcmp(file1+i-4,".elf")))){
     cdfile=malloc(i+5);
     if (!cdfile) error_exit("Malloc error for .cell filename");
     strcpy(cdfile,file1);
@@ -1100,9 +1146,24 @@ int main(int argc, char **argv)
 
   }
 
+  if ((molecule)&&(i_grid)&&(!grid1.data)){
+    m_rel=malloc(3*sizeof(double));
+    if (!m_rel) error_exit("malloc error for three doubles!");
+    for(i=0;i<3;i++) m_rel[i]=((double)m_abc[i])/i_grid[i];
+    free(m_abc);
+    m_abc=NULL;
+  }
+  
+  if ((molecule)||(m_rel)) molecule_fix(m_abc,m_rel,&cell,&motif,&grid1);
+
+  if (reduce) molecule=0;
+  
+  if (half_shift) xplor_fudge(&cell,&motif,&grid1);
+  
   if ((elect.dip_ctr)&&(grid1.data)) dipole(&cell,&motif,&grid1,&elect);
 
-  if (charge_correction) charge_corr(&cell,&motif,&grid1,&elect);
+  if (dict_get(motif.dict,"charge_correction"))
+    charge_corr(&cell,&motif,&grid1,&elect);
   
   if (debug>2){
     fprintf(stderr,"Ionic positions, fractional\n");
@@ -1227,7 +1288,10 @@ int main(int argc, char **argv)
     gptr=gptr->next;
   }
 
-  if ((calc_esp)&&(grid1.data)) {
+  if (calc_esp) {
+    if ((i_grid)&&(!grid1.data)){
+      for(i=0;i<3;i++) grid1.size[i]=i_grid[i];
+    }
     es_pot(&cell,&motif,&grid1,&elect,musq);
     if (rescale!=1){
       if (debug) fprintf(stderr,"Rescaling calculated potential by %lf\n",
@@ -1260,11 +1324,6 @@ int main(int argc, char **argv)
 
   if (reduce) reduce_cell(motif.atoms,motif.n,cell.basis);
   
-  if (molecule) molecule_fix(m_abc,&cell,&motif,&grid1);
-
-
-  if (half_shift) xplor_fudge(&cell,&motif,&grid1);
-
   if (spg_op) cspg_op(&cell,&motif,&sym,&kp,spg_op,tolmin);
 
   if ((sym_k)&&(kp.n)){
@@ -1406,6 +1465,33 @@ int main(int argc, char **argv)
     }
   }
 
+  if (calc_ef){
+    if (elect.eval){
+      chg=elect.nel;
+      if (chg==0){
+	for(i=0;i<motif.n;i++)
+	  chg+=motif.atoms[i].chg;
+	if ((chg)&&(elect.charge)) chg-=*elect.charge;
+	if (chg)
+	  fprintf(stderr,"Assuming nel=%lf from total ionic charge\n",chg);
+      }
+      if (chg){
+	if (!elect.e_fermi) elect.e_fermi=malloc(sizeof(double));
+	*elect.e_fermi=calc_efermi(&elect,&kp,chg);
+	fprintf(stderr,"Calculated E_Fermi (0K): ");
+	print_energy(*elect.e_fermi);
+	fprintf(stderr,"\n");
+      }
+      else
+	fprintf(stderr,"Unable to calculate E_Fermi"
+		" as unable to determine number of electrons\n");
+    }
+    else
+	fprintf(stderr,"Unable to calculate E_Fermi"
+		" as no eigenvalues read\n");
+  }
+  
+  if (pr_gap) print_gap(&elect, &kp,&motif);
   if (pr_occ) print_occ(&elect, &kp);
   
   if (line_spec){
@@ -1477,6 +1563,9 @@ int main(int argc, char **argv)
     case MMCIF:
       cif_write(outfile,&cell,&motif,&sym,1);
       break;
+    case NPY:
+      npy_write(outfile,&grid1);
+      break;
     case PY:
       py_write(outfile,&cell,&motif,'d');
       break;
@@ -1544,6 +1633,7 @@ void help(void){
          "-E[=[-][mu]] calculate electrostatic potential. Default mu=%g\n"
          "-f           find first failure star of k-point mesh\n"
          "--formats    list supported file formats and exit\n"
+	 "--gap        print band gap\n"
          "-H           shift atoms by half a grid cell\n",tol,C2X_MU);
   printf("-i           output imaginary part of band\n"
          "-i=n1,n2,n3  Fourier interpolate 3D grids to specified grid\n"
@@ -1554,6 +1644,8 @@ void help(void){
          "-L           produce (incorrect) left-handed abc output\n");
   printf("-m[=a,b,c]   assume input is molecule, not crystal, and move by\n"
          "               given nos of grid cells, or move automatically\n"
+	 "-m=(x,y,z)   shift by given relative co-ords, rounded to nearest\n"
+	 "               integer no of grid cells if grid present\n"
          "-M           generate Monkhurst-Pack k-point set from .cell values\n"
          "-M=nx,ny,nz  generate regular k-point mesh including origin\n"
          "-M=nx,ny,nx,dx,dy,dz\n"
@@ -1562,7 +1654,9 @@ void help(void){
          " output)\n"
          "               give twice to discard k-points too\n"
          "-N           normalise by reducing fractional coords to 0<=x<1\n"
-         "-O           print band occupancies and eigenvalues\n");
+	 "               with -m, do write cell into .xsf file\n"
+         "-O           print band occupancies and eigenvalues\n"
+	 "-p           partial charges in cols 61-66 of PDB input\n");
   printf("-P           find primitive cell\n"
          "-P=X:Y:npts  output 1D data with npts points along line\n"
          "               X and Y either (x,y,z) as fractional co-ords\n"
@@ -1576,6 +1670,8 @@ void help(void){
          "-Q[n]        quicksort atoms in descending atomic order "
          "(n=1 or absent)\n"
          "                                ascending atomic order  (n=2)\n"
+	 "-r           only reduced (symmetry inequivalent) atoms in cif"
+	 " output\n"
          "-R           don't rescale grid data or bands, don't adjust"
 	 " nanotube radius\n"
          "-R=x         rescale grid data by given factor, suffix with an x "
@@ -1598,6 +1694,7 @@ void help(void){
 	 "--version    report version and exit, also conversion factors if "
 	 "preceded by -v\n"
          "-w           weight band by occupancy\n"
+         "-w=k         weight band by kpt weight\n"
          "-W           weight band by kpt weight and occupancy\n");
   printf("-x=(x1,y1,z1)(x2,y2,z2)(x3,y3,z3)\n"
          "             re-express in new basis given in terms of old\n"
@@ -1622,19 +1719,21 @@ void help(void){
          "-b and -B are mutually exclusive, as are -x and -t.\n\n");
 #ifdef SPGLIB
   printf("OPERATION is used to call spglib and is one of:\n"
-         "   primitive      call spg_find_primitive()\n"
-         "   primitive_nr   call spg_standardize_cell(to_primitive=1, "
+         "   primitive         call spg_find_primitive()\n"
+         "   primitive_nr      call spg_standardize_cell(to_primitive=1, "
          "no_idealize=1)\n"
-         "   refine         call spg_refine_cell()\n"
-         "   int            call spg_get_dataset()"
+         "   refine            call spg_refine_cell()\n"
+         "   int               call spg_get_dataset()"
          " and report international symbol\n"
-         "   schoen         call spg_get_schoenflies()\n"
-	 "   snap           call spg_standardize_cell() then expand back\n"
-	 "                     to a snapped version of the original cell\n"
-         "   standardise    call spg_standardize_cell(no_idealize=1)\n"
-         "   symmetry       call spg_get_dataset() and keep symmetry ops\n"
-         "   list           call spg_get_dataset() and list symmetry ops\n"
-         "   point          call spg_get_dataset() followed by "
+         "   schoen            call spg_get_schoenflies()\n"
+	 "   snap              call spg_standardize_cell() then expand back\n"
+	 "                       to a snapped version of the original cell\n"
+	 "   snap_tr           ditto, but also include any translation\n"
+         " standardise or std  call spg_standardize_cell(no_idealize=1)\n"
+	 "   std_ideal         call spg_standardize_cell(no_idealize=0)\n"
+         "   symmetry or sym   call spg_get_dataset() and keep symmetry ops\n"
+         "   list              call spg_get_dataset() and list symmetry ops\n"
+         "   point             call spg_get_dataset() followed by "
          "spg_get_pointgroup()\n\n");
 #endif
   printf("Valid values of FORMAT are listed by the --formats argument, as are"
@@ -1681,11 +1780,14 @@ void formats(void){
          "            gnu       Gnuplot (with -P=)\n"
          "            mocube    single dataset in Gaussian molecular"
          " orbital cube format\n"
+	 "            npy       single dataset in NumPy array format, as"
+	 " doubles with -15\n"
          "            null      Discard output\n"
          "            one       Onetep .dat, very similar to .cell,\n"
          "                              also one_abc, one_abs, one_abc_abs\n"
          "            pdb       PDB\n"
          "            pdbn      PDB with atoms numbered\n"
+	 "            pdbx      Basic maybe PDBX compatible file\n"
          "            py        python dictionary\n"
          "            pya       python ASE Atoms\n"
          "            qe        Quantum Espresso .in\n"
@@ -1708,10 +1810,14 @@ void formats(void){
          "            ending .bands are assumed to be Castep .bands files\n"
          "            ending .cif or .mmcif are assumed to be in "
             "a cif format,\n"
+	 "            ending .cst_esp are assumed to be in Castep potential"
+	 " format,\n"
 	 "            ending .cub, .cube or _CUBE are assumed to be in "
             "cube format,\n"
 	 "            ending .dat are assumed to be in Onetep .dat format\n"
          "            ending .den_fmt are assumed to be in Castep format\n"
+	 "            ending .elf or .elf_fmt are assumed to be in Castep ELF"
+	 " format,\n"
 	 "            ending .fdf are assumed to be in Siesta format,\n"
          "            ending gcoeff (any case) are assumed to be GCOEFF.txt"
          " format,\n"

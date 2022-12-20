@@ -250,6 +250,7 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
             kp->kpts[i].wt=wkpts[i];
           }
           kp->n=*nkpts;
+	  if (debug) fprintf(stderr,"nkpts=%d\n",*nkpts);
           free(wkpts); wkpts=NULL;
           free(kpts_pos); kpts_pos=NULL;
         }
@@ -276,8 +277,8 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
         fseek(infile,4,SEEK_CUR);
         if (tmp==0) elect->nspins=elect->nbspins=1;
         else elect->nspins=elect->nbspins=2;
-        if (debug>1) fprintf(stderr,"Spins=%d  nbands=%d\n",
-			     elect->nspins,nbands);
+        if (debug) fprintf(stderr,"Spins=%d  nbands=%d\n",
+			   elect->nspins,nbands);
 
         fseek(infile,18+3*16,SEEK_CUR);
 	
@@ -776,9 +777,9 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
       fprintf(stderr,"Unexpected length to pseudopot block -- ignoring\n");
     ps_pot_len=(i/(*nsp));
     m->species_misc=realloc(m->species_misc,smisc_size+
-			    strlen("%block SPECIES POT\n")+1);
+			    strlen("%block SPECIES_POT\n")+1);
     if (!m->species_misc) error_exit("Realloc error in a species_ block");
-    strcpy(m->species_misc+smisc_size,"%block SPECIES POT\n");
+    strcpy(m->species_misc+smisc_size,"%block SPECIES_POT\n");
     smisc_size+=strlen("%block SPECIES_POT\n");
     for(j=0;j<(*nsp);j++){
       cptr=ps_pots+j*ps_pot_len;
@@ -1172,14 +1173,14 @@ static void wave_read(FILE *infile, struct kpts *kp,
         for(nspr=0;nspr<elect->nspinors;nspr++){
           if (elect->nspinors==2) nsp=nspr;
 	  else nsp=ns;
-	  fread(&tmp,4,1,infile);
-	  if (endian) reverse4(&tmp);
-	  if (tmp!=16*nplwv) error_exit("Error parsing wavefunction band");
 	  if (((flags&BANDREAD))&&
               inrange(k,kpt_range)&&inrange(nsp,spin_range)&&
 	      inrange(b,band_range)){
 	    if (debug>2) fprintf(stderr,"starting band read,"
 				 " kpt %d, band %d, spin %d\n",k,b,nsp);
+	    fread(&tmp,4,1,infile);
+	    if (endian) reverse4(&tmp);
+	    if (tmp!=16*nplwv) error_exit("Error parsing wavefunction band");
 	    if (!(dptr1=malloc(16*nplwv)))
 	      error_exit("Malloc error in band read");
 	    fread(dptr1,16*nplwv,1,infile);
@@ -1193,7 +1194,9 @@ static void wave_read(FILE *infile, struct kpts *kp,
 		  m, k-1, nspr, ns, b-1, i_grid);
 	    free(dptr1); 
 	  }  /* if (inrange) */
-	  else fseek(infile,16*nplwv+4,SEEK_CUR);
+	  /* Consecutive fseeks in glibc are expensive, as each is an
+	   * lseek followed by a read(!). So we could optimise better here */
+	  else fseek(infile,16*nplwv+8,SEEK_CUR);
 	} /*for(nspr=...) */
       } /* for(b=...) */
       if (pwgrid) {free(pwgrid); pwgrid=NULL;}

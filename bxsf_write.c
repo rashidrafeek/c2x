@@ -31,7 +31,7 @@ void bxsf_write(FILE* outfile, struct unit_cell *c, struct contents *m,
                 struct es *elect, struct kpts *kp,
                 struct symmetry *rs){
   int i,j,k,ii,jj,kk,ic,off,ind,nb,ns,hit,okay,warn1,warn2;
-  double mins[3],maxes[3],scale,lscale,frac1[3],frac2[3];
+  double mins[3],maxes[3],scale,lscale,frac1[3],frac2[3],chg,efermi;
   int grid[3],gpts,nbands,nspins;
   int *mapping;
   struct symmetry *ks;
@@ -46,6 +46,14 @@ void bxsf_write(FILE* outfile, struct unit_cell *c, struct contents *m,
   if (!elect->eval)
     error_exit("No evalues found, so cannot write bxsf");
   
+  /* Force kpoint co-ords to 0<=x<1 */
+
+  for(i=0;i<kp->n;i++)
+    for(j=0;j<3;j++)
+      kp->kpts[i].frac[j]=fmod(kp->kpts[i].frac[j]+1.0,1.0);
+
+  addabs(kp->kpts,kp->n,c->basis);
+
   /* First check that the kpoint grid includes the gamma point */
 
   hit=0;
@@ -60,37 +68,56 @@ void bxsf_write(FILE* outfile, struct unit_cell *c, struct contents *m,
 
   if (hit==0) error_exit("Gamma point kpt must be included for .bxsf output");
 
-  /* Force kpoint co-ords to 0<=x<1 */
-
-  for(i=0;i<kp->n;i++)
-    for(j=0;j<3;j++)
-      kp->kpts[i].frac[j]=fmod(kp->kpts[i].frac[j]+1.0,1.0);
-
-  addabs(kp->kpts,kp->n,c->basis);
+  if (!elect->e_fermi){
+    efermi=NAN;
+    chg=elect->nel;
+    if (chg==0){
+      for(i=0;i<m->n;i++)
+	chg+=m->atoms[i].chg;
+      if ((chg)&&(elect->charge)) chg-=*elect->charge;
+      if (chg)
+	fprintf(stderr,"Assuming nel=%lf from total ionic charge\n",chg);
+    }
+    if (chg) efermi=calc_efermi(elect,kp,chg);
+    if (isnan(efermi)){
+      efermi=0;
+      fprintf(stderr,"Warning: no Fermi energy found\n");
+    }
+    else
+      fprintf(stderr,"Warning: using estimate of Fermi energy\n");
+  }
+  else efermi=*elect->e_fermi;
   
-  mins[0]=mins[1]=mins[2]=1;
-  maxes[0]=maxes[1]=maxes[2]=0;
-  for(i=0;i<kp->n;i++){
-    for(j=0;j<3;j++){
-      if (!aeq(kp->kpts[i].frac[j],0)){
-        mins[j]=min(mins[j],fabs(kp->kpts[i].frac[j]));
-      }
-      if (!aeq(fabs(kp->kpts[i].frac[j]),1)){
-        maxes[j]=max(maxes[j],fabs(kp->kpts[i].frac[j]));
+
+  if (kp->mp){
+    for(i=0;i<3;i++) grid[i]=kp->mp->grid[i];
+  }
+  else{
+  
+    mins[0]=mins[1]=mins[2]=1;
+    maxes[0]=maxes[1]=maxes[2]=0;
+    for(i=0;i<kp->n;i++){
+      for(j=0;j<3;j++){
+	if (!aeq(kp->kpts[i].frac[j],0)){
+	  mins[j]=min(mins[j],fabs(kp->kpts[i].frac[j]));
+	}
+	if (!aeq(fabs(kp->kpts[i].frac[j]),1)){
+	  maxes[j]=max(maxes[j],fabs(kp->kpts[i].frac[j]));
+	}
       }
     }
-  }
+    
+    for(i=0;i<3;i++) mins[i]=min(mins[i],fabs(1-maxes[i]));
 
-  for(i=0;i<3;i++) mins[i]=min(mins[i],fabs(1-maxes[i]));
-
-  if (debug>1)
-    fprintf(stderr,"kpt minima: %f %f %f\n",mins[0],mins[1],mins[2]);
+    if (debug>1)
+      fprintf(stderr,"kpt minima: %f %f %f\n",mins[0],mins[1],mins[2]);
   
-  for(i=0;i<3;i++){
-    if (aeq(1.0/mins[i],floor(1.0/mins[i]+0.5)))
-      grid[i]=floor(1.0/mins[i]+0.5);
-    else
-      error_exit("Unable to deduce k-point mesh parameters");
+    for(i=0;i<3;i++){
+      if (aeq(1.0/mins[i],floor(1.0/mins[i]+0.5)))
+	grid[i]=floor(1.0/mins[i]+0.5);
+      else
+	error_exit("Unable to deduce k-point mesh parameters");
+    }
   }
 
   fprintf(stderr,"Deduced kpoint grid: %dx%dx%d\n",grid[0],grid[1],grid[2]);
@@ -193,8 +220,7 @@ void bxsf_write(FILE* outfile, struct unit_cell *c, struct contents *m,
       }
     }
   }
-  fprintf(outfile,"  Fermi Energy: %.6f\n",
-          elect->e_fermi?*elect->e_fermi*scale:0);
+  fprintf(outfile,"  Fermi Energy: %.6f\n",efermi*scale);
   fprintf(outfile,"END_INFO\n\n");
 
   fprintf(outfile,"BEGIN_BLOCK_BANDGRID_3D\n");

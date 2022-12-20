@@ -1,15 +1,11 @@
 /* Calculate Madelung constant and leading term in correction for
- * charged cell */
+ * charged cells */
 
 
 #include<stdio.h>
 #include<stdlib.h>
 #include<math.h>
 #include "c2xsf.h"
-
-// #undef EPS0
-// #define EPS0 (1/180.952701)
-
 
 double madelung(struct unit_cell *c){
   double M, M_real,M_recip,M_self,M_charged;
@@ -216,8 +212,8 @@ void charge_corr(struct unit_cell *c, struct contents *m,
                  struct grid *g, struct es *elect){
   double charge,alpha,energy,quad,ctr[3];
   double i_charge,e_charge;
-  double abc[6],a,dpole[3];
-  int i,n_grid_points,dir;
+  double abc[6],a,dpole[3],dpole_frac[3];
+  int i,j,n_grid_points,dir;
 
   if ((!g)||(!g->data)){
     fprintf(stderr,
@@ -258,11 +254,24 @@ void charge_corr(struct unit_cell *c, struct contents *m,
     }
 
     ctr[0]=ctr[1]=ctr[2]=0.5;
+    cart2abc(c,NULL,abc,NULL,0);
+    dipole_calc(c,m,g,ctr,dpole);
+    for(i=0;i<3;i++){
+      if (fabs(dpole[i])>fabs(charge*abc[i])){
+	fprintf(stderr,"Charge too small / dipole too large for next term\n");
+	return;
+      }
+      dpole_frac[i]=0;
+      for(j=0;j<3;j++)
+	dpole_frac[i]+=dpole[i]*c->recip[i][j];
+      ctr[i]=ctr[i]+dpole_frac[i]/charge;
+    }
 
     quad=quadrupole(c,m,g,ctr);
 
-    fprintf(stderr,"Fiddle=%f eV\n",charge*quad/(6*EPS0*c->vol));
-    fprintf(stderr,"New corrected: %.6f eV\n",
+    fprintf(stderr,"Quadrupole correction: %.6f eV\n",
+	    charge*quad/(6*EPS0*c->vol));
+    fprintf(stderr,"Final corrected energy: %.6f eV\n",
 	    *elect->energy+energy-charge*quad/(6*EPS0*c->vol));
   }
   else{  /* 3D to 2D slab correction */
@@ -287,13 +296,17 @@ void charge_corr(struct unit_cell *c, struct contents *m,
 
       ctr[0]=ctr[1]=ctr[2]=0.5;
       dipole_calc(c,m,g,ctr,dpole);
+      if (fabs(dpole[dir])>fabs(charge*abc[dir])){
+	fprintf(stderr,"Charge too small / dipole too large for next term\n");
+	return;
+      }
       ctr[dir]=ctr[dir]+dpole[dir]/(charge*abc[dir]);
 
       if (debug) fprintf(stderr,"Centre for quadrupole: (%f,%f,%f)\n",
 			 ctr[0],ctr[1],ctr[2]);
       
       quad=quadrupole_ii(c,m,g,ctr,dir);
-      quad=-quad*charge/(3*EPS0*c->vol);
+      quad=-quad*charge/(2*EPS0*c->vol);
       fprintf(stderr,"Quadrupole correction:    %12.6f eV\n",quad);
       fprintf(stderr,"Final corrected energy:   %12.6f eV\n",
 	      *elect->energy+energy+quad);

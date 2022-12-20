@@ -71,7 +71,8 @@ static void reverse8n(double *data, int n){
    }
 }
 
-void esp_read(FILE* infile, struct grid *gptr, struct es *elect){
+void esp_read(FILE* infile, struct contents *m, struct grid *gptr,
+	      struct es *elect){
   int endian,tmp,i,j,k,nspins,ns,c;
   int fft[3];
   double *column,*dptr1,*dptr2,csum,scale;
@@ -129,11 +130,17 @@ void esp_read(FILE* infile, struct grid *gptr, struct es *elect){
       if (!gptr->next) error_exit("Malloc error for struct grid");
       gptr->next->next=NULL;
       gptr->next->data=NULL;
-      if (nspins==1) gptr->name="ESP";
+      if (nspins==1) {
+	gptr->name=dict_get(m->dict,"grid_name");
+	if (!gptr->name) gptr->name="ESP";
+      }
       else{
         gptr->name=malloc(40);
         if (!gptr->name) error_exit("Malloc error for grid name");
-        sprintf(gptr->name,"ESP_s%d",ns);
+	if (dict_get(m->dict,"grid_name"))
+	  sprintf(gptr->name,"%s_s%d",(char*)dict_get(m->dict,"grid_name"),ns);
+	else
+	  sprintf(gptr->name,"ESP_s%d",ns);
       }
       for(i=0;i<3;i++) gptr->size[i]=fft[i];
       gptr->data=malloc(8*fft[0]*fft[1]*fft[2]);
@@ -163,12 +170,12 @@ void esp_read(FILE* infile, struct grid *gptr, struct es *elect){
       if (debug){
         if(nspins==1)
           fprintf(stderr,
-                  "Sum of absolute values of imaginary parts of potential"
+                  "Sum of absolute values of imaginary parts of data"
                   " is %g\n",
                   csum);
         else
           fprintf(stderr,"For spin %d, "
-                  "sum of absolute values of imaginary parts of potential"
+                  "sum of absolute values of imaginary parts of data"
                   " is %g\n",
                   ns,csum);
       }
