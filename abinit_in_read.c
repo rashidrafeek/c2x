@@ -40,6 +40,7 @@ static int ab_float_read(char *line, int off, double *data, int n,
 			  FILE* infile);
 static int ab_int_read(char *line, int off, int *data, int n,
 		       FILE* infile);
+static int ab_string_read(char *line, int off, char **str);
 static int ab_readline(char *buffer, char **p, FILE* infile);
 
 /* from cif_read */
@@ -48,19 +49,21 @@ void sym_expand(struct unit_cell *c, struct contents *m, struct symmetry *s);
 void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
              struct kpts *k, struct symmetry *s, struct es *e);
 
-void abinit_in_read(FILE* infile, struct unit_cell *c, struct contents *m,
+void abinit_in_read(FILE* in, struct unit_cell *c, struct contents *m,
 		    struct kpts *k, struct symmetry *s, struct es *e){
   
   double *acell,*rprim,*scalecart,*znucl,*xcart,*xred,*kpt,*wtk,*shiftk;
   double *ecut,*toldfe,*spinat,*tnons,*kptnrm;
   double x,xa,xc,angles[3],mat[3][3];
   char line[LINE_SIZE+1];
-  char *ptr;
-  int i,j,jj;
+  char *ptr,*p2;
+  int i,j,jj,success;
   int *natom,*typat,*ntypat,*nkpt,*ngkpt,*nshiftk,*kptopt,*ndtset;
   int *nspden,*nsppol,*nsym,*symrel,*natrd,*spgroup,*spgaxor,*spgorig;
   int hall;
-
+  struct infiles *files;
+  FILE *infile;
+  char *dir;
 
   acell=rprim=scalecart=znucl=xcart=xred=kpt=wtk=shiftk=NULL;
   ecut=toldfe=spinat=tnons=kptnrm=NULL;
@@ -68,6 +71,15 @@ void abinit_in_read(FILE* infile, struct unit_cell *c, struct contents *m,
   nspden=nsppol=nsym=symrel=natrd=spgroup=spgaxor=spgorig=NULL;
   ptr=line;
   *ptr=0;
+
+  files=malloc(sizeof(struct infiles));
+  if (!files) error_exit("Malloc error for files in abinit_in_read");
+  files->f=in;
+  files->next=files->last=NULL;
+  files->name=NULL;
+  files->line=0;
+  infile=files->f;
+  dir=dict_get(m->dict,"in_dir");
   
   /* Read file in two passes. First pass scalars and fixed-size arrays,
    * second pass arrays whose size depends on scalars read from the file
@@ -77,7 +89,20 @@ void abinit_in_read(FILE* infile, struct unit_cell *c, struct contents *m,
     /* remove leading spaces */
     while(*ptr&&(isspace(*ptr))) ptr++;
     if (*ptr==0){
-      if (!ab_readline(line,&ptr,infile)) break;
+      success=ab_readline(line,&ptr,infile);
+      if (!success){ /* Need to recurse out of include files */
+	while (files->last){
+	  fclose(files->f);
+	  free(files->name);
+	  files=files->last;
+	  free(files->next);
+	  files->next=NULL;
+	  infile=files->f;
+	  success=ab_readline(line,&ptr,infile);
+	  if (success) break;
+	}
+      }
+      if (!success) break;
     }
 
     if (!tokenmatch(&ptr,"&control")){
@@ -85,8 +110,23 @@ void abinit_in_read(FILE* infile, struct unit_cell *c, struct contents *m,
       qe_read(infile,c,m,k,s,e);
       return;
     }
-    
-    if (!tokenmatch(&ptr,"acell")){
+
+    if (!tokenmatch(&ptr,"include")){
+      ptr+=ab_string_read(ptr,0,&p2);
+      include_file(&files,dir,p2);
+      if (debug>1) fprintf(stderr,"Now reading %s\n",ptr);
+      free(p2);
+      infile=files->f;
+    }
+    else if (!tokenmatch(&ptr,"pp_dirpath")){
+      ptr+=ab_string_read(ptr,0,&p2);
+      dict_add(m->dict,"Abinit_pp_dirpath",p2);
+    }
+    else if (!tokenmatch(&ptr,"pseudos")){
+      ptr+=ab_string_read(ptr,0,&p2);
+      dict_add(m->dict,"Abinit_pseudos",p2);
+    }
+    else if (!tokenmatch(&ptr,"acell")){
       if (!acell) acell=malloc(3*sizeof(double));
       ptr=line+ab_len_read(line,ptr-line,acell,3,infile);
     }
@@ -244,10 +284,30 @@ void abinit_in_read(FILE* infile, struct unit_cell *c, struct contents *m,
     /* remove leading spaces */
     while(*ptr&&(isspace(*ptr))) ptr++;
     if (*ptr==0){
-      if (!ab_readline(line,&ptr,infile)) break;
+      success=ab_readline(line,&ptr,infile);
+      if (!success){ /* Need to recurse out of include files */
+	while (files->last){
+	  fclose(files->f);
+	  free(files->name);
+	  files=files->last;
+	  free(files->next);
+	  files->next=NULL;
+	  infile=files->f;
+	  success=ab_readline(line,&ptr,infile);
+	  if (success) break;
+	}
+      }
+      if (!success) break;
     }
 
-    if (!tokenmatch(&ptr,"typat")){
+    if (!tokenmatch(&ptr,"include")){
+      ptr+=ab_string_read(ptr,0,&p2);
+      include_file(&files,dir,p2);
+      if (debug>1) fprintf(stderr,"Now reading %s\n",ptr);
+      free(p2);
+      infile=files->f;
+    }
+    else if (!tokenmatch(&ptr,"typat")){
       typat=malloc(*natrd*sizeof(int));
       ptr=line+ab_int_read(line,ptr-line,typat,*natrd,infile);
     }
@@ -340,6 +400,8 @@ void abinit_in_read(FILE* infile, struct unit_cell *c, struct contents *m,
   
   if ((xred)&&(xcart)) error_exit("Both xred and xcart specified");
   if ((xred)||(xcart)){
+    if (!znucl) error_exit("znucl not found");
+    if (!typat) error_exit("typat not found");
     m->atoms=malloc(*natrd*sizeof(struct atom));
     if (!m->atoms) error_exit("malloc error for atoms");
     m->n=*natrd;
@@ -365,10 +427,17 @@ void abinit_in_read(FILE* infile, struct unit_cell *c, struct contents *m,
       free(xcart);
       xcart=NULL;
     }
+    m->nspec=*ntypat;
+    m->spec=malloc(m->nspec*sizeof(struct species));
+    if (!m->spec) error_exit("malloc error for m->spec");
+    for(i=0;i<m->nspec;i++)
+      m->spec[i].atno=(int)znucl[i];
     free(typat);
     typat=NULL;
     free(znucl);
     znucl=NULL;
+    free(ntypat);
+    ntypat=NULL;
   }
 
   /* spin */
@@ -681,6 +750,23 @@ static int ab_int_read(char *line, int off, int *data, int n,
     fprintf(stderr,"\n");
   }
   return off;
+}
+
+static int ab_string_read(char *line, int off, char **str){
+  char *p1,*p2,*s;
+
+  p1=line+off;
+  while(isspace(*p1)) p1++;
+  if (*p1!='"') error_exit("Failed to find initial quote in string");
+  p1++;
+  p2=strchr(p1,'"');
+  if (!p2) error_exit("Failed to find closing quote for string");
+  s=malloc((p2-p1)+1);
+  if (!s) error_exit("Malloc error in string_read");
+  memcpy(s,p1,p2-p1);
+  s[p2-p1]=0;
+  *str=s;
+  return(p2+1-line);
 }
 
 static int ab_readline(char *buffer, char **p, FILE* infile){

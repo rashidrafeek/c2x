@@ -132,6 +132,7 @@ void esp_read(FILE* infile, struct grid *gptr, struct es *elect){
       if (nspins==1) gptr->name="ESP";
       else{
         gptr->name=malloc(40);
+        if (!gptr->name) error_exit("Malloc error for grid name");
         sprintf(gptr->name,"ESP_s%d",ns);
       }
       for(i=0;i<3;i++) gptr->size[i]=fft[i];

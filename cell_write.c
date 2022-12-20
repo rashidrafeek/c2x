@@ -259,9 +259,25 @@ void cell_write_abc_abs(FILE* outfile, struct unit_cell *c, struct contents *m,
 void cell_write_common(FILE* outfile, struct unit_cell *c, struct contents *m,
                      struct kpts *k, struct symmetry *s){
   int i,j;
-  double v[3];
+  double v[3],scale;
   char *fmt1,*fmt2,*fmt3;
 
+  if (m->velocities){
+    fprintf(outfile,"\n%%block IONIC_VELOCITIES\n");
+    scale=1;
+    if (flags&AU){
+      fprintf(outfile,"bohr/ps\n");
+      scale=1.0/BOHR;
+    }
+    else
+      fprintf(outfile,"ang/ps\n");
+    for(i=0;i<m->n;i++){
+      fprintf(outfile,"% 16.12f % 16.12f % 16.12f\n",m->atoms[i].v[0]*scale,
+              m->atoms[i].v[1]*scale,m->atoms[i].v[2]*scale);
+    }
+    fprintf(outfile,"%%endblock IONIC_VELOCITIES\n");
+  }
+  
   fmt1="% 19.15f % 19.15f % 19.15f\n";
   if (flags&HIPREC){
     fmt2="% 19.15f % 19.15f % 19.15f     %19.15f\n";

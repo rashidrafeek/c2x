@@ -319,8 +319,8 @@ void inv_parity(double *d,int fft[3],int band,double kpt[3]){
       fprintf(stderr,"unexpected mixed parity of %f",ph);
     fprintf(stderr," about (%f,%f,%f)\n",
             -0.25*x/M_PI,-0.25*y/M_PI,-0.25*z/M_PI);
-    if (debug>1)
-      fprintf(stderr,"(residual %f)\n",residual);
+    if (debug)
+      fprintf(stderr,"          (residual %f)\n",residual);
   }
   else{
     if (debug>1)

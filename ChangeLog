@@ -1,4 +1,97 @@
-2.32
+2.34d (17/7/20)
+-----
+
+Increase periodic table from 103 atoms to 118
+Read VASP LOCPOT files
+Try to obtain pseudocharges from Vasp POTCAR file
+Recognise .dat as a Onetep-style .cell file
+Arithmetic parser now supports ^ (exponentiation)
+Arithmetic parser supports the constants pi, Ha, Ry and B
+Make -R= scaling call arithmetic parser, and scale after ES pot calculated
+
+2.34c (18/6/20)
+-----
+
+Add basic elk.in reader and writer
+Add basic elk 3D.OUT reader
+Fix reading of spinor wavefunctions from Castep (broken by Castep 18)
+Add support for UPF version 1 to qe_xml_read()
+Reduce warnings from static analysis
+Recognise .pdbx as a CIF file
+Add '-r' to reduce atoms in "cif" output to symmetry-inequivalent ones
+Add '-l' to label sites in "cif" output
+Misc CIF-related changes
+Ensure default cell made when reading a PDB without one is big enough
+Add reader for Castep .geom files
+Allow .xyz and .xyze to contain multiple frames
+
+2.34b (9/4/20)
+-----
+
+Fix bug in reading of Castep .bands file from parallel runs
+Recognise .abi as Abinit .in file
+Support Abinit binary headers from Abinit 9.0.x
+Support include and pp_dirpath in .in files for Abinit 9.0.x
+Add array of struct species to contents structure
+Thus stop species being renumbered, and upsetting POTCARs and Abinit pseudos
+Support pseudos in .in files for for Abinit 9.0.x
+
+2.34a
+-----
+
+Add support for reading Siesta .bands file
+Add FDF_BP output format
+Various speedups to MP generation
+Fix some bugs in WAVECAR output from gamma point input
+Fix band inversion reporting to start from 1 again (as it did prior to 2.33)
+Remove all scanf("%ms") as MacOS X does not support it
+
+2.34 (9/3/20)
+----
+
+Add .bxsf output for Fermi surface visualisation etc.
+Read Castep .bands file, improve writing of same
+Read VASP EIGENVAL file
+Add one form of extended xyz output
+Add extended xyz reader
+Allow writing of XSF files with no atoms (place dummy atom at origin)
+Add sorted (by |g|) GCOEFF.txt output
+Read Fermi energy from QE xml file
+Add WAVECAR output, inc 5.4 to 4.5 conversion
+
+2.33
+----
+
+Refactor wavefunction readers (Abinit, Castep, QE and VASP)
+Fix bug in psi Fourier interpolation for Abinit
+Fix bug in band weighting for VASP input
+Fix bug in FFT grid sizing for VASP input
+Improve search for PP_HEADER in QE UPF files
+Change real2rec() to return +ve volumes always
+Add GCOEFF.txt output, spins not supported
+Remove ONETEP flag bit in favour of dictionary entry
+
+2.32c (11/2/20)
+-----
+
+Read ionic velocities from .cell, .check, .in (QE) and .XV files
+Write ionic velocities to .cell, .in (QE) and .XV files if --vel given
+Add --calc option for testing arithmetic parser
+
+
+2.32b
+-----
+
+Rewrite fdf_read and cell_read include file handling
+Above include files searched for in input file's directory, then current dir
+Create dict entry for input filename, and reduce filename passing as argument
+
+2.32a
+-----
+
+Slight improvements to warnings when calculating ES pot
+
+2.32 (12/12/19)
 ----
 
 Add ccp4 writer

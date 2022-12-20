@@ -53,28 +53,22 @@ void qe_psi_read(char *dir, char *prefix, struct unit_cell *c,
 		 struct contents *m,
                  struct kpts *k, struct symmetry *s, struct grid *g,
                  struct es *elect, int fft[3], int *i_grid){
-  int i,j,ns,k2,nb,offset,tmp,ii;
-  int n0,n1,n2;
+  int i,j,ns,k2,nb,tmp,ii;
   char *file,*sspin;
   int ik,ispin,gamma,ngw,igwx,npol,nbnd,ngpts;
-  int *pwgrid,ffft[3],nfft[3];
-  double xk[3],scalef,b[9],kpoint[3],*wtmp,*psi,*dptr;
-  double occ,conv,lat_tmp[3][3];
+  int *pwgrid;
+  double xk[3],scalef,b[9],kpoint[3],*wtmp,*psi;
+  double lat_tmp[3][3];
   FILE *infile;
 
-  if (i_grid){
-    for(i=0;i<3;i++)
-      if (i_grid[i]==0)
-        nfft[i]=fft[i];
-      else
-        nfft[i]=i_grid[i];
-  }
-  else
-    for(i=0;i<3;i++) nfft[i]=fft[i];
   
   if (dir==NULL) dir=".";
   file=malloc(strlen(dir)+30+(prefix?strlen(prefix):0));
+  if (!file) error_exit("malloc error for filename");
 
+  dict_add(m->dict,"band_read_order",NULL); /* Delete any old entry */
+  dict_strcat(m->dict,"band_read_order","skbS"); /* Malloc for new */
+    
   if ((elect->nspins!=1)&&(elect->nspins!=2)){
     fprintf(stderr,"Error: cannot read wavefunction for nspins=%d\n",
 	    elect->nspins);
@@ -141,8 +135,6 @@ void qe_psi_read(char *dir, char *prefix, struct unit_cell *c,
       if (debug>2) fprintf(stderr,"igwx=%d\n",igwx);
       fread(&npol,4,1,infile);
       elect->nspinors=npol;
-      if (npol!=1) fprintf(stderr,"Warning: c2x's ability to read "
-                           "non collinear spin wavefunctions untested\n");
       fread(&nbnd,4,1,infile);
       fread(&tmp,4,1,infile);
 
@@ -231,95 +223,10 @@ void qe_psi_read(char *dir, char *prefix, struct unit_cell *c,
 
           for(ii=0;ii<npol;ii++){
             if ((npol>1)&&(!inrange(ii+1,elect->spin_range))) continue;
-            for(i=0;i<2*ngpts;i++) psi[i]=0;
-            for(i=0;i<igwx;i++){
-              offset=pwgrid[3*i+2]+fft[2]*(pwgrid[3*i+1]+
-                                           fft[1]*pwgrid[3*i]);
-              if ((offset<0)||(offset>ngpts)){
-                fprintf(stderr,"Impossible offset in wave_read off=%d i=%d\n",
-                        offset,i);
-                exit(1);
-              }
-              
-              psi[2*offset]=wtmp[2*ii*igwx+2*i];
-              psi[2*offset+1]=wtmp[2*ii*igwx+2*i+1];
-            }
-            if (gamma){ /* construct psi(-k)=conjg(psi(k)) */
-              for(i=0;i<igwx;i++){
-                if ((pwgrid[3*i]==0)&&(pwgrid[3*i+1]==0)&&(pwgrid[3*i+2]==0))
-                  continue;
-                n0=fft[2]-pwgrid[3*i+2];
-                if (n0==fft[2]) n0=0;
-                n1=fft[1]-pwgrid[3*i+1];
-                if (n1==fft[1]) n1=0;
-                n2=fft[0]-pwgrid[3*i];
-                if (n2==fft[0]) n2=0;
-                offset=n0+fft[2]*(n1+fft[1]*n2);
-                if ((offset<0)||(offset>ngpts)){
-                  fprintf(stderr,
-                          "Impossible -offset in wave_read off=%d i=%d\n",
-                          offset,i);
-                  exit(1);
-                }
-                psi[2*offset]=wtmp[ii*igwx+2*i];
-                psi[2*offset+1]=-wtmp[ii*igwx+2*i+1];
-              }
-            }
-            if (debug>2) fprintf(stderr,"Before FFT g=0 component is %g+%gi\n",
-                                 psi[0],psi[1]);
 
-            if (((kpoint[0]==0)||aeq(fabs(kpoint[0]),0.5))&&
-                ((kpoint[1]==0)||aeq(fabs(kpoint[1]),0.5))&&
-                ((kpoint[2]==0)||aeq(fabs(kpoint[2]),0.5))&&
-                (flags&BANDPARITY)) inv_parity(psi,fft,nb,kpoint);
-
-            /* Was the parity all we were requested to report? */
-            if (!(flags&BANDS)) continue;
-
-            /* Padding */
-            
-            if (i_grid){
-              for(i=0;i<3;i++) nfft[i]=i_grid[i];
-              if(debug>1)
-                fprintf(stderr,"Padding wavefunction onto %dx%dx%d grid\n",
-                        nfft[0],nfft[1],nfft[2]);
-              if ((fft[0]==nfft[0])&&(fft[1]==nfft[1])&&(fft[2]==nfft[2])){
-                if (debug>1)
-                  fprintf(stderr,"Skipping null padding operation\n");
-              }
-              else{
-                pad_recip(psi,fft,&dptr,nfft);
-                ngpts=nfft[0]*nfft[1]*nfft[2];
-                free(psi);
-                psi=dptr;
-              }
-            }
-
-	  
-      
-            ffft[0]=nfft[2];
-            ffft[1]=nfft[1];
-            ffft[2]=nfft[0];
-            fft3d(psi,ffft,1);
-
-            dptr=malloc(nfft[0]*nfft[1]*nfft[2]*sizeof(double));
-            if (!dptr) error_exit("Malloc error for grid data");
-            band2real(psi,dptr,nfft,kpoint);
-	 
-            /* Do we need to rescale? */
-            if (((flags&RAW)==0)&&((flags&BANDPHASE)==0)){ /* Yes */
-              if (flags&BANDDEN) conv=1/c->vol;
-              else conv=1/sqrt(c->vol);
-              if (debug>2) fprintf(stderr,"Scaling wavefun by %f\n",conv);
-              for(i=0;i<nfft[0]*nfft[1]*nfft[2];i++) dptr[i]*=conv;
-            }
-
-            if (elect->occ)
-              occ=elect->occ[elect->nspins*nbnd*(k2-1)+ns*nbnd+(nb-1)];
-            else
-              occ=1;
-            band_store(&g,dptr,occ,k->kpts[k2-1].wt,ii+1,
-                       ns,k2,nb,elect,m,nfft);
+	    band_process(wtmp+2*ii*igwx,fft,pwgrid,igwx,gamma,
+			 c,&g,elect,k,m,k2-1,ii+1,ns,nb-1,i_grid);
+	    
 	  } /* End spinor loop */
 	}
 	else fseek(infile,4+16*npol*igwx,SEEK_CUR);

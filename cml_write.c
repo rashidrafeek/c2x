@@ -24,13 +24,13 @@
 
 #include "c2xsf.h"
 
-#define MAX_ELS 103
+extern int periodic_max_el;
 
 void cml_write(FILE* outfile, struct unit_cell *c, struct contents *m){
   int i,*n_in_el;
   double abc[6];
 
-  n_in_el=calloc(MAX_ELS+1,sizeof(int));
+  n_in_el=calloc(periodic_max_el+1,sizeof(int));
   if (!n_in_el) error_exit("Calloc error in cml_write");
 
   fprintf(outfile,"<?xml version=\"1.0\"?>\n"
@@ -52,7 +52,7 @@ void cml_write(FILE* outfile, struct unit_cell *c, struct contents *m){
   for(i=0;i<m->n;i++)
       fprintf(outfile,"  <atom id=\"%s%d\" xFract=\"%f\" yFract=\"%f\""
               " zFract=\"%f\" elementType=\"%s\"/>\n",atno2sym(m->atoms[i].atno),
-              ++n_in_el[min(m->atoms[i].atno,MAX_ELS)],
+              ++n_in_el[min(m->atoms[i].atno,periodic_max_el)],
               m->atoms[i].frac[0],m->atoms[i].frac[1],m->atoms[i].frac[2],
               atno2sym(m->atoms[i].atno));
   fprintf(outfile,"</atomArray>\n");

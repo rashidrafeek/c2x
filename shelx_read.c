@@ -34,7 +34,7 @@
 
 #include "c2xsf.h"
 
-#define LINE_SIZE 100
+#define LINE_SIZE 200
 
 void shelx_read(FILE* infile, struct unit_cell *c, struct contents *m){
   double abc[6],dummy;

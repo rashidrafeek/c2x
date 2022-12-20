@@ -151,14 +151,80 @@ double quadrupole(struct unit_cell *c, struct contents *m,
   
 }
 
+double quadrupole_ii(struct unit_cell *c, struct contents *m,
+		     struct grid *g, double *ctr, int dir){
+  double q,Q_e,Q_i,vec[3],*ptr;
+  int i,ii[3],j;
+  double rvec[3],disp2,scale;
+
+  scale=c->vol/(g->size[0]*g->size[1]*g->size[2]);
+  Q_e=Q_i=0;
+  q=0;
+
+  ptr=g->data;
+  if (!ptr) return 0;
+
+  for(i=0;i<m->n;i++){
+    for(j=0;j<3;j++){
+      rvec[j]=m->atoms[i].frac[j]-ctr[j];
+      rvec[j]=fmod(rvec[j]+0.5,1.0);
+      if (rvec[j]<0) rvec[j]+=1;
+      rvec[j]-=0.5;
+    }
+    for(j=0;j<3;j++)
+      vec[j]=rvec[0]*c->basis[0][j]+
+        rvec[1]*c->basis[1][j]+rvec[2]*c->basis[2][j];
+    disp2=vec[dir]*vec[dir];
+    Q_i+=m->atoms[i].chg*disp2;
+  }
+
+  if (debug) fprintf(stderr,"Ionic quadrupole_%c%c: Q %f eA^2\n",
+		     dir+'a',dir+'a',Q_i);
+
+  
+  for(ii[0]=0;ii[0]<g->size[0];ii[0]++){
+    for(ii[1]=0;ii[1]<g->size[1];ii[1]++){
+      for(ii[2]=0;ii[2]<g->size[2];ii[2]++){
+        for(i=0;i<3;i++){
+          rvec[i]=(double)ii[i]/g->size[i]-ctr[i]; /* BUG!!! */
+      /* force disp to range 0.5<=disp<=0.5 */
+          rvec[i]=fmod(rvec[i]+0.5,1.0);
+          if (rvec[i]<0) rvec[i]+=1;
+          rvec[i]-=0.5;
+        }
+        for(i=0;i<3;i++)
+          vec[i]=rvec[0]*c->basis[0][i]+
+            rvec[1]*c->basis[1][i]+rvec[2]*c->basis[2][i];
+        disp2=vec[dir]*vec[dir];
+        q-=scale*(*ptr);
+        Q_e-=scale*(*ptr)*disp2;
+        ptr++;
+      }
+    }
+  }
+
+  if (debug) fprintf(stderr,"Electric quadrupole_%c%c: q=%fe, Q %f eA^2\n",
+		     dir+'a',dir+'a',q,Q_e);
+
+  if (debug) fprintf(stderr,"Total quadrupole_%c%c: %f eA^2\n",
+		     dir+'a',dir+'a',Q_e+Q_i);
+  return Q_e+Q_i;
+  
+}
+
 void charge_corr(struct unit_cell *c, struct contents *m,
                  struct grid *g, struct es *elect){
   double charge,alpha,energy,quad,ctr[3];
   double i_charge,e_charge;
-  int i,n_grid_points;
+  double abc[6],a,dpole[3];
+  int i,n_grid_points,dir;
 
-  alpha=madelung(c);
-
+  if ((!g)||(!g->data)){
+    fprintf(stderr,
+	    "Unable to correct for charge as no electron density read\n");
+    return;
+  }
+  
   if (elect->charge) charge=*elect->charge;
   else{ /* Need to calculate charge in cell */
     i_charge=0;
@@ -177,23 +243,62 @@ void charge_corr(struct unit_cell *c, struct contents *m,
     charge=i_charge-e_charge;
   }
 
-  energy=charge*charge*alpha/(8*M_PI*EPS0*sqrt(vmod2(c->basis[0])));
+  if (*elect->dip_corr_dir=='m'){ /* 3D to 0D correction */
+  
+    alpha=madelung(c);
 
-  if (debug) fprintf(stderr,"Total charge: %f\n",charge);
-  fprintf(stderr,"Madelung energy correction: %.6f eV\n",energy);
-  if (elect->energy){
-    fprintf(stderr,"Original energy:            %.6f eV\n",*elect->energy);
-    fprintf(stderr,"Corrected energy:           %.6f eV\n",
-            *elect->energy+energy);
+    energy=charge*charge*alpha/(8*M_PI*EPS0*sqrt(vmod2(c->basis[0])));
+
+    if (debug) fprintf(stderr,"Total charge: %f\n",charge);
+    fprintf(stderr,"Madelung energy correction: %12.6f eV\n",energy);
+    if (elect->energy){
+      fprintf(stderr,"Original energy:            %12.6f eV\n",*elect->energy);
+      fprintf(stderr,"Corrected energy:           %12.6f eV\n",
+	      *elect->energy+energy);
+    }
+
+    ctr[0]=ctr[1]=ctr[2]=0.5;
+
+    quad=quadrupole(c,m,g,ctr);
+
+    fprintf(stderr,"Fiddle=%f eV\n",charge*quad/(6*EPS0*c->vol));
+    fprintf(stderr,"New corrected: %.6f eV\n",
+	    *elect->energy+energy-charge*quad/(6*EPS0*c->vol));
   }
+  else{  /* 3D to 2D slab correction */
+    cart2abc(c,NULL,abc,NULL,0);
+    dir=*elect->dip_corr_dir-'a';
+    for(i=0;i<3;i++){
+      if ((!aeq(abc[3+i],90))&&(dir!=i)){
+	  fprintf(stderr,"Warning: charge correction axis not perpendicular "
+		  "to other axes\n");
+      }
+    }
+    a=abc[(dir+1)%3]*abc[(dir+2)%3]*sin(abc[3+dir]*M_PI/180);
 
-  ctr[0]=ctr[1]=ctr[2]=0.5;
+    energy=-charge*charge*abc[dir]/(24*EPS0*a);
 
-  quad=quadrupole(c,m,g,ctr);
+    if (debug) fprintf(stderr,"Total charge: %f\n",charge);
+    fprintf(stderr,"Charged slab correction:  %12.6f eV\n",energy);
+    if (elect->energy){
+      fprintf(stderr,"Original energy:          %12.6f eV\n",*elect->energy);
+      fprintf(stderr,"Corrected energy:         %12.6f eV\n",
+	      *elect->energy+energy);
 
-  fprintf(stderr,"Fiddle=%f eV\n",charge*quad/(6*EPS0*c->vol));
-  fprintf(stderr,"New corrected: %.6f eV\n",
-          *elect->energy+energy-charge*quad/(6*EPS0*c->vol));
+      ctr[0]=ctr[1]=ctr[2]=0.5;
+      dipole_calc(c,m,g,ctr,dpole);
+      ctr[dir]=ctr[dir]+dpole[dir]/(charge*abc[dir]);
 
+      if (debug) fprintf(stderr,"Centre for quadrupole: (%f,%f,%f)\n",
+			 ctr[0],ctr[1],ctr[2]);
+      
+      quad=quadrupole_ii(c,m,g,ctr,dir);
+      quad=-quad*charge/(3*EPS0*c->vol);
+      fprintf(stderr,"Quadrupole correction:    %12.6f eV\n",quad);
+      fprintf(stderr,"Final corrected energy:   %12.6f eV\n",
+	      *elect->energy+energy+quad);
+    
+    }
+  }
   
 }

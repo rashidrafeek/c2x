@@ -13,10 +13,12 @@ OBJS=check2xsf.o check_read.o xsf_write.o molecule_fix.o cube_write.o \
      abinit_in_read.o fdf_read.o qe_write.o qe_read.o parity.o potential.o \
      qe_rho_read.o qe_xml_read.o dict.o charge.o qe_psi_read.o print_cell.o \
      bands_write.o geom_write.o xv_read.o rho_read.o tube.o ccp4_write.o \
-     xc.o
+     xc.o band_process.o gcoeff_write.o wavecar_write.o bxsf_write.o \
+     bands_read.o xyz_read.o gcoeff_read.o elk_write.o elk_read.o \
+     geom_read.o
 
 
-# Recommended: -DQSORT -DSPGLIB
+# Recommended: -DSPGLIB
 
 # For SPGLIB (1.8.3 or greater)
 
@@ -32,15 +34,13 @@ LIBS=-lsymspg
 #LDFLAGS=
 #LIBS=
 
-# Don't define QSORT below unless your libc provides qsort()
-
 # Linux / x86_64 / gcc
-CFLAGS=-Wall -Wno-unused-result -O -g  -DQSORT $(DEFS)
+CFLAGS=-Wall -Wno-unused-result -O -g  $(DEFS)
 
 # Linux / IA32 / gcc
-#CFLAGS=-Wall -Wno-unused-result -O -D_FILE_OFFSET_BITS=64 -DQSORT $(DEFS) -g
+#CFLAGS=-Wall -Wno-unused-result -O -D_FILE_OFFSET_BITS=64 $(DEFS) -g
 # Tru64
-#CFLAGS=-O -DQSORT -std1
+#CFLAGS=-O -std1
 # Solaris
 #CFLAGS=-O -xarch=native64
 

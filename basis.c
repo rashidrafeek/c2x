@@ -40,7 +40,7 @@ int is_rhs(double b[3][3]){
 }
 
 /* Update reciprocal basis set to reflect real basis set */
-/* return a negative volume if fed a lhs of axes */
+
 void real2rec(struct unit_cell *c){
   int i,j,k;
   double rec[3][3],v;
@@ -72,7 +72,7 @@ void real2rec(struct unit_cell *c){
     for(j=0;j<3;j++)
       c->recip[i][j]=rec[i][j]/v;
 
-  c->vol=v;
+  c->vol=fabs(v);
 }
 
 /* Update fractional atomic co-ordinates to reflect absolute
@@ -192,11 +192,10 @@ void abc2cart(double *abc, struct unit_cell *c){
 
 /* Worry about handedness */
 
-  real2rec(c);
-  if (c->vol<0){
+  if (!is_rhs(b)){
     for(i=0;i<3;i++) b[2][i]*=-1;
-    c->vol*=-1;
   }
+  real2rec(c);
 
   if(debug>2){
     int i;
@@ -386,6 +385,7 @@ void init_atoms(struct atom *a, int n){
     for(j=0;j<3;j++) a[i].abs[j]=0;
     for(j=0;j<3;j++) a[i].frac[j]=0;
     for(j=0;j<3;j++) a[i].force[j]=0;
+    for(j=0;j<3;j++) a[i].v[j]=0;
     a[i].wt=0;
     a[i].spin=0;
     a[i].chg=0;
@@ -516,5 +516,30 @@ void cell_check(struct unit_cell *c, struct contents *m){
   }
 
   free(compact_cell.basis);
+  
+}
+
+void addspec(struct contents *m){
+  int i,j,nspec,*species;
+
+  species=malloc(m->n*sizeof(int));
+  if (!species) error_exit("malloc error in addspec");
+  nspec=0;
+
+  for(i=0;i<m->n;i++){
+    for(j=0;j<nspec;j++) if (m->atoms[i].atno==species[j]) break;
+    if (j==nspec){  /* new species */
+      species[j]=m->atoms[i].atno;
+      nspec++;
+    }
+  }
+
+  m->nspec=nspec;
+  m->spec=malloc(nspec*sizeof(struct species));
+
+  for(i=0;i<nspec;i++)
+    m->spec[i].atno=species[i];
+
+  free(species);
   
 }

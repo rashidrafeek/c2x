@@ -75,8 +75,8 @@ void tube(struct unit_cell *c, struct contents *m, int rpt[3], double spacing){
         addabs(m->atoms,m->n,c->basis);
       }
       else{
-        if (debug) fprintf(stderr,"Shifing atoms by %lf in c\n",dtmp);
         dtmp=1.0-(mx+mn)/2;
+        if (debug) fprintf(stderr,"Shifing atoms by %lf in c\n",dtmp);
         for(i=0;i<m->n;i++)
           m->atoms[i].frac[2]=fmod(m->atoms[i].frac[2]+dtmp,1.0);
       }

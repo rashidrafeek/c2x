@@ -344,6 +344,8 @@ int rarest(struct unit_cell *c, struct contents *m,int *spec){
   spec_n=malloc(m->n*sizeof(int));
   spec_at=malloc(m->n*sizeof(int));
   atom_spec=malloc(m->n*sizeof(int));
+  if ((!spec_n)||(!spec_at)||(!atom_spec))
+    error_exit("malloc error in rarest()");
 
   for(i=0;i<m->n;i++) spec_n[i]=spec_at[i]=0;
   nspec=0;

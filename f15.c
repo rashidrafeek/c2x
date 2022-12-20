@@ -1,4 +1,4 @@
-/* Copyright (c) 2013 MJ Rutter 
+/* Copyright (c) 2013, 2020 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -24,49 +24,39 @@
 
 void f15_write(struct unit_cell *c, struct contents *m, struct kpts *k){
   int i,j,nspec;
-  int *natomsp,*spatno;
+  int *natomsp,*spchg;
   FILE *fort15,*fort14,*fort4;
 
   fort15=fopen("fort.15","w");
 
-  for(i=0;i<3;i++)
-    fprintf(fort15,"%.7f %.7f %.7f\n",c->basis[0][i],c->basis[1][i],
-            c->basis[2][i]);
+  /* Write basis, transposed, twice */
+  for(j=0;j<2;j++)
+    for(i=0;i<3;i++)
+      fprintf(fort15,"%.7f %.7f %.7f\n",c->basis[0][i],c->basis[1][i],
+	      c->basis[2][i]);
 
-  for(i=0;i<3;i++)
-    fprintf(fort15,"%.7f %.7f %.7f\n",c->basis[0][i],c->basis[1][i],
-            c->basis[2][i]);
+  if (!m->spec) addspec(m);
+  nspec=m->nspec;
 
-    /* Now we need to know the number of species.
-     It must be fewer than the number of atoms...
-     This is horribly inefficient, but I intend to
-     use it for ethene only... */
-
-  nspec=0;
-  natomsp=malloc(m->n*sizeof(int));
-  if (!natomsp) error_exit("Malloc error in f15_write");
-  spatno=malloc(m->n*sizeof(int));
-  if (!spatno) error_exit("Malloc error in f15_write");
-
-  for(i=0;i<m->n;i++){
-    for(j=0;j<nspec;j++) if (m->atoms[i].atno==spatno[j]) break;
-    if (j==nspec){  /* new species */
-      spatno[j]=m->atoms[i].atno;
-      natomsp[j]=1;
-      nspec++;
-    }else{          /* existing species */
-      natomsp[j]++;
-    }
-  }
-
+  natomsp=malloc(nspec*sizeof(int));
+  spchg=malloc(nspec*sizeof(int));
+  if ((!natomsp)||(!spchg)) error_exit("Malloc error in f15_write");
+  for(i=0;i<nspec;i++) natomsp[i]=0;
+  for(i=0;i<nspec;i++)
+    for(j=0;j<m->n;j++)
+      if (m->atoms[j].atno==m->spec[i].atno){
+	natomsp[i]++;
+	spchg[i]=(int)m->atoms[j].chg;
+      }
+  
   /* Write out atoms, sorted by species */
   for(i=0;i<nspec;i++){
     for(j=0;j<m->n;j++)
-      if (m->atoms[j].atno==spatno[i])
+      if (m->atoms[j].atno==m->spec[i].atno)
         fprintf(fort15," %f %f %f 0.0\n",m->atoms[j].frac[0],
                 m->atoms[j].frac[1],m->atoms[j].frac[2]);
     for(j=0;j<m->n;j++)
-      if (m->atoms[j].atno==spatno[i])
+      if (m->atoms[j].atno==m->spec[i].atno)
         fprintf(fort15," %f %f %f\n",m->atoms[j].frac[0],
                 m->atoms[j].frac[1],m->atoms[j].frac[2]);
   }
@@ -106,7 +96,7 @@ void f15_write(struct unit_cell *c, struct contents *m, struct kpts *k){
 	  "1  POTIM\n"
 	  "1  PODISP\n");
   for(i=0;i<nspec;i++)
-    fprintf(fort14,"1 ICHARGE\n");
+    fprintf(fort14,"%d ICHARGE\n",spchg[i]);
   for(i=0;i<nspec;i++)
     fprintf(fort14,"1 POMASS\n");
   for(i=0;i<nspec;i++)
@@ -128,5 +118,7 @@ void f15_write(struct unit_cell *c, struct contents *m, struct kpts *k){
 	  "  treated as a dummy\n"
 	  "If IQ1=0, then IQ2 k-points will be read from fort.15\n");
   fclose(fort4);
+  free(spchg);
+  free(natomsp);
 }
 

@@ -1,4 +1,5 @@
 /* Write a .bands file (CASTEP-style) */
+/* (c) MJR 2019-2020 */
 
 #include<stdio.h>
 
@@ -19,14 +20,14 @@ void bands_write(FILE* outfile, struct unit_cell *c,
   if (e->nspins==1){
     fprintf(outfile,"Number of electrons %.4g\n",e->nel);
     fprintf(outfile,"Number of eigenvalues %d\n",e->nbands);
-    fprintf(outfile,"'Fermi energy (in atomic units) %12f\n",
+    fprintf(outfile,"Fermi energy (in atomic units) %12f\n",
             (e->e_fermi)?(*e->e_fermi)/H_eV:0.0);
   }
   else{
     fprintf(outfile,"Number of electrons %.4g %.4g\n",
-            e->nel+0.5*e->nup_minus_down,e->nel-0.5*e->nup_minus_down);
+            0.5*(e->nel+e->nup_minus_down),0.5*(e->nel-e->nup_minus_down));
     fprintf(outfile,"Number of eigenvalues %d %d\n",e->nbands,e->nbands);
-    fprintf(outfile,"Fermi energy (in atomic units) %12f %12f\n",
+    fprintf(outfile,"Fermi energies (in atomic units) %12f %12f\n",
             (e->e_fermi)?(*e->e_fermi)/H_eV:0.0,
             (e->e_fermi)?(*e->e_fermi)/H_eV:0.0);
   }

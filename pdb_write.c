@@ -52,7 +52,7 @@
 
 #include "c2xsf.h"
 
-#define MAX_ELS 103
+extern int periodic_max_el;
 
 void pdb_write(FILE* outfile, struct unit_cell *c, struct contents *m){
   int i,*n_in_el=NULL;
@@ -62,7 +62,7 @@ void pdb_write(FILE* outfile, struct unit_cell *c, struct contents *m){
     error_exit("Cannot write pdb file with more than 99,999 atoms");
   
   if (flags&PDBN){
-    n_in_el=calloc(MAX_ELS+1,sizeof(int));
+    n_in_el=calloc(periodic_max_el+1,sizeof(int));
     if (!n_in_el) error_exit("Calloc error in pdbn_write");
   }
 
@@ -78,13 +78,13 @@ void pdb_write(FILE* outfile, struct unit_cell *c, struct contents *m){
   for(i=0;i<m->n;i++)
     if (flags&PDBN){
       fprintf(outfile,"ATOM  %5d ",i+1);
-      if(++n_in_el[min(m->atoms[i].atno,MAX_ELS)]<=99)
+      if(++n_in_el[min(m->atoms[i].atno,periodic_max_el)]<=99)
           fprintf(outfile,"%2s%02d",atno2sym(m->atoms[i].atno),
-                  n_in_el[min(m->atoms[i].atno,MAX_ELS)]);
-      else if((n_in_el[min(m->atoms[i].atno,MAX_ELS)]<=999)&&
+                  n_in_el[min(m->atoms[i].atno,periodic_max_el)]);
+      else if((n_in_el[min(m->atoms[i].atno,periodic_max_el)]<=999)&&
               (strlen(atno2sym(m->atoms[i].atno))==1))
           fprintf(outfile,"%1s%d",atno2sym(m->atoms[i].atno),
-                  n_in_el[min(m->atoms[i].atno,MAX_ELS)]);
+                  n_in_el[min(m->atoms[i].atno,periodic_max_el)]);
       else fprintf(outfile,"%2s00",atno2sym(m->atoms[i].atno));
       fprintf(outfile,"   X     1     %7.3f %7.3f %7.3f"
                    "                      %2s\n",

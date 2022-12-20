@@ -30,7 +30,7 @@ cube format, ending '.in' is assumed to be an Abinit or Quantum
 Espresso input file, ending '.xml' is assumed to be a Quantum Espresso
 output file, ending in '.xsf' is assumed to be in xsf
 format, and ending in '.xv' or 'XV' is assumed to be in Siesta's XV format.
-Input files ending CHG, CHGCAR, POSCAR, CONTCAR or WAVEDCAR
+Input files ending CHG, CHGCAR, POSCAR, CONTCAR, LOCPOT or WAVECAR
 are assumed to be in VASP 5.x format. Input files ending in DEN, POT or WFK
 are assumed to be in Abinit format. Otherwise, if the first byte is
 either zero, 10 or 30 it is assumed to be a .check file, else it is
@@ -241,10 +241,6 @@ specification of p1, see -P= option.
 ditto, but assume that data represents an electron density in A^-3,
 and also output Perdew Zunger 81 XC energy.
 .TP
-.B \-1
-assume input .cell file follows Onetep conventions (such as default units
-being Bohr).
-.TP
 .B \-3
 when moving from a left hand set of axes to a right hand set, rather than
 exchanging the 2nd and 3rd axes, preserve the 3rd and exchange the 1st
@@ -264,6 +260,10 @@ Abinit, but can easily be made so.
 .TP
 .B \-\-bands
 CASTEP .bands file, no sorting of bands.
+.TP
+.B \-\-bxsf
+XCrysDen / FermiSurfer file for plotting Fermi surfaces. A symmetry-reduced
+kpoint set will be expanded.
 .TP
 .B
 \-\-ccp4
@@ -305,6 +305,12 @@ CASTEP formatted density
 .B \-\-fdf
 Siesta. If a density has been read, a corresponding .RHO file
 will be written.
+.TP
+.B \-\-gcoeff
+An ASCII wavefunction coefficient representation
+.TP
+.B \-\-gcoeff_sorted
+The same, sorted by |g|
 .TP
 .B \-\-gnu
 Gnuplot command file for 1D data.
@@ -418,6 +424,10 @@ written. For the dx and xplor formats, just a single data set is written.
 For the Gaussian cube format atomic positions and at most one data set
 are recorded, and for the XCrysDen format the unit cell, atomic positions,
 forces, and any number of data sets are recorded.
+
+.LP
+When reading a .geom file and writing a format containing a single
+frame, the last frame is written.
 
 .LP
 Note that the pdb format offers a very low precision for storing co-ordinates,

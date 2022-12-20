@@ -1,4 +1,4 @@
-#define C2XSF_VER "2.32"
+#define C2XSF_VER "2.34d"
 
 /* Global variables for system description */
 
@@ -16,12 +16,15 @@
           /* 27.21138505  is CODATA 2010 */
           /* 27.21138342902473 is c2x <=2.20a */
 
-/* epsilon_0 is 8.8541878e-12 Fm^-1 or C V^-1 m-1
+/* Atomic unit of time, in picoseconds */
+#define H_ps 2.418884326585e-5 /* CODATA 2014 */
+
+/* epsilon_0 is 8.85418782e-12 Fm^-1 or C V^-1 m-1
  * We want A not m, and e not C, so
- * 8.8541878e-12/1.6021892e-19/1e10
+ * 8.85418782e-12/1.60217662e-19/1e-10
  * Strangely the answer is generally expressed as its reciprocal */
 
-#define EPS0 (1/180.952701)
+#define EPS0 (1/180.95128)
 
 
 #ifndef M_PI
@@ -57,6 +60,9 @@
 #define CASTEP_GEOM 25
 #define XV 26
 #define CCP4 27
+#define BXSF 28
+#define FDF_BP 29
+#define ELK 30
 
 /* flags for reading and output */
 #define CHDEN 1
@@ -76,12 +82,13 @@
 #define FRAC 16384
 #define CST_ESP 32768
 #define AU 65536
+#define GCOEFF 131072
 #define HIPREC 262144
 #define LHS_FUDGE 524288
 #define OCC_WEIGHT 1048576
 #define K_WEIGHT 2097152
 #define OCCUPANCIES 4194304
-#define ONETEP 8388608
+/*#define ONETEP 8388608 */
 /* Alternate output format: changes CELL to ONETEP,
  *                          changes CUBE to MO CUBE
  */
@@ -96,6 +103,8 @@
 #define PC_SHIFT 28
 /* 1<<28 + 1<<29 = 3<< PC_SHIFT = 805306368 */
 #define PRESERVE_C 805306368
+
+#define BANDREAD (BANDS+BANDPARITY+GCOEFF)
 
 /* Flags for SPGLIB ops */
 
@@ -117,7 +126,10 @@ struct cmt {char *txt; struct cmt *next;};
    two different atoms may poin to the same location */
 struct atom
    {unsigned int atno; double abs[3]; double frac[3]; double force[3];
-     double wt; double spin; double chg; double site_chg; char *label;};
+     double v[3]; double wt; double spin; double chg; double site_chg;
+     char *label;};
+/* This structure will probably be extended... */
+struct species {unsigned int atno;};
 /* grid.next == NULL if grid unused */
 /* grids storage order is size[0]=ngx, size[1]=ngy, size[2]=ngz,
      data[x*ngy*ngz+y*ngz+z] */
@@ -130,29 +142,38 @@ struct vector {double v[3]; double mod2;};
 struct sym_op {double mat[3][3]; double *tr;};
 struct unit_cell {double (*basis)[3]; double recip[3][3]; double vol;
   double (*stress)[3];};
-struct contents {int n; int forces; struct atom *atoms; char *title;
-  struct cmt *comment; char *block_species; char *species_misc;
-  struct dct *dict;};
+struct contents {int n; int forces; int velocities; struct atom *atoms;
+  char *title; struct cmt *comment; char *block_species; char *species_misc;
+  struct dct *dict; int nspec; struct species *spec;};
 struct kpts {int n; struct atom *kpts; struct mp_grid *mp; double *spacing;};
 struct symmetry {int n; double *tol; int *gen; struct sym_op *ops;};
 struct es {int nspins; int nspinors; char *spin_method; double cut_off;
   double etol; char *band_range; char *kpt_range; char *spin_range;
   char *dip_corr; char *dip_corr_dir; double *dip_ctr; double *charge;
   double *energy; double *e_fermi; int nbands; int nbspins; double nel;
-  double nup_minus_down; double *occ; double *eval;};
+  double nup_minus_down; double *occ; double *eval; int max_nplwv;};
 
 struct time_series {int nsteps; int nc; struct unit_cell *cells;
   int nm; struct contents *m; int nen; double *energies;
   int nenth; double *enthalpies;};
 
+struct infiles { FILE* f; struct infiles *next; struct infiles *last;
+  char *name; int line; int include;};
+
 void *dict_get(struct dct *dict, char *key);
 void dict_add(struct dct *dict, char *key, void *value);
 void dict_strcat(struct dct *dict, char *key, char *value);
 
+#ifdef __GNUC__
+void error_exit(char* msg) __attribute__((__noreturn__));
+#else
 void error_exit(char* msg);
+#endif
+
 void real2rec(struct unit_cell *cell);
 void addfrac(struct atom *a,int natoms, double recip[3][3]);
 void addabs(struct atom *a,int natoms, double basis[3][3]);
+void addspec(struct contents *m);
 void reduce_cell(struct atom *a,int natoms, double basis[3][3]);
 void reduce_cell_tol(struct atom *a,int natoms, double basis[3][3], double eps);
 void abc2cart(double *abc, struct unit_cell *cell);
@@ -182,6 +203,7 @@ void print_cell(struct unit_cell *c, struct contents *m);
 void print_occ(struct es *elect, struct kpts *kp);
 void print_elect(struct es *elect);
 void print_basis(double basis[3][3]);
+void print_bandwidths(struct es *elect, struct kpts *kp);
 void old_in_new(double old_basis[3][3],double new_recip[3][3]);
 
 unsigned int atsym2no(char* sym);
@@ -199,11 +221,13 @@ void mp_gen(struct kpts *ks, struct unit_cell *c);
 int inrange(int x, char *range);
 void fft3d(double *c, int *ngptar, int dir);
 void band2real(double *psi, double *out, int nfft[3], double kpoint[3]);
-void band_store(struct grid **g, double *dptr, double occ, double wkpt,
-                int nspr, int ns, int k, int b, struct es *elect,
-                struct contents *m, int fft[3]);
 void pad_recip(double *o, int fft[3], double **nptr, int nfft[3]);
 
+void band_process(double *dptr, int fft[3], int *pwgrid, int npw, int gamma,
+		  struct unit_cell *c,
+		  struct grid **gp, struct es *elect, struct kpts *kp,
+		  struct contents *m, int ikpt, int ispinor, int isppol,
+		  int nb, int *i_grid);
 
 extern int igr2hall[];
 
@@ -218,6 +242,15 @@ double dist(double a,double b);
 double atom_dist(struct atom *a, struct atom *b, double basis[3][3]);
 double vmod2(double v[3]);
 void cell_check(struct unit_cell *c, struct contents *m);
+void include_file(struct infiles **file, char *dir, char *ptr);
+void sym2ksym(struct symmetry *rs, struct symmetry *ks);
+char *strrsubs(char *str, char *old, char *new);
+int cspg_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
+            struct kpts *k, int op, double tolmin);
+void xv_read(FILE* infile, struct unit_cell *c, struct contents *m);
+void fdf_read(FILE* in, struct unit_cell *c,
+              struct contents *m, struct kpts *kp, struct es *e);
+int sscanfmsn(char *buffer, char **str, int *n);
 
 #ifndef min
 #define min(a,b) ((a)<(b)?(a):(b))

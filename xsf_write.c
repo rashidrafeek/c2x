@@ -62,6 +62,9 @@ unless the vectors in the datagrid section are the same as in the cell
 description. It also gets upset if the first line is blank. A line
 containing a single '#' is fine.
 
+The number of atoms cannot be zero. So if no atoms are present, c2x
+adds a dummy atom, atomic species zero, at the origin.
+
 */
 
 #include<stdio.h>
@@ -111,7 +114,7 @@ void xsf_write(FILE* outfile, struct unit_cell *c, struct contents *m,
     for(i=0;i<=2;i++) fprintf(outfile,fmt3f,c->basis[i][0],
                               c->basis[i][1],c->basis[i][2]);
     fprintf(outfile,"PRIMCOORD\n");
-    fprintf(outfile,"%d 1\n",m->n);
+    fprintf(outfile,"%d 1\n",max(1,m->n));
   }else{
     fprintf(outfile,"MOLECULE\nATOMS\n");
   }
@@ -128,6 +131,7 @@ void xsf_write(FILE* outfile, struct unit_cell *c, struct contents *m,
     else
       fprintf(outfile,fmtd3f,m->atoms[i].atno,x,y,z);
   }
+  if (m->n==0) fprintf(outfile,"0 0.0 0.0 0.0\n");
 
   if((gptr)&&(gptr->data)){
     fprintf(outfile,"BEGIN_BLOCK_DATAGRID_3D\n"

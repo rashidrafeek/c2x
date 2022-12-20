@@ -67,7 +67,7 @@ static void spg_scan(double spg_latt[3][3], double spg_pos[][3], int *spg_type,
 		     int natoms, int op, double tolmin, double tolmax,
 		     int nsmin, int nsmax, int first);
 
-int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
+int cspg_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
             struct kpts *kp, int op, double tolmin){
   int i,j,k,natoms2;
   int rotation;
@@ -109,14 +109,14 @@ int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
     memcpy(c2->basis,c->basis,9*sizeof(double));
 
     /* This version does not correct cell vector lengths and angles */
-    cspq_op(c2,m2,s,NULL,CSPG_PRIM_NR+CSPG_NO_SORT,tolmin);
+    cspg_op(c2,m2,s,NULL,CSPG_PRIM_NR+CSPG_NO_SORT,tolmin);
     if (debug>2){
       fprintf(stderr,"CSPG_PRIM_NR returns:\n");
       print_cell(c2,m2);
     }
 
     /* This version does, but may add an unwanted rotation and translation */
-    cspq_op(c,m,s,NULL,CSPG_PRIM+CSPG_NO_SORT,tolmin);
+    cspg_op(c,m,s,NULL,CSPG_PRIM+CSPG_NO_SORT,tolmin);
     if (debug>2){
       fprintf(stderr,"CSPG_PRIM returns:\n");
       print_cell(c,m);
@@ -581,7 +581,7 @@ int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
   }
 
 #else
-  int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
+  int cspg_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
 	      int op){
     fprintf(stderr,"Error: spglib functionality not available"
 	    " in this version of c2x\n");

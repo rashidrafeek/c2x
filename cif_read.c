@@ -27,11 +27,24 @@
 
 #define LINE_SIZE 2049
 
+void add_basis(struct unit_cell *c, struct contents *m);
+
 static char* cif_loop(FILE *infile, struct unit_cell *c, struct contents *m,
 		      struct symmetry *s, char ***sxyz, int *need_abs);
 
-int scmp(char *s1, char *s2){
+static int scmp(char *s1, char *s2){
   return (strncasecmp(s1,s2,strlen(s2))==0)?1:0;
+}
+
+static int lcmp(char *s1, char *s2){
+  int i,len;
+  len=strlen(s2);
+  
+  i=strncasecmp(s1,s2,len);
+  if (i) return(0);
+  if (s1[len+1]==0) return 1;
+  if (isspace(s1[len+1])) return 1;
+  return 0;
 }
 
 void cif_read(FILE* infile, struct unit_cell *c, struct contents *m,
@@ -112,16 +125,25 @@ void cif_read(FILE* infile, struct unit_cell *c, struct contents *m,
     }
   }
 
-  if (!have_basis) error_exit("Incomplete basis in cif_read");
-
   if (m->n==0) error_exit("No atoms found");
 
+  if (!have_basis){
+    if (need_abs==-1)
+      add_basis(c,m);
+    else
+      error_exit("Incomplete basis in cif_read");
+  }
+
   real2rec(c);
-  if (need_abs==1)
+  if (need_abs==1){
+    if (debug>1) fprintf(stderr,"Fractional co-ordinates read\n");
     addabs(m->atoms,m->n,c->basis);
-  if (need_abs==-1)
+  }
+  if (need_abs==-1){
+    if (debug>1) fprintf(stderr,"Cartesian co-ordinates read\n");
     addfrac(m->atoms,m->n,c->recip);
-  
+  }
+    
   if ((sym_warn)&&(s->n==0)){
     fprintf(stderr,"Warning: CIF file contains symmetry information, but\n"
 	    "no list of symmetry operations. Symmetry information ignored.\n");
@@ -214,40 +236,42 @@ static char* cif_loop(FILE *infile, struct unit_cell *c, struct contents *m,
     if(buff[0]=='\r') continue;
     if(buff[0]=='#') continue;
 
-    if (scmp(buff,"_atom_site_type_symbol")||
-	scmp(buff,"_atom_site.type_symbol"))
+    if (lcmp(buff,"_atom_site_type_symbol")||
+	lcmp(buff,"_atom_site.type_symbol"))
       fsym=i;
-    else if (scmp(buff,"_atom_site_label_atom_id")||
-             scmp(buff,"_atom_site.label_atom_id"))
+    else if (lcmp(buff,"_atom_site_label_atom_id")||
+             lcmp(buff,"_atom_site.label_atom_id"))
       flab=i;
-    else if (scmp(buff,"_atom_site_charge")||
-             scmp(buff,"_atom_site.charge")){
+    else if (lcmp(buff,"_atom_site_charge")||
+             lcmp(buff,"_atom_site.charge")){
       fst_chg=i;
       dict_add(m->dict,"site_charge",(void*)1);
     }
-    else if (scmp(buff,"_atom_site_label")||
-	scmp(buff,"_atom_site.label"))
-      {if (isspace(buff[strlen("_atom_site.label")])) flab=i;}
-    else if (scmp(buff,"_atom_site_fract_x")||
-             scmp(buff,"_atom_site.fract_x"))
+    else if (lcmp(buff,"_atom_site_label")||
+	lcmp(buff,"_atom_site.label"))
+      flab=i;
+    else if (lcmp(buff,"_atom_site_fract_x")||
+             lcmp(buff,"_atom_site.fract_x"))
       fx=i;
-    else if (scmp(buff,"_atom_site_fract_y")||
-	     scmp(buff,"_atom_site.fract_y"))
+    else if (lcmp(buff,"_atom_site_fract_y")||
+	     lcmp(buff,"_atom_site.fract_y"))
       fy=i;
-    else if (scmp(buff,"_atom_site_fract_z")||
-	     scmp(buff,"_atom_site.fract_z"))
+    else if (lcmp(buff,"_atom_site_fract_z")||
+	     lcmp(buff,"_atom_site.fract_z"))
       fz=i;
-    else if (scmp(buff,"_atom_site_cartn_x")||
-             scmp(buff,"_atom_site.cartn_x"))
+    else if (lcmp(buff,"_atom_site_cartn_x")||
+             lcmp(buff,"_atom_site.cartn_x"))
       cx=i;
-    else if (scmp(buff,"_atom_site_cartn_y")||
-	     scmp(buff,"_atom_site.cartn_y"))
+    else if (lcmp(buff,"_atom_site_cartn_y")||
+	     lcmp(buff,"_atom_site.cartn_y"))
       cy=i;
-    else if (scmp(buff,"_atom_site_cartn_z")||
-	     scmp(buff,"_atom_site.cartn_z"))
+    else if (lcmp(buff,"_atom_site_cartn_z")||
+	     lcmp(buff,"_atom_site.cartn_z"))
       cz=i;
-    else if (scmp(buff,"_symmetry_equiv_pos_as_xyz")||
-	     scmp(buff,"_symmetry_equiv.pos_as_xyz"))
+    else if (lcmp(buff,"_symmetry_equiv_pos_as_xyz")||
+	     lcmp(buff,"_symmetry_equiv.pos_as_xyz")||
+	     lcmp(buff,"_space_group_symop_operation_xyz")||
+	     lcmp(buff,"_space_group_symop.operation_xyz"))
       fsym_as_xyz=i;
     else if (buff[0]!='_') break;
     else if (debug>1)
@@ -256,9 +280,10 @@ static char* cif_loop(FILE *infile, struct unit_cell *c, struct contents *m,
     i++;
   }
 
-  if (debug>2) fprintf(stderr,"fx=%d fy=%d fz=%d fsym=%d flab=%d "
+  if (debug>2) fprintf(stderr,"fx=%d fy=%d fz=%d cx=%d cy=%d cz=%d "
+		       "fsym=%d flab=%d "
 		       "fsym_as_xyz=%d fst_chg=%d i=%d\n",
-		       fx,fy,fz,fsym,flab,fsym_as_xyz,fst_chg,i);
+		       fx,fy,fz,cx,cy,cz,fsym,flab,fsym_as_xyz,fst_chg,i);
 
   if (fsym==-1) fsym=flab;
 

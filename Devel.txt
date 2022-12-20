@@ -1,0 +1,76 @@
+Some over-due notes to aid those fiddling with the code
+-------------------------------------------------------
+
+The intention is that the code be written in C99, and require no
+further libraries than an optional spglib. It is developed on Linux,
+tested also on MacOS, and might work on Windows...
+
+Units
+-----
+
+Internal units are Angstroms, volts, eV, Angstroms/ps.
+
+BUT, if -u is specified, densities are scaled to Bohr^-3 on reading.
+
+
+Structures
+==========
+
+Those items which are pointers should be NULL if their data is not
+present/valid.
+
+The routine init_atoms() (in basis.c) exists for initialised the atoms
+structure sanely.
+
+atoms: nothing here is malloced, so nothing needs freeing on deleting an
+       atom, and atoms can be copied using C's copy of a struct. Technically
+       the label, if present, is (probably) malloced, and this is simply
+       regarded as a small leak at present. There is no reference count, and
+       multiple atoms may point to the same label. Forces not valid unless
+       forces in the corresponding struct contents is true. Velocities
+       (v) not valid unless velocities in the corresponding struct contents
+       is true.
+
+unit_cell: basis and stress are pointers so that they can be NULL if not
+       present. recip (basis) is statically-allocated, but will not be
+       valid unless basis is present.
+
+contents: 
+
+
+Dictionaries
+------------
+
+Since the addition of the dictionary structure, this is prefered for
+storing miscellaneous, or overly-specific, junk.
+
+A dictionary entry consists of a key and a value. The key is a character
+string, and is copied when entries are added to the dictionary. The
+value is a void pointer.
+
+dict_get returns the value pointer. It does not distinguish between key
+not found, and key found but value is the null pointer.
+
+dict_strcat acts like strcat on the dictionary entry. The existing entry
+must be one of:
+
+1/ Absent
+2/ value=the null pointer
+3/ value=pointer to null-terminated string
+
+The entry will be appropriately malloced/realloced and the new item
+concatenated.
+
+From 2.32a the entry "in_file" is guaranteed to exist, and contains the
+input filename.
+
+If "in_file" contains a directory separator, then "in_dir" will also exist
+and contain dirname(in_file), with a terminating /.
+
+Currently the dictionary is implemented as a singly-linked list. It is not
+intended that the number of entries should grow to a level where this is
+inappropriate.
+
+There is no routine for removing a dictionary entry, but as dict_get
+does not distinguish between key not found, and key found with value
+being the null pointer, one can use dict_add with a value of NULL.

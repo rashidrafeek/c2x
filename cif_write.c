@@ -1,6 +1,6 @@
 /* Write a CIF file */
 
-/* Copyright (c) 2014 MJ Rutter 
+/* Copyright (c) 2014-2020 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -26,13 +26,18 @@
 
 #include "c2xsf.h"
 
-#define MAX_ELS 103
+extern int periodic_max_el;
+
+struct contents *reduce_atoms(struct contents *m, struct symmetry *s,
+			      struct unit_cell *c);
 
 void cif_write(FILE* outfile, struct unit_cell *c, struct contents *m, 
 	       struct symmetry *s, int mm){
-  int i,j,prec,site_charge;
+  int i,j,prec,site_charge,sym,*n_in_el,label;
   unsigned char sep;
   double abc[6];
+
+  if (dict_get(m->dict,"CIF_is_PDBx")) mm=1;
 
   sep='_';
   if (mm) sep='.';
@@ -40,6 +45,16 @@ void cif_write(FILE* outfile, struct unit_cell *c, struct contents *m,
   prec=7;
   if (flags&HIPREC) prec=15;
 
+  sym=0;
+  if (dict_get(m->dict,"CIF_symmetrise")) sym=1;
+
+  label=0;
+  if (dict_get(m->dict,"CIF_site_label")) label=1;
+  
+  n_in_el=calloc(periodic_max_el+1,sizeof(int));
+  if (!n_in_el) error_exit("Calloc error in cif_write");
+
+  
   fprintf(outfile,"# written by c2x\n");
 
   fprintf(outfile,"data_c2x\n");
@@ -58,29 +73,83 @@ void cif_write(FILE* outfile, struct unit_cell *c, struct contents *m,
 
   site_charge=0;
   if (dict_get(m->dict,"site_charge")) site_charge=1;
-  
-  fprintf(outfile,"\n");
-  fprintf(outfile,"loop_\n"
-	  "_atom_site%ctype_symbol\n"
-	  "_atom_site%cfract_x\n"
-	  "_atom_site%cfract_y\n"
-	  "_atom_site%cfract_z\n"
-	  "_atom_site%cU_iso_or_equiv\n"
-	  "_atom_site%coccupancy\n",sep,sep,sep,sep,sep,sep);
-  if (site_charge)
-    fprintf(outfile,"_atom_site%ccharge\n",sep);
 
-  if (prec<10) prec=10;
-
-  for(i=0;i<m->n;i++){
-    fprintf(outfile,"%s ",atno2sym(m->atoms[i].atno));
-    for(j=0;j<3;j++)
-      fprintf(outfile,"%.*f ",prec,m->atoms[i].frac[j]);
-    fprintf(outfile,"0.01 1.00");
-    if (site_charge) fprintf(outfile," %.4f",m->atoms[i].site_chg);
+  if (!dict_get(m->dict,"CIF_is_PDBx")){
     fprintf(outfile,"\n");
-  }
+    fprintf(outfile,"loop_\n"
+	    "_atom_site%ctype_symbol\n",sep);
+    if (label) fprintf(outfile,"_atom_site%clabel\n",sep);
+    fprintf(outfile,"_atom_site%cfract_x\n"
+	    "_atom_site%cfract_y\n"
+	    "_atom_site%cfract_z\n"
+	    "_atom_site%cU_iso_or_equiv\n"
+	    "_atom_site%coccupancy\n",sep,sep,sep,sep,sep);
+    if (site_charge)
+      fprintf(outfile,"_atom_site%ccharge\n",sep);
 
+    if (prec<10) prec=10;
+
+    if (sym) m=reduce_atoms(m,s,c);
+  
+    for(i=0;i<m->n;i++){
+      fprintf(outfile,"%s ",atno2sym(m->atoms[i].atno));
+      if (label){
+	fprintf(outfile,"%s%-3d ",atno2sym(m->atoms[i].atno),
+		++n_in_el[m->atoms[i].atno]);
+      }
+      for(j=0;j<3;j++)
+	fprintf(outfile,"%.*f ",prec,m->atoms[i].frac[j]);
+      fprintf(outfile,"0.01 1.00");
+      if (site_charge) fprintf(outfile," %.4f",m->atoms[i].site_chg);
+      fprintf(outfile,"\n");
+    }
+    if (sym){
+      free(m->atoms);
+      free(m);
+    }
+  }
+  else{
+    fprintf(outfile,"\n");
+    fprintf(outfile,"loop_\n"
+	    "_atom_site.group_PDB\n"
+	    "_atom_site.id\n"
+	    "_atom_site.type_symbol\n"
+	    "_atom_site.label_atom_id\n"
+	    "_atom_site.label_alt_id\n"
+	    "_atom_site.label_comp_id\n"
+	    "_atom_site.label_asym_id\n"
+	    "_atom_site.label_entity_id\n"
+	    "_atom_site.label_seq_id\n"
+	    "_atom_site.pdbx_PDB_ins_code\n"
+	    "_atom_site.Cartn_x\n"
+	    "_atom_site.Cartn_y\n"
+	    "_atom_site.Cartn_z\n"
+	    "_atom_site.occupancy\n"
+	    "_atom_site.B_iso_or_equiv\n"
+	    "_atom_site.Cartn_x_esd\n"
+	    "_atom_site.Cartn_y_esd\n"
+	    "_atom_site.Cartn_z_esd\n"
+	    "_atom_site.occupancy_esd\n"
+	    "_atom_site.B_iso_or_equiv_esd\n"
+	    "_atom_site.pdbx_formal_charge\n"
+	    "_atom_site.auth_seq_id\n"
+	    "_atom_site.auth_comp_id\n"
+	    "_atom_site.auth_asym_id\n"
+	    "_atom_site.auth_atom_id\n"
+	    "_atom_site.pdbx_PDB_model_num\n");
+    for(i=0;i<m->n;i++){
+      fprintf(outfile,"ATOM %4d ",i);
+      fprintf(outfile,"%s ",atno2sym(m->atoms[i].atno));
+      fprintf(outfile,"%s%-3d ",atno2sym(m->atoms[i].atno),
+	      ++n_in_el[m->atoms[i].atno]);
+      fprintf(outfile,". . . . . . ");
+      for(j=0;j<3;j++)
+	fprintf(outfile,"%.*f ",prec,m->atoms[i].abs[j]);
+      fprintf(outfile,"1.0 . . . . . . . . . . ");
+      fprintf(outfile,"%s%-3d 1\n",atno2sym(m->atoms[i].atno),
+	      n_in_el[m->atoms[i].atno]);
+    }
+  }
   if (s->n){
     fprintf(outfile,"\nloop_\n");
     if (mm==0){
@@ -89,12 +158,68 @@ void cif_write(FILE* outfile, struct unit_cell *c, struct contents *m,
 	equiv_sym(s->ops+i,c,outfile);
     }
     else{
-      fprintf(outfile,"_symmetry_equiv.id\n");
-      fprintf(outfile,"_symmetry_equiv.pos_as_xyz\n");
+      fprintf(outfile,"_space_group_symop.id\n");
+      fprintf(outfile,"_space_group_symop.operation_xyz\n");
       for(i=0;i<s->n;i++){
 	fprintf(outfile,"%d ",i+1);
 	equiv_sym(s->ops+i,c,outfile);
       }
     }
   }
+
+  free(n_in_el);
+  
+}
+
+struct contents *reduce_atoms(struct contents *m, struct symmetry *s,
+			      struct unit_cell *c){
+  int i,j,k,hit,del;
+  struct contents *m2;
+  struct atom new_atom;
+
+  m2=malloc(sizeof(struct contents));
+  if (!m2) error_exit("Malloc error for struct contents");
+  *m2=*m;
+
+  m2->atoms=malloc(m->n*sizeof(struct atom));
+  if (!m2->atoms) error_exit("Malloc error for struct atoms");
+  memcpy(m2->atoms,m->atoms,m->n*sizeof(struct atom));
+
+  for(i=0;i<m2->n;i++){
+    for(j=0;j<s->n;j++){
+      sym_atom(m2->atoms+i,&new_atom,s->ops+j,c->recip);
+      hit=atom_in_list(&new_atom,m2->atoms,m2->n,c->basis);
+      if (hit==-1){
+	hit=atom_in_list(&new_atom,m->atoms,m->n,c->basis);
+	if (hit!=-1) continue;
+	fprintf(stderr,"Symmetry error\n");
+	fprintf(stderr,"Atom atno=%d (%lf,%lf,%lf)\n",m2->atoms[i].atno,
+		m2->atoms[i].frac[0],m2->atoms[i].frac[1],m2->atoms[i].frac[2]);
+	fprintf(stderr,"Sym op ");
+	ident_sym(s->ops+j,c,stderr);
+	exit(1);
+      }
+      if (hit==i) continue;
+      if (hit>i){
+	del=hit;
+      }
+      else{
+	del=i;
+      }
+      for(k=del;k<m2->n-1;k++){
+	m2->atoms[k]=m2->atoms[k+1];
+      }
+      m2->n--;
+      if (del==i) {i--; break;}
+    }
+  }
+      
+  m2->atoms=realloc(m2->atoms,m2->n*sizeof(struct atom));
+
+  if (debug)
+    fprintf(stderr,"%d atoms before symmetrisation, %d after\n",
+	    m->n,m2->n);
+
+  return m2;
+
 }

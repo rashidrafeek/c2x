@@ -153,11 +153,19 @@ void qe_write(FILE* outfile, struct unit_cell *c, struct contents *m,
     fprintf(outfile,"%s",(char*)dict_get(m->dict,"QE_electron_list"));
   fprintf(outfile,"/\n");
 
-  if (dict_get(m->dict,"QE_ions_list"))
-    fprintf(outfile,"&IONS\n%s/\n",(char*)dict_get(m->dict,"QE_ions_list"));
-  
+  if (dict_get(m->dict,"QE_ions_list")){
+    fprintf(outfile,"&IONS\n");
+    if (m->velocities) fprintf(outfile,"  ion_velocities = 'from_input',\n");
+    fprintf(outfile,"%s/\n",(char*)dict_get(m->dict,"QE_ions_list"));
+  }
+  else if (m->velocities){
+    fprintf(outfile,"&IONS\n");
+    fprintf(outfile,"  ion_velocities = 'from_input'\n/\n");
+  }
+            
   if (dict_get(m->dict,"QE_cell_list"))
     fprintf(outfile,"&CELL\n%s/\n",(char*)dict_get(m->dict,"QE_cell_list"));
+
   
   if (flags&HIPREC)
     fmt="% 19.15f % 19.15f % 19.15f\n";
@@ -230,6 +238,31 @@ void qe_write(FILE* outfile, struct unit_cell *c, struct contents *m,
 	      m->atoms[i].abs[1],m->atoms[i].abs[2]);
   }
 
+
+  if (m->velocities){
+    fprintf(outfile,"\nATOMIC_VELOCITIES\n");
+    for(i=0;i<m->n;i++){
+      okay=0;
+      if (m->atoms[i].label&&(strlen(m->atoms[i].label)<=3)){
+        j=strlen(atno2sym(m->atoms[i].atno));
+        if ((!strncasecmp(atno2sym(m->atoms[i].atno),m->atoms[i].label,j))&&
+            (!isalpha(m->atoms[i].label[j]))) okay=1;
+      }
+      if (okay)
+        fprintf(outfile," %3s",m->atoms[i].label);
+      else{
+        fprintf(outfile,"%3s",atno2sym(m->atoms[i].atno));
+        if (atxtra[i]) fprintf(outfile,"%d",atxtra[i]);
+        else fprintf(outfile," ");
+      }
+      for(j=0;j<3;j++)
+        fprintf(outfile," % .16f",m->atoms[i].v[j]*2*H_ps/BOHR);
+      fprintf(outfile,"\n");
+    }
+  }
+
+
+  
   if ((dict_get(m->dict,"QE_k_in"))||(k->n)||(k->mp)){
     fprintf(outfile,"\nK_POINTS ");
     okay=0;

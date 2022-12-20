@@ -31,7 +31,7 @@
 
 void xv_read(FILE* infile, struct unit_cell *c, struct contents *m){
   int i,j,species;
-  double dummy,*species_to_charge;
+  double dummy,*species_to_charge,x;
   char buffer[LINE_SIZE+1];
 
   species_to_charge=(double*)dict_get(m->dict,"Siesta_species_to_charge");
@@ -73,19 +73,32 @@ void xv_read(FILE* infile, struct unit_cell *c, struct contents *m){
       error_exit("Unexpected EOF reading atoms");
     j=sscanf(buffer,"%d %d %lf %lf %lf %lf %lf %lf",&species,
 	     &(m->atoms[i].atno),m->atoms[i].abs,
-	     m->atoms[i].abs+1,m->atoms[i].abs+2,&dummy,&dummy,&dummy);
+	     m->atoms[i].abs+1,m->atoms[i].abs+2,
+             m->atoms[i].v,m->atoms[i].v+1,m->atoms[i].v+2);
     /* Be tolerant of some unexpected line breaks */
-    if ((j>=5)&&(j<8)){
+    if (j==5){
       if (!fgets(buffer,LINE_SIZE,infile))
 	error_exit("Unexpected EOF reading atoms");
-      j+=sscanf(buffer,"%lf %lf %lf",&dummy,&dummy,&dummy);
+      j+=sscanf(buffer,"%lf %lf %lf",
+                m->atoms[i].v,m->atoms[i].v+1,m->atoms[i].v+2);
     }
+    if (j!=8) error_exit("Error parsing atom entry for 8 fields");
     for(j=0;j<3;j++)
       m->atoms[i].abs[j]*=BOHR;
+    for(j=0;j<3;j++) /* velocities are in Bohr/fs, we want A/ps */
+      m->atoms[i].v[j]*=1000*BOHR;
     if (species_to_charge) m->atoms[i].chg=species_to_charge[species];
   }
 
   real2rec(c);
   addfrac(m->atoms,m->n,c->recip);
+
+ /* Don't set m->velocities if all v's are zero */
+  x=0;
+  for(i=0;i<m->n;i++)
+    x+=m->atoms[i].v[0]*m->atoms[i].v[0]+
+      m->atoms[i].v[1]*m->atoms[i].v[1]+m->atoms[i].v[2]*m->atoms[i].v[2];
+  if (x>0) m->velocities=1;
+ 
 
 }

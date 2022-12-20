@@ -161,11 +161,6 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
       if (!qe_readline(&ptr,infile)) break;
     }
 
-#if 0
-    fprintf(stderr,"Parsing %s\n",ptr);
-    sleep(1);
-#endif
-    
     if ((namelist)&&(!tokenmatch(&ptr,"/"))){
       namelist=0;
       continue;
@@ -525,6 +520,19 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
         }
         /* Move to next line */
         *ptr=0;
+      }
+      else if (!tokenmatch(&ptr,"atomic_velocities")){
+        if (m->n==0) error_exit("atomic_velocities found before nat");
+        for(i=0;i<m->n;i++){
+          qe_readline(&ptr,infile);
+          /* ignore label */
+          while((*ptr)&&(*ptr!=' ')) ptr++;
+          if (multi_scan(ptr,m->atoms[i].v,3,NULL)!=3)
+            error_exit("Error parsing atomic velocities");
+          for(j=0;j<3;j++)
+            m->atoms[i].v[j]*=BOHR/(2*H_ps);
+        }
+        m->velocities=1;
       }
       else if (!tokenmatch(&ptr,"k_points")){
         while (*ptr==' ') ptr++;

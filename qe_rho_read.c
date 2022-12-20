@@ -28,6 +28,10 @@ void qe_rho_read(FILE* infile, struct unit_cell *c, struct contents *m,
   fread(&nspin,4,1,infile);
 
   if (nspin>2) error_exit("nspin>2 not supported");
+  if ((nspin==1)&&(flags&SPINDEN))
+    error_exit("Spin density requested, but nspin=1 in density file");
+
+  if (debug) fprintf(stderr,"QE density file with %d spins\n",nspin);
 
   elect->nspins=nspin;
   
@@ -189,6 +193,7 @@ void qe_rho_read(FILE* infile, struct unit_cell *c, struct contents *m,
   else
     g->name="Charge";
   g->next=malloc(sizeof(struct grid));
+  if (!g->next) error_exit("malloc failure for struct grid");
   g=g->next;
   g->data=NULL;
   g->next=NULL; 

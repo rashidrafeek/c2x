@@ -1,7 +1,7 @@
 /* Read data from an Abinit 8.x Fortran binary file.
  *
  * Unclear which versions of abinit this might work with
- * tested with 8.6.3
+ * tested with 8.6.3, 8.10.x, 9.0.2
  *
  * Defaults to rescaling things recognised as densities from Bohr to A.
  * Does not if "raw" specified (-R flag)
@@ -56,7 +56,7 @@ static void abinit_header_read(FILE* infile, struct unit_cell *c,
 			       struct es *elect,
 			       int fft[3], int **gamma, int *fileform){
   int i,j,tmp,reclen;
-  char version[6];
+  char version[9];
   int headform;
   int natoms,nsym,npsp,usepaw,ntypes,bantot,*nband,nbands;
   long offset;
@@ -71,14 +71,16 @@ static void abinit_header_read(FILE* infile, struct unit_cell *c,
   /* Read first record */
   tmp=0;
   fread(&tmp,4,1,infile);
-  if(tmp!=14) error_exit("Unexpected first record length in abinit_read");
-  fread(version,6,1,infile);
+  if ((tmp!=14)&&(tmp!=16))
+    error_exit("Unexpected first record length in abinit_read");
+  fread(version,tmp-8,1,infile);
   fread(&headform,4,1,infile);
   fread(fileform,4,1,infile);
   tmp=0;
   fread(&tmp,4,1,infile);
-  if (tmp!=14) error_exit("Unexpected first record length in abinit_read");
-
+  if ((tmp!=14)&&(tmp!=16))
+    error_exit("Unexpected first record length in abinit_read");
+  version[8]=0;
   if (debug) fprintf(stderr,"Abinit version %6s\n",version);
 
   if (headform<80)
@@ -395,13 +397,15 @@ void abinit_charge_read(FILE* infile, struct unit_cell *c,
 void abinit_psi_read(FILE* infile, struct unit_cell *c,
                      struct contents *m, struct kpts *kp, struct grid *gptr,
                      struct es *elect, int *i_grid){
-  int i,j,ikpt,nb,offset,isppol;
-  int n0,n1,n2;
-  int reclen,fft[3],fileform,*gamma,goff[3];
-  int npw,nspinor,ispinor,nbnd,nfftpts,off,ffft[3],nfft[3];
+  int i,j,ikpt,nb,isppol;
+  int reclen,fft[3],fileform,*gamma;
+  int npw,nspinor,ispinor,nbnd,off;
   int *pwgrid;
-  double scale,*psi,*dptr,*kpoint;
+  double *dptr;
 
+  dict_add(m->dict,"band_read_order",NULL); /* Delete any old entry */
+  dict_strcat(m->dict,"band_read_order","skbS"); /* Malloc for new */
+  
   gamma=NULL;
   abinit_header_read(infile,c,m,kp,elect,fft,&gamma,&fileform);
 
@@ -412,11 +416,8 @@ void abinit_psi_read(FILE* infile, struct unit_cell *c,
     fprintf(stderr,"]\n");
   }
   
-  if ((!(flags&BANDS))&&(!(flags&OCCUPANCIES))&&(!(flags&BANDPARITY)))
-    return;
+  if ((!(flags&BANDREAD))&&(!(flags&OCCUPANCIES))) return;
   
-  nfftpts=fft[0]*fft[1]*fft[2];
-
   if (debug>1)
     fprintf(stderr,"nsppol=%d nspins=%d\n",elect->nbspins,elect->nspins);
   
@@ -432,19 +433,12 @@ void abinit_psi_read(FILE* infile, struct unit_cell *c,
   
   for(isppol=0;isppol<elect->nbspins;isppol++){
     for(ikpt=0;ikpt<kp->n;ikpt++){
-      kpoint=kp->kpts[ikpt].frac;
       fread(&reclen,4,1,infile);
       if (reclen!=12) error_exit("Unexpected record length");
       fread(&npw,4,1,infile);
       if (debug>1) fprintf(stderr,"nplwv=%d\n",npw);
       if ((debug>1)&&(gamma[ikpt]>1))
         fprintf(stderr,"Gamma point storage for this kpt\n");
-      if (gamma[ikpt]>1){
-        for(i=0;i<3;i++) goff[i]=0;
-        if (gamma[ikpt]&1) goff[0]=1;
-        if (gamma[ikpt]>5) goff[1]=1;
-        if ((gamma[ikpt]-2)&2) goff[2]=1;
-      }
       fread(&nspinor,4,1,infile);
       fread(&nbnd,4,1,infile);
       fseek(infile,4,SEEK_CUR);
@@ -491,94 +485,10 @@ void abinit_psi_read(FILE* infile, struct unit_cell *c,
               continue;
             }
 
-            psi=malloc(16*nfftpts);
-            if (!psi) error_exit("Malloc error for psi");
-            for(i=0;i<2*nfftpts;i++) psi[i]=0;
-            for(i=0;i<npw;i++){
-              offset=pwgrid[3*i+2]+fft[2]*(pwgrid[3*i+1]+
-                                           fft[1]*pwgrid[3*i]);
-              if ((offset<0)||(offset>nfftpts)){
-                fprintf(stderr,"Impossible offset in wave_read off=%d i=%d\n",
-                        offset,i);
-                exit(1);
-              }
-              psi[2*offset]=dptr[2*i];
-              psi[2*offset+1]=dptr[2*i+1];
-            }
-            if (gamma[ikpt]>1){ /* construct psi(-k)=conjg(psi(k)) */
-              for(i=0;i<npw;i++){
-                if ((gamma[ikpt]==2)&&(pwgrid[3*i]==0)&&
-                    (pwgrid[3*i+1]==0)&&(pwgrid[3*i+2]==0)) continue;
-                n0=fft[2]-pwgrid[3*i+2]-goff[2];
-                if (n0==fft[2]) n0=0;
-                n1=fft[1]-pwgrid[3*i+1]-goff[1];
-                if (n1==fft[1]) n1=0;
-                n2=fft[0]-pwgrid[3*i]-goff[0];
-                if (n2==fft[0]) n2=0;
-                offset=n0+fft[2]*(n1+fft[1]*n2);
-                if ((offset<0)||(offset>nfftpts)){
-                  fprintf(stderr,
-                          "Impossible -offset in wave_read off=%d i=%d\n",
-                          offset,i);
-                  exit(1);
-                }
-                psi[2*offset]=dptr[2*i];
-                psi[2*offset+1]=-dptr[2*i+1];
-              }
-            }
-            free(dptr);
-
-
-            if (((kpoint[0]==0)||aeq(fabs(kpoint[0]),0.5))&&
-                ((kpoint[1]==0)||aeq(fabs(kpoint[1]),0.5))&&
-                ((kpoint[2]==0)||aeq(fabs(kpoint[2]),0.5))&&
-                (flags&BANDPARITY)) inv_parity(psi,fft,nb,kpoint);
-
-            /* Was the parity all we were requested to report? */
-            if (!(flags&BANDS))
-              free(psi);
-            else{
-
-              /* Padding */
-            
-              if (i_grid){
-                for(i=0;i<3;i++) nfft[i]=i_grid[i];
-                if(debug>1)
-                  fprintf(stderr,"Padding wavefunction onto %dx%dx%d grid\n",
-                          nfft[0],nfft[1],nfft[2]);
-                if ((fft[0]==nfft[0])&&(fft[1]==nfft[1])&&(fft[2]==nfft[2])){
-                  if (debug>1)
-                    fprintf(stderr,"Skipping null padding operation\n");
-                }
-                else{
-                  pad_recip(psi,fft,&dptr,nfft);
-                  nfftpts=nfft[0]*nfft[1]*nfft[2];
-                  free(psi);
-                  psi=dptr;
-                }
-              }
-
-	  
-              ffft[0]=fft[2];
-              ffft[1]=fft[1];
-              ffft[2]=fft[0];
-              fft3d(psi,ffft,1);
-              dptr=malloc(nfftpts*sizeof(double));
-              if(!dptr) error_exit("Malloc error for grid data");
-              band2real(psi,dptr,fft,kp->kpts[ikpt].frac);
-              free(psi);
-
-              /* Do we need to rescale? */
-              if (((flags&RAW)==0)&&((flags&BANDPHASE)==0)){ /* Yes */
-                if (flags&BANDDEN) scale=1/c->vol;
-                else scale=1/sqrt(c->vol);
-                if (debug>2) fprintf(stderr,"Scaling wavefun by %f\n",scale);
-                for(i=0;i<nfftpts;i++) dptr[i]*=scale;
-              }
-            
-              band_store(&gptr,dptr,elect->occ[off+nb],kp->kpts[ikpt].wt,
-                         ispinor,isppol,ikpt+1,nb+1,elect,m,fft);
-            } /* end if (flags&BANDS) */
+	    band_process(dptr, fft, pwgrid, npw, gamma[ikpt]-1,
+		  c, &gptr, elect, kp,
+		  m, ikpt, ispinor, isppol, nb, i_grid);
+	   free(dptr); 
           } /* end spinor loop */
         }
         else fseek(infile,reclen+4,SEEK_CUR);

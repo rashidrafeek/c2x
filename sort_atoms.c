@@ -67,14 +67,12 @@ void sort_atoms(struct contents *mtf, int sort_style){
 
   na=mtf->n;
 
-#ifdef QSORT
   if (sort_style==1)
     qsort(mtf->atoms,(size_t)na,sizeof(struct atom),atom_sort);
   else if (sort_style==2)
     qsort(mtf->atoms,(size_t)na,sizeof(struct atom),atom_sort2);
   else
     fprintf(stderr,"Ignoring undefined sort type %d\n",sort_style);
-#endif
 
 }
 

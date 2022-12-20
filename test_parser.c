@@ -4,6 +4,7 @@
  */
 
 #include<stdio.h>
+#include<stdlib.h>
 
 int ascan(char *in, double *result);
 int debug;
@@ -24,3 +25,10 @@ int main(int argc, char **argv){
 
   printf("Final result: %f\n",x);
 }
+
+void error_exit(char *msg){
+  fprintf(stderr,"Aborting: %s\n",msg);
+  exit(1);
+}
+
+

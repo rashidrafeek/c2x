@@ -23,24 +23,21 @@
 
 #include "c2xsf.h"
 
-void xv_read(FILE* infile, struct unit_cell *c, struct contents *m);
-void fdf_read(FILE* in, char *filename, struct unit_cell *c,
-              struct contents *m, struct kpts *kp, struct es *e);
 
-
-void rho_read(FILE* infile, char *filename, struct unit_cell *c,
-              struct contents *m, struct grid *gptr,
-	      struct es *elect){
+void rho_read(FILE* infile, struct unit_cell *c, struct contents *m,
+              struct grid *gptr, struct es *elect){
   int tmp,nspins,i,j,ix,iy,iz,grid[3],okay,csize,single;
   int is_pot;
   void *column;
   double scale,basis[3][3],*dptr1,*dptr2;
-  char *name,*cptr;
+  char *filename,*name,*cptr;
   FILE *coords;
 
   dptr1=dptr2=NULL;
   scale=1;
   is_pot=0;
+  filename=dict_get(m->dict,"in_file");
+  
   tmp=0;
   fread(&tmp,4,1,infile);
   if (tmp!=72) error_exit("Unexpected start to RHO file");
@@ -238,7 +235,7 @@ void rho_read(FILE* infile, char *filename, struct unit_cell *c,
                      (coords)?"":"...failed");
   if (coords){
     fprintf(stderr,"Also reading %s\n",name);
-    fdf_read(coords,name,c,m,NULL,elect);
+    fdf_read(coords,c,m,NULL,elect);
   }
 
   *cptr='X';

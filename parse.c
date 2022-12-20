@@ -30,6 +30,36 @@ int tokenmatch(char **s1, const char *s2){
   return 1;
 }
 
+/* And a function to act like sscanf("%ms%n",buffer,str,n) for
+ *  MacOS X does not support %ms in sscanf (which is not in C99, but
+ *  is in POSIX.1-2008)
+ */
+
+int sscanfmsn(char *buffer, char **str, int *n){
+  char *ptr1,*ptr2,*s;
+  int i;
+
+  ptr1=buffer;
+  if (n) *n=0;
+  while ((*ptr1)&&(isspace(*ptr1))) ptr1++;
+
+  ptr2=ptr1;
+  while ((*ptr2)&&(!isspace(*ptr2))) ptr2++;
+
+  if (ptr1==ptr2) return 0;
+
+  s=malloc(ptr2-ptr1+1);
+  if (!s) error_exit("malloc error in sscanfms");
+  *str=s;
+  
+  i=0;
+  while(ptr1<ptr2) s[i++]=*(ptr1++);
+  s[i]=0;
+  if (n) *n=ptr2-buffer;
+  return 1;
+}
+
+
 /* The rest of this file contains routines for parsing general
  * arithmetic expressions, as required by the Castep cell file
  * format since verison 18. C2x also uses this to parse certain
@@ -146,7 +176,7 @@ int parse(char* in){
       unitary=0;
       is_num=1;
     }
-    else if ((*p1=='+')||(*p1=='-')||(*p1=='*')||(*p1=='/')||
+    else if ((*p1=='+')||(*p1=='-')||(*p1=='*')||(*p1=='/')||(*p1=='^')||
 	(*p1=='(')||(*p1==')')){
       if ((*p1=='(')&&(unitary==0)) implicit_mul=1;
       if (*p1==')') unitary=0;
@@ -181,6 +211,7 @@ int parse(char* in){
         }
         /* ops must be free()able */
         c=malloc(4);
+        if (!c) error_exit("malloc error for 4 bytes");
         strncpy(c,"neg",4);
         push_op(c,50);
         is_num=0;
@@ -205,9 +236,11 @@ int parse(char* in){
       op[p2-p1]=0;
       pr=100;
       l_assoc=0;
-      if ((*op=='+')||(*op=='-')||(*op=='*')||(*op=='/')) l_assoc=1;
+      if ((*op=='+')||(*op=='-')||
+	  (*op=='*')||(*op=='/')||(*op=='/')) l_assoc=1;
       if ((*op=='+')||(*op=='-')) pr=10;
       if ((*op=='*')||(*op=='/')) pr=20;
+      if (*op=='^') pr=100;
       if (*op=='(') pr=1000;
       if (*op==')'){
 	while((op_ptr)&&(*(op_stack[op_ptr-1].op)!='(')){
@@ -241,6 +274,27 @@ int parse(char* in){
 	}
 	if (*op=='('){
 	  push_op(op,pr);
+	}
+	else if ((strcmp(op,"pi")==0)||(strcmp(op,"Ha")==0)||
+		 (strcmp(op,"Ry")==0)||(strcmp(op,"B")==0)){
+	  stack=realloc(stack,(st_ptr+1)*sizeof(struct a));
+	  stack[st_ptr].type='N';
+	  x=malloc(sizeof(double));
+	  if (strcmp(op,"pi")==0)
+	    *x=M_PI;
+	  else if (strcmp(op,"Ha")==0)
+	    *x=H_eV;
+	  else if (strcmp(op,"Ry")==0)
+	    *x=0.5*H_eV;
+	  else if (strcmp(op,"B")==0)
+	    *x=BOHR;
+	  else
+	    error_exit("Impossible in parser");
+	  free(op);
+	  stack[st_ptr].data=x;
+	  st_ptr++;
+	  is_num=1;
+	  unitary=0;
 	}
 	else{
 	  while((op_ptr)&&
@@ -317,6 +371,11 @@ int evaluate_st(double *result){
       else if (!strcmp(op,"/")){
 	if (num_ptr<2) stack_underflow();
 	num_st[num_ptr-2]/=num_st[num_ptr-1];
+	num_ptr--;
+      }
+      else if (!strcmp(op,"^")){
+	if (num_ptr<2) stack_underflow();
+	num_st[num_ptr-2]=pow(num_st[num_ptr-2],num_st[num_ptr-1]);
 	num_ptr--;
       }
       else if (!strcmp(op,"neg")){

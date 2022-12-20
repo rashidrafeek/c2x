@@ -25,18 +25,25 @@
 
 #include "c2xsf.h"
 
-#define P_MAX_EL 103
+extern int periodic_max_el;
 
 void shelx_write(FILE* outfile, struct unit_cell *c, struct contents *m){
   int i,j,nspec;
-  int atom_present[P_MAX_EL+1];
-  int atom_list[P_MAX_EL+1];
-  int atom_spec[P_MAX_EL+1];
+  int *atom_present;
+  int *atom_list;
+  int *atom_spec;
   double abc[6];
   char cspec[4];
 
   char *fmt1,*fmt2;
 
+  atom_present=calloc(periodic_max_el+1,sizeof(int));
+  atom_list=calloc(periodic_max_el+1,sizeof(int));
+  atom_spec=calloc(periodic_max_el+1,sizeof(int));
+
+  if ((!atom_present)||(!atom_list)||(!atom_spec))
+    error_exit("malloc error in shelx_write");
+  
   if (flags&HIPREC){
     fmt1="CELL 1.0 %16.14f %16.14f %16.14f %16.14f %16.14f %16.14f\n";
     fmt2="%-4s %d %16.14f %16.14f %16.14f";
@@ -49,13 +56,11 @@ void shelx_write(FILE* outfile, struct unit_cell *c, struct contents *m){
 
   /* Find which atoms we have in our cell */
 
-  for(i=0;i<P_MAX_EL+1;i++) atom_present[i]=0;
-
   for(i=0;i<m->n;i++)
     atom_present[m->atoms[i].atno]++;
 
   nspec=1;
-  for(i=0;i<P_MAX_EL;i++)
+  for(i=0;i<periodic_max_el;i++)
     if (atom_present[i]){
       atom_list[nspec]=i;
       atom_spec[i]=nspec;
@@ -101,5 +106,9 @@ void shelx_write(FILE* outfile, struct unit_cell *c, struct contents *m){
   }
 
   fprintf(outfile,"END\n");
+
+  free(atom_spec);
+  free(atom_list);
+  free(atom_present);
 	   
 }

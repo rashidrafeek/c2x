@@ -89,6 +89,48 @@ void print_occ(struct es *elect, struct kpts *kp){
 		  wtotal);
 }
 
+void print_bandwidths(struct es *elect, struct kpts *kp){
+  int i,off,b,ns,cross;
+  double emin,emax,scale,occ;
+  
+  scale=1;
+  if (flags&AU) scale=1/H_eV;
+  
+  if (!elect->eval){
+    fprintf(stderr,"No occupancies found to report\n");
+    return;
+  }
+
+  if (debug==0) fprintf(stderr,"Bands crossing Fermi level:\n");
+  
+  fprintf(stderr,
+	  "   band spin    occupancy       min eval     max eval (%s)\n",
+          (scale==1)?"eV":"Ha");
+  for(b=0;b<elect->nbands;b++){
+    for(ns=0;ns<elect->nbspins;ns++){
+      emin=1e100;
+      emax=-1e100;
+      occ=0;
+      for(i=0;i<kp->n;i++){
+        off=i*elect->nbspins*elect->nbands+ns*elect->nbands+b;
+        emin=min(emin,elect->eval[off]);
+        emax=max(emax,elect->eval[off]);
+        if (elect->occ) occ+=elect->occ[off];
+      }
+      cross=0;
+      if ((elect->e_fermi)&&(emin<*elect->e_fermi)&&(emax>*elect->e_fermi))
+	cross=1;
+      if (cross)
+	fprintf(stderr,"*  %4d  %1d %14f  %14f  %14f\n",b+1,ns,occ/kp->n,
+		emin*scale,emax*scale);
+      else
+	if (debug)
+	  fprintf(stderr,"   %4d  %1d %14f  %14f  %14f\n",b+1,ns,occ/kp->n,
+		  emin*scale,emax*scale);
+    }
+  }
+}
+
 void print_elect(struct es *elect){
   double scale;
   scale=1;

@@ -28,7 +28,7 @@ void vasp_write(FILE* outfile, struct unit_cell *c, struct contents *m,
                 struct grid *g){
   int i,j,k,count,line;
   double *dptr1,scale,x;
-  int nspec,*natomsp,*spatno;
+  int nspec,*natomsp;
   char *fmt;
   
   if (m->title) fprintf(outfile,"%s\n",m->title);
@@ -50,43 +50,38 @@ void vasp_write(FILE* outfile, struct unit_cell *c, struct contents *m,
 
   if(!(flags&HIPREC)) fmt="% 8.6f  % 8.6f  % 8.6f\n";
 
-  /* Now we need to know the number of species.
-     It must be fewer than the number of atoms...
-  */
-
-  nspec=0;
-  natomsp=malloc(m->n*sizeof(int));
-  if (!natomsp) error_exit("Malloc error in vasp_write");
-  spatno=malloc(m->n*sizeof(int));
-  if (!spatno) error_exit("Malloc error in vasp_write");
-
-
-  for(i=0;i<m->n;i++){
-    for(j=0;j<nspec;j++) if (m->atoms[i].atno==spatno[j]) break;
-    if (j==nspec){  /* new species */
-      spatno[j]=m->atoms[i].atno;
-      natomsp[j]=1;
-      nspec++;
-    }else{          /* existing species */
-      natomsp[j]++;
-    }
-  }
-
+  if (!m->spec) addspec(m);
+  
   /* VASP now puts atomic symbols here */
-  for(i=0;i<nspec;i++) fprintf(outfile,"   %s",atno2sym(spatno[i]));
+  for(i=0;i<m->nspec;i++) fprintf(outfile,"   %s",atno2sym(m->spec[i].atno));
   fprintf(outfile,"\n");
 
+  /* Need number of atoms in each species */
+  nspec=m->nspec;
+  natomsp=malloc(nspec*sizeof(int));
+  if (!natomsp) error_exit("malloc error in vasp_write");
+  for(i=0;i<nspec;i++) natomsp[i]=0;
+  for(i=0;i<m->n;i++){
+    for(j=0;j<nspec;j++){
+      if (m->atoms[i].atno==m->spec[j].atno){
+	natomsp[j]++;
+	break;
+      }
+    }
+  }
   
   /* Must not have trailing space on this line... */
   for(i=0;i<nspec;i++) fprintf(outfile,"  %d",natomsp[i]);
   fprintf(outfile,"\n");
-
+  free(natomsp);
+  natomsp=NULL;
+  
   fprintf(outfile,"Direct\n");  /* i.e. fractional co-ords */
 
   /* Write out atoms, sorted by species */
   for(i=0;i<nspec;i++)
     for(j=0;j<m->n;j++)
-      if (m->atoms[j].atno==spatno[i])
+      if (m->atoms[j].atno==m->spec[i].atno)
         fprintf(outfile,fmt,m->atoms[j].frac[0],
                 m->atoms[j].frac[1],m->atoms[j].frac[2]);
 
@@ -133,7 +128,7 @@ void vasp_write(FILE* outfile, struct unit_cell *c, struct contents *m,
   k=0;
   for(i=0;i<nspec;i++)
     for(j=0;j<m->n;j++)
-      if (m->atoms[j].atno==spatno[i]){
+      if (m->atoms[j].atno==m->spec[i].atno){
         fprintf(outfile,"  %f",m->atoms[j].spin);
         k++;
         if (k%4==0) fprintf(outfile,"\n");

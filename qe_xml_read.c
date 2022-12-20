@@ -53,11 +53,13 @@ void qe_xml_read(FILE* infile, char *filename, struct unit_cell *c,
   fft[0]=fft[1]=fft[2]=0;
   alat=0;
   k_in=malloc(sizeof(struct kpts));
+  if (!k_in) error_exit("malloc error for struct kpts");
   k_in->n=0;
   symrel=NULL;
   symtr=NULL;
   species=NULL;
   nbands=0;
+  nkpt=0;
 
   /* Get directory part of filename */
   cwd=NULL;
@@ -65,6 +67,7 @@ void qe_xml_read(FILE* infile, char *filename, struct unit_cell *c,
   while((cptr>filename)&&(*cptr!='/')) cptr--;
   if (*cptr=='/'){
     cwd=malloc((cptr-filename)+2);
+    if (!cwd) error_exit("malloc error for struct dirname");
     strncpy(cwd,filename,(cptr-filename)+1);
     cwd[(cptr-filename)+1]=0;
     /* We need the trailing / only if the directory part is simply "/" */
@@ -209,24 +212,6 @@ void qe_xml_read(FILE* infile, char *filename, struct unit_cell *c,
     if (strstr(buffer,"</output>")) break;
     if(strstr(buffer,"<cell>")){
       read_basis(infile,c);
-#if 0
-      c->basis=malloc(72);
-      if (!c->basis) error_exit("Malloc error for basis");
-      for(i=0;i<3;i++){
-        sprintf(key,"<a%1d>",i+1);
-	fgets(buffer,LINE_SIZE,infile);
-	cptr=strstr(buffer,key);
-	if(!cptr){
-	  fprintf(stderr,"Failed to find %s\n",key);
-	  exit(1);
-	}
-	j=sscanf(cptr+4,"%lf %lf %lf",c->basis[i],c->basis[i]+1,c->basis[i]+2);
-	if (j!=3){
-	  fprintf(stderr,"Failed to scan %s\n",key);
-	  exit(1);
-	}
-      }
-#endif
     }
     else if(strstr(buffer,"<atomic_structure ")){
       cptr=strstr(buffer,"<atomic_structure>");
@@ -309,6 +294,17 @@ void qe_xml_read(FILE* infile, char *filename, struct unit_cell *c,
       k->kpts=malloc(k->n*sizeof(struct atom));
       if (!k->kpts) error_exit("Malloc error for kpts");
       nkpt=0;
+    }
+    else if (strstr(buffer,"<fermi_energy>")){
+      e->e_fermi=malloc(sizeof(double));
+      if (!e->e_fermi) error_exit("Malloc error");
+      cptr=strstr(buffer,"<fermi_energy>");
+      if (sscanf(cptr+14,"%lf",e->e_fermi)==0){
+        free(e->e_fermi);
+        e->e_fermi=NULL;
+      }
+      else
+        *e->e_fermi*=H_eV;
     }
     else if(strstr(buffer,"<ks_energies>")){
       if (k->n==0) error_exit("ks_energies before nks");
@@ -679,18 +675,9 @@ void qe_xml_read(FILE* infile, char *filename, struct unit_cell *c,
       for(j=0;j<3;j++)
         for(jj=0;jj<3;jj++)
           mat[j][jj]=symrel[9*i+3*j+jj];
-#if 0
-      fprintf(stderr,"Mat in:\n");
-      for(j=0;j<3;j++)
-        fprintf(stderr," %8f %8f %8f\n",mat[j][0],mat[j][1],mat[j][2]);
-#endif
+
       mat_f2a(mat,s->ops[i].mat,c->basis,c->recip);
-#if 0
-      fprintf(stderr,"Mat out:\n");
-      for(j=0;j<3;j++)
-        fprintf(stderr," %8f %8f %8f\n",s->ops[i].mat[j][0],
-                s->ops[i].mat[j][1],s->ops[i].mat[j][2]);
-#endif
+
       for(j=0;j<3;j++){
         s->ops[i].tr[j]=0;
         for(jj=0;jj<3;jj++)
@@ -740,7 +727,7 @@ void qe_xml_read(FILE* infile, char *filename, struct unit_cell *c,
     if (ch) qe_rho_read(ch, c, m, k, s, g, e, i_grid);
   }
 
-  if ((flags&BANDS)||(flags&BANDPARITY))
+  if (flags&BANDREAD)
     qe_psi_read(cwd,(char*)dict_get(m->dict,"QE_prefix"),c, m, k, s, g,
 		e, fft, i_grid);
   
@@ -758,6 +745,7 @@ FILE *qe_pspot_file(char *name, char *prefix, char *cwd){
   if (prefix){
     if ((prefix[0]!='/')&&(cwd)){
       path=malloc(strlen(cwd)+strlen(prefix)+strlen(name)+3);
+      if (!path) error_exit("malloc error for filename");
       strcpy(path,cwd);
       strcat(path,"/");
       strcat(path,prefix);
@@ -774,6 +762,7 @@ FILE *qe_pspot_file(char *name, char *prefix, char *cwd){
     }
     
     path=malloc(strlen(prefix)+strlen(name)+2);
+    if (!path) error_exit("malloc error for filename");
     strcpy(path,prefix);
     strcat(path,"/");
     strcat(path,name);
@@ -792,6 +781,7 @@ FILE *qe_pspot_file(char *name, char *prefix, char *cwd){
   if (ptr){
     if ((ptr[0]!='/')&&(cwd)){
       path=malloc(strlen(cwd)+strlen(ptr)+strlen(name)+3);
+      if (!path) error_exit("malloc error for filename");
       strcpy(path,cwd);
       strcat(path,"/");
       strcat(path,ptr);
@@ -807,6 +797,7 @@ FILE *qe_pspot_file(char *name, char *prefix, char *cwd){
       free(path);
     }
     path=malloc(strlen(ptr)+strlen(name)+2);
+    if (!path) error_exit("malloc error for filename");
     strcpy(path,ptr);
     strcat(path,"/");
     strcat(path,name);
@@ -823,6 +814,7 @@ FILE *qe_pspot_file(char *name, char *prefix, char *cwd){
 
   if (cwd){
     path=malloc(strlen(cwd)+strlen(name)+2);
+    if (!path) error_exit("malloc error for filename");
     strcpy(path,cwd);
     strcat(path,"/");
     strcat(path,name);
@@ -849,13 +841,16 @@ FILE *qe_pspot_file(char *name, char *prefix, char *cwd){
 double qe_pot_charge(FILE *infile){
   char buffer[LINE_SIZE+1],*ptr;
   double chg;
-  int i;
+  int i,hit;
 
-  while(fgets(buffer,LINE_SIZE,infile))
-    if (strstr(buffer,"<PP_HEADER ")) break;
-
-  ptr=strstr(buffer,"<PP_HEADER ");
-  if (ptr){
+  hit=0;
+  while(fgets(buffer,LINE_SIZE,infile)){
+    ptr=strstr(buffer,"<PP_HEADER");
+    if ((ptr)&&(*(ptr+10)=='>')) {hit=1;break;}
+    if ((ptr)&&((*(ptr+10)==' ')||(*(ptr+10)=='\n'))) {hit=2;break;}
+  }
+  
+  if (hit==2){  /* Version 2 UPF file */
     ptr=strstr(ptr,"z_valence=\"");
     if (!ptr) { /* Has <PP_HEADER been split over multiple lines? */
       while (!strstr(buffer,"/>")){
@@ -870,6 +865,19 @@ double qe_pot_charge(FILE *infile){
     }
     ptr+=strlen("z_valence=\"");
     i=sscanf(ptr,"%lf",&chg);
+    if (i==1)
+      return chg;
+    else
+      fprintf(stderr,"Warning: ionic pseudo charge not parsed\n");
+  } /* Pre version 2 UPF file */
+  else if (hit==1){
+    /* Skip five lines */
+    for(i=0;i<5;i++) fgets(buffer,LINE_SIZE,infile);
+    if (!fgets(buffer,LINE_SIZE,infile)){
+      fprintf(stderr,"Warning: unexpected end to pseudopot file\n");
+      return 0;
+    }
+    i=sscanf(buffer,"%lf",&chg);
     if (i==1)
       return chg;
     else

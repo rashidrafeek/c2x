@@ -1,6 +1,7 @@
 #include<stdio.h>
 #include<stdlib.h>
 #include<math.h>
+#include<string.h>
 #include "c2xsf.h"
 
 void fft3d(double *c, int *ngptar, int dir);
@@ -12,13 +13,17 @@ void es_pot(struct unit_cell *c, struct contents *m,
             struct grid *g, struct es *elect, double musq){
   int i,j,k,ii,jj,kk,ngx,ngy,ngz;
   int grid_size,fft[3],ffft[3],ind[3],dipole_slab_dir;
-  double *cgrid,*cigrid,gvec[3],scale,gsq;
+  double *cgrid,*cigrid,gvec[3],scale,gsq,net_charge,ion_charge;
   double dpole[3],field,off,*dipole_ctr;
   double vec[3],mag;
 
   dipole_ctr=elect->dip_ctr;
   
   if (debug) fprintf(stderr,"Calculating ES potential\n");
+
+  if ((g->name)&&(!strncasecmp(g->name,"pot",3)))
+    fprintf(stderr,"Warning: need electron density to calculate potential,\n"
+            "         but appear to have potential in grid.\n");
   
   /* First calculate electronic contribution to the ES potential */
 
@@ -51,16 +56,18 @@ void es_pot(struct unit_cell *c, struct contents *m,
   for(i=0;i<2*grid_size;i++)
     cgrid[i]+=cigrid[i];
   free(cigrid);
-  
-  if (debug>1) fprintf(stderr,
-                       "g=0 component of total charge in esp: %lf+%lfi\n",
-                       cgrid[0],cgrid[1]);
 
-  if (fabs(cgrid[0])>1e-5){
-    fprintf(stderr,"Warning: cell not neutral generating ES pot."
-            "g=0 component is %lf\n",cgrid[0]);
-  }
+  ion_charge=0;
+  for(i=0;i<m->n;i++) ion_charge+=m->atoms[i].chg;
+  net_charge=cgrid[0]*c->vol/(fft[0]*fft[1]*fft[2]);
   
+  if ((debug>1)||(fabs(net_charge)>1e-7*ion_charge)) {
+    fprintf(stderr,
+            "g=0 component of total charge in esp: %lf+%lfi\n",
+            cgrid[0],cgrid[1]);
+    fprintf(stderr,"          corresponding net charge is %g\n",net_charge);
+  }    
+
   /*  Now need to scale by 1/g^2, or, more precisely,
    *  1/(EPS0*g^2)
    */

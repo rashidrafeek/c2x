@@ -6,18 +6,31 @@
 
 #include "c2xsf.h"
 
-void geom_write(FILE* outfile, struct time_series *ts){
-  int ii,i,j;
+void geom_write(FILE* outfile, struct unit_cell *c, struct contents *m_in,
+		struct es *e, struct time_series *ts){
+  int ii,i,j,free_ts;
   char *sp20="                    ";
   int nspec,*natomsp,*spatno,*ninspec;
   struct contents *m;
 
+  free_ts=0;
   if (!ts){
-    error_exit("No time series data!\n");
+    ts=malloc(sizeof(struct time_series));
+    if (!ts) error_exit("malloc error in geom_write");
+    free_ts=1;
+    ts->nsteps=ts->nc=ts->nm=ts->nen=0;
+  }
+
+  if (ts->nsteps==0){
+    ts->nsteps=ts->nc=ts->nm=ts->nen=1;
+    ts->m=m_in;
+    ts->cells=c;
+    ts->energies=e->energy;
+    if (!ts->energies) ts->nen=0;
   }
 
   if ((ts->nm<ts->nsteps)||(ts->nc<ts->nsteps)){
-    error_exit("To few steps for atoms or cell. Aborting.\n");
+    error_exit("Too few steps for atoms or cell. Aborting.\n");
   }
   
   fprintf(outfile," BEGIN header\n");
@@ -77,7 +90,7 @@ void geom_write(FILE* outfile, struct time_series *ts){
     for(i=0;i<nspec;i++){
       for(j=0;j<m->n;j++){
         if (m->atoms[j].atno==spatno[i]){
-          fprintf(outfile," %3s      %8d   %23.16e    %23.16e    %23.16e"
+          fprintf(outfile,"%3s       %8d   %23.16e    %23.16e    %23.16e"
                   "   <-- R\n",
                   atno2sym(m->atoms[j].atno),ninspec[j],
                   m->atoms[j].abs[0]/BOHR,
@@ -92,7 +105,7 @@ void geom_write(FILE* outfile, struct time_series *ts){
       for(i=0;i<nspec;i++){
         for(j=0;j<m->n;j++){
           if (m->atoms[j].atno==spatno[i]){
-            fprintf(outfile," %3s      %8d   %23.16e    %23.16e    %23.16e"
+            fprintf(outfile,"%3s       %8d   %23.16e    %23.16e    %23.16e"
                     "   <-- F\n",
                     atno2sym(m->atoms[j].atno),ninspec[j],
                     m->atoms[j].force[0]*=(BOHR/H_eV),
@@ -104,4 +117,6 @@ void geom_write(FILE* outfile, struct time_series *ts){
     }
     fprintf(outfile,"\n"); 
   }
+
+  if (free_ts) free(ts);
 }

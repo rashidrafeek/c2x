@@ -111,7 +111,6 @@ int super(struct unit_cell *c, struct contents *mtf,
     }
     else{
       if (debug>1) fprintf(stderr,"Discarding MP grid\n");
-      free(kp->mp->grid);
       free(kp->mp);
       kp->mp=NULL;
     }

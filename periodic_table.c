@@ -16,7 +16,11 @@
  * along with this program; if not, see http://www.gnu.org/licenses/
  */ 
 
-#define P_MAX_EL 103
+/* June 2020: increase from 103 elements to 118 */
+
+#define P_MAX_EL 118
+
+int periodic_max_el=P_MAX_EL;
 
 static char *table[P_MAX_EL+2]={"X","H","He",
   "Li","Be", "B", "C", "N", "O", "F","Ne",
@@ -35,6 +39,7 @@ static char *table[P_MAX_EL+2]={"X","H","He",
   "Fr","Ra",
   "Ac",
   "Th","Pa", "U","Np","Pu","Am","Cm","Bk","Cf","Es","Fm","Md","No","Lw",
+  "Rf","Db","Sg","Bh","Hs","Mt","Ds","Rg","Cn","Nh","Fl","Mc","Lv","Ts","Og",
 0};
 
 char* atno2sym(unsigned no){

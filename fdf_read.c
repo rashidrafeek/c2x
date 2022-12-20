@@ -10,7 +10,7 @@
  * in its keywords.
  */
 
-/* Copyright (c) 2018-2019 MJ Rutter 
+/* Copyright (c) 2018-2020 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -38,25 +38,18 @@
 
 #define PARSE_ERROR  fprintf(stderr,"Parse error on line %d %s\n",files->line,(files->name)?files->name:"")
 
-static int fdfreadline(char *buffer, int len);
+static int fdfreadline(char *buffer, int len, char *dir,
+                       struct infiles **filesp);
 static int fdfreadlength(char *buff, double *x);
 static int fdfreadenergy(char *buff, double *x);
 static int fdfstrcasecmp(char **s1_in, char *s2);
 static int fdftokenmatch(char **s1_in, char *s2);
-static void fdfinclude(char *ptr);
 static double siesta_pot_charge(char *prefix, char *label);
 
 static char *ptr;
 
-static struct infiles {
-  FILE* f; struct infiles *next; struct infiles *last; char *name;
-  int line; int include;
-} *files;
-static FILE *infile;
-
-
-void fdf_read(FILE* in, char *filename, struct unit_cell *c,
-	      struct contents *m, struct kpts *kp, struct es *e){
+void fdf_read(FILE* in, struct unit_cell *c, struct contents *m,
+              struct kpts *kp, struct es *e){
   int i,j,k,n,*atomspecies,mp_grid[3][3],okay;
   int nspec,*species_to_atno;
   double scale,shift[3],mp_off[3];
@@ -75,15 +68,14 @@ void fdf_read(FILE* in, char *filename, struct unit_cell *c,
                        ""};
   char *spaces="                              ";  /* 30 spaces */
   char *prefix;
-
-  prefix="";
-  if (strstr(filename,"/")){
-    ptr2=filename+strlen(filename);
-    while (*ptr2!='/') ptr2--;
-    prefix=malloc(1+ptr2-filename);
-    for(i=0;filename+i<=ptr2;i++) prefix[i]=filename[i];
-    prefix[i]=0;
-  }
+  char *dir;
+  struct infiles *files;
+ 
+  dir=dict_get(m->dict,"in_dir");
+  if (dir)
+    prefix=dir;
+  else
+    prefix="";
   
   files=malloc(sizeof(struct infiles));
   if (!files) error_exit("Malloc error for files in fdf_read");
@@ -91,7 +83,6 @@ void fdf_read(FILE* in, char *filename, struct unit_cell *c,
   files->next=files->last=NULL;
   files->name=NULL;
   files->line=0;
-  infile=in;
   
   m->n=0;
   nspec=0;
@@ -111,7 +102,7 @@ void fdf_read(FILE* in, char *filename, struct unit_cell *c,
   if (!(c->basis=malloc(72)))
     error_exit("Malloc error in fdfread for c->basis");
 
-  while(fdfreadline(buffer,LINE_SIZE)){
+  while(fdfreadline(buffer,LINE_SIZE,dir,&files)){
     ptr=buffer;
     
     if (!fdftokenmatch(&ptr,"SystemName")){
@@ -208,21 +199,21 @@ void fdf_read(FILE* in, char *filename, struct unit_cell *c,
     if (debug>2) fprintf(stderr,"Found a %s block\n",ptr);
 
     if (!fdfstrcasecmp(&ptr,"latticevectors")){
-      fdfreadline(buffer,LINE_SIZE);
+      fdfreadline(buffer,LINE_SIZE,dir,&files);
       vec=malloc(9*sizeof(double));
       for(i=0;i<3;i++){
         if (sscanf(buffer,"%lf %lf %lf",vec+3*i,vec+3*i+1,vec+3*i+2)!=3)
           error_exit("Error reading lattice vectors");
-        fdfreadline(buffer,LINE_SIZE);
+        fdfreadline(buffer,LINE_SIZE,dir,&files);
       }
 
     }else if (!fdfstrcasecmp(&ptr,"latticeparameters")){
-      fdfreadline(buffer,LINE_SIZE);
+      fdfreadline(buffer,LINE_SIZE,dir,&files);
       abc=malloc(6*sizeof(double));
       if (sscanf(buffer,"%lf %lf %lf %lf %lf %lf",
                  abc,abc+1,abc+2,abc+3,abc+4,abc+5)!=6)
           error_exit("Error reading lattice parameters");
-      fdfreadline(buffer,LINE_SIZE);
+      fdfreadline(buffer,LINE_SIZE,dir,&files);
 
     }else if (!fdfstrcasecmp(&ptr,"AtomicCoordinatesAndAtomicSpecies")){
       if (m->n==0)
@@ -230,13 +221,13 @@ void fdf_read(FILE* in, char *filename, struct unit_cell *c,
       atomspecies=malloc(m->n*sizeof(int));
       atomcoords=malloc(3*m->n*sizeof(double));
       for(i=0;i<m->n;i++){
-        fdfreadline(buffer,LINE_SIZE);
+        fdfreadline(buffer,LINE_SIZE,dir,&files);
         if (sscanf(buffer,"%lf %lf %lf %d",
                    atomcoords+3*i,atomcoords+3*i+1,atomcoords+3*i+2,
                    atomspecies+i)!=4)
           error_exit("Error reading atomic positions");
       }
-      fdfreadline(buffer,LINE_SIZE);
+      fdfreadline(buffer,LINE_SIZE,dir,&files);
     }
     else if (!fdfstrcasecmp(&ptr,"ChemicalSpeciesLabel")){
       if (!nspec)
@@ -244,7 +235,7 @@ void fdf_read(FILE* in, char *filename, struct unit_cell *c,
       species_to_atno=malloc((nspec+1)*sizeof(int));
       species_to_charge=malloc((nspec+1)*sizeof(double));
       for(i=0;i<nspec;i++){
-        fdfreadline(buffer,LINE_SIZE);
+        fdfreadline(buffer,LINE_SIZE,dir,&files);
         if (sscanf(buffer,"%d %d%n",&j,&k,&n)!=2)
           error_exit("Error reading ChemicalSpeciesLabel");
         if ((j<1)||(j>nspec)){
@@ -260,7 +251,7 @@ void fdf_read(FILE* in, char *filename, struct unit_cell *c,
           species_to_charge[j]=siesta_pot_charge(prefix,ptr);
         }
       }
-      fdfreadline(buffer,LINE_SIZE);
+      fdfreadline(buffer,LINE_SIZE,dir,&files);
     }
     else if (!fdfstrcasecmp(&ptr,"DMInitSpin")){
       if (m->n==0)
@@ -268,7 +259,7 @@ void fdf_read(FILE* in, char *filename, struct unit_cell *c,
       atomspins=malloc(m->n*sizeof(double));
       for(i=0;i<m->n;i++) atomspins[i]=0;
       while(1){
-        fdfreadline(buffer,LINE_SIZE);
+        fdfreadline(buffer,LINE_SIZE,dir,&files);
         i=sscanf(buffer,"%d%n",&j,&k);
         if (i==0) break;
         if ((j<1)||(j>m->n))
@@ -289,7 +280,7 @@ void fdf_read(FILE* in, char *filename, struct unit_cell *c,
     }
     else if ((kp)&&(!fdfstrcasecmp(&ptr,"kgridMonkhorstPack"))){
       for(i=0;i<3;i++){
-        fdfreadline(buffer,LINE_SIZE);
+        fdfreadline(buffer,LINE_SIZE,dir,&files);
         j=sscanf(buffer,"%d %d %d %lf",mp_grid[i],mp_grid[i]+1,mp_grid[i]+2,
                  mp_off+i);
         if (j!=4){
@@ -324,7 +315,7 @@ void fdf_read(FILE* in, char *filename, struct unit_cell *c,
     }
     else{
       fprintf(stderr,"Ignoring %s\n",ptr);
-      while(fdfreadline(buffer,LINE_SIZE)){
+      while(fdfreadline(buffer,LINE_SIZE,dir,&files)){
         ptr=buffer;
         if (!strncasecmp(ptr,"%endblock",9)) break;
       }
@@ -407,6 +398,12 @@ void fdf_read(FILE* in, char *filename, struct unit_cell *c,
     m->atoms[i].atno=species_to_atno[atomspecies[i]];
     m->atoms[i].chg=species_to_charge[atomspecies[i]];
   }
+
+  m->nspec=nspec;
+  m->spec=malloc(nspec*sizeof(struct species));
+  if (!m->spec) error_exit("malloc error for m->spec in fdf_read");
+  for(i=0;i<nspec;i++) m->spec[i].atno=species_to_atno[i+1];
+  
   free(atomspecies);
   free(species_to_atno);
   dict_add(m->dict,"Siesta_species_to_charge",species_to_charge);
@@ -427,14 +424,14 @@ void fdf_read(FILE* in, char *filename, struct unit_cell *c,
   }
 }
 
-int fdfreadline(char *buffer, int len){
+int fdfreadline(char *buffer, int len, char *dir, struct infiles **filesp){
   int off,success2,inc;
   char *ptr,*success,*p2;
-
-  while((success=fgets(buffer,len,infile))){ /* fgets() always
+  
+  while((success=fgets(buffer,len,(*filesp)->f))){ /* fgets() always
                                                     null terminates,
                                                     gcc likes extra brackets */
-    files->line++;
+    (*filesp)->line++;
 
 /* Kill trailing spaces and newlines / carriage returns */
     ptr=buffer+strlen(buffer)-1;
@@ -451,19 +448,18 @@ int fdfreadline(char *buffer, int len){
 
   if (!success){ /* Need to recurse out of nested include files */
     success2=0;
-    while (files->last){
-      fclose(infile);
-      free(files->name);
-      inc=files->include;
-      files=files->last;
-      free(files->next);
-      files->next=NULL;
-      infile=files->f;
+    while ((*filesp)->last){
+      fclose((*filesp)->f);
+      free((*filesp)->name);
+      inc=(*filesp)->include;
+      (*filesp)=(*filesp)->last;
+      free((*filesp)->next);
+      (*filesp)->next=NULL;
       if (!inc){
         strcpy(buffer,"%endblock\n");
         return 1;
       }
-      success2=fdfreadline(buffer,LINE_SIZE);
+      success2=fdfreadline(buffer,LINE_SIZE,dir,filesp);
       if (success2) return success2;
     }
     if (!success2) return(0);
@@ -476,8 +472,12 @@ int fdfreadline(char *buffer, int len){
   }
 
   if (!tokenmatch(&ptr,"%include")){
-    fdfinclude(ptr);
-    return fdfreadline(buffer,LINE_SIZE);
+    while (*ptr==' ') ptr++;
+    p2=ptr;
+    while ((*p2)&&(*p2!=' ')) p2++;
+    *p2=0;
+    include_file(filesp,dir,ptr);
+    return fdfreadline(buffer,LINE_SIZE,dir,filesp);
   }
 
   /* Might have "label < include" syntax */
@@ -493,8 +493,12 @@ int fdfreadline(char *buffer, int len){
   /* do we now have a < ? */
   if (*p2=='<'){
     ptr=p2+1;
-    fdfinclude(ptr);
-    return fdfreadline(buffer,LINE_SIZE);
+    while (*ptr==' ') ptr++;
+    p2=ptr;
+    while ((*p2)&&(*p2!=' ')) p2++;
+    *p2=0;
+    include_file(filesp,dir,ptr);
+    return fdfreadline(buffer,LINE_SIZE,dir,filesp);
   }
     
   
@@ -503,8 +507,12 @@ int fdfreadline(char *buffer, int len){
       if (*ptr=='<'){
         *ptr=0; /* stop rest of parser seeing the < part */
         ptr++;
-        fdfinclude(ptr);
-        files->include=0;
+        while (*ptr==' ') ptr++;
+        p2=ptr;
+        while ((*p2)&&(*p2!=' ')) p2++;
+        *p2=0;
+        include_file(filesp,dir,ptr);
+        (*filesp)->include=0;
         return 1; /* returns buffer from old file with %block line
                    * next read is from new file
                    */
@@ -515,39 +523,56 @@ int fdfreadline(char *buffer, int len){
   return (1);
 }
 
-static void fdfinclude(char *ptr){
-  char *p2;
+void include_file(struct infiles **file, char *dir, char *ptr){
+  struct infiles *fs;
+  char *name;
 
-  while (*ptr==' ') ptr++;
-  p2=ptr;
-  while ((*p2)&&(*p2!=' ')) p2++;
-  *p2=0;
-  files->next=malloc(sizeof(struct infiles));
-  if (!files) error_exit("Malloc error for files_next in cell_read");
-  files->next->last=files;
-  files->next->next=NULL;
-  files->next->f=fopen(ptr,"r");
-  files=files->next;
-  files->name=malloc(strlen(ptr)+1);
-  strcpy(files->name,ptr);
-  files->line=0;
-  files->include=1; /* This gets set to zero if a block include which
-                     * needs an %endblock added */
-  infile=files->f;
-  if (!files->f){
-    fprintf(stderr,"Error, unable to open %s in fdf_read\n",ptr);
-    exit(1);
+  name=NULL;
+  fs=*file;
+  fs->next=malloc(sizeof(struct infiles));
+  if (!fs->next) error_exit("Malloc error for files_next in cell_read");
+  fs->next->last=fs;
+  fs->next->next=NULL;
+  fs=fs->next;
+  fs->f=NULL;
+  if (dir){
+    name=malloc(strlen(dir)+strlen(ptr)+1);
+    if (!name) error_exit("malloc error for filename");
+    strcpy(name,dir);
+    strcat(name,ptr);
+    fs->f=fopen(name,"r");
+    fs->name=name;
   }
-  if (debug) fprintf(stderr,"Opened included file %s\n",ptr);
+  if (!fs->f) {
+    fs->f=fopen(ptr,"r");
+    fs->name=malloc(strlen(ptr)+1);
+    if (!fs->name) error_exit("malloc error for filename");
+    strcpy(fs->name,ptr);
+  }
+  if (!fs->f){
+    fprintf(stderr,"Error: failed to open include file ");
+    if (name) fprintf(stderr,"%s or",name);
+    fprintf(stderr,"%s\n",ptr);
+  }
+  if (debug)
+    fprintf(stderr,"Opened included file %s\n",fs->name);
+
+  fs->line=0;
+  fs->include=1;  /* This gets set to zero if a block include which
+                     * needs an %endblock added */   
+  *file=fs;
 }
 
 static int fdfreadlength(char *buff, double *x){
   char *p,*ptr;
-  int n;  
+  int n,i;  
 
   while((*buff)&&((*buff==' '))) buff++;
-  
-  n=sscanf(buff,"%lf %ms",x,&ptr);
+  /*
+   * n=sscanf(buff,"%lf %ms",x,&ptr);
+   */
+  n=sscanf(buff,"%lf%n",x,&i);
+  n+=sscanfmsn(buff+i,&ptr,NULL);
   p=ptr; /* tokenmatch may modify ptr, but we wish to free it */
   
   if (n==0) return 0;
@@ -582,11 +607,14 @@ static int fdfreadlength(char *buff, double *x){
 
 static int fdfreadenergy(char *buff, double *x){
   char *p,*ptr;
-  int n;  
+  int n,i;  
 
   while((*buff)&&((*buff==' '))) buff++;
-  
-  n=sscanf(buff,"%lf %ms",x,&ptr);
+  /*
+   * n=sscanf(buff,"%lf %ms",x,&ptr);
+   */
+  n=sscanf(buff,"%lf%n",x,&i);
+  n+=sscanfmsn(buff+i,&ptr,NULL);
   p=ptr; /* tokenmatch may modify ptr, but we wish to free it */
   
   if (n==0) return 0;

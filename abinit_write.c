@@ -12,11 +12,18 @@ void abinit_write(FILE* outfile, struct unit_cell *c, struct contents *m,
                   struct kpts *k, struct symmetry *s, struct es *e){
   double abc[6],acell[3],akpt_disp[3],tot_spin;
   int i,j,hit,nspec,nspin;
-  int *natomsp,*spatno;
   char *fmt;
   
   if (m->title) fprintf(outfile,"# %s\n",m->title);
 
+  if (dict_get(m->dict,"Abinit_pp_dirpath"))
+    fprintf(outfile,"pp_dirpath = \"%s\"\n",
+	    (char*)dict_get(m->dict,"Abinit_pp_dirpath"));
+  
+  if (dict_get(m->dict,"Abinit_pseudos"))
+    fprintf(outfile,"pseudos = \"%s\"\n",
+	    (char*)dict_get(m->dict,"Abinit_pseudos"));
+  
   /* The cell */
   
   cart2abc(c,NULL,abc,NULL,0);
@@ -60,30 +67,12 @@ void abinit_write(FILE* outfile, struct unit_cell *c, struct contents *m,
 
   /* Atom types */
 
-  /* Now we need to know the number of species.
-   * It must be fewer than the number of atoms...
-   */
-
-  nspec=0;
-  natomsp=malloc(m->n*sizeof(int));
-  if (!natomsp) error_exit("Malloc error in abinit_write");
-  spatno=malloc(m->n*sizeof(int));
-  if (!spatno) error_exit("Malloc error in abinit_write");
-
-  for(i=0;i<m->n;i++){
-    for(j=0;j<nspec;j++) if (m->atoms[i].atno==spatno[j]) break;
-    if (j==nspec){  /* new species */
-      spatno[j]=m->atoms[i].atno;
-      natomsp[j]=1;
-      nspec++;
-    }else{          /* existing species */
-      natomsp[j]++;
-    }
-  }
-
+  if (!m->spec) addspec(m);
+  nspec=m->nspec;
+  
   fprintf(outfile,"\nntypat %d\n",nspec);
   fprintf(outfile,"znucl ");
-  for(i=0;i<nspec;i++) fprintf(outfile," %d",spatno[i]);
+  for(i=0;i<nspec;i++) fprintf(outfile," %d",m->spec[i].atno);
   fprintf(outfile,"\n\n");
 
   /* Atoms */
@@ -92,7 +81,7 @@ void abinit_write(FILE* outfile, struct unit_cell *c, struct contents *m,
   fprintf(outfile,"typat");
   for(i=0;i<m->n;i++){
     for(j=0;j<nspec;j++)
-      if(m->atoms[i].atno==spatno[j]){
+      if(m->atoms[i].atno==m->spec[j].atno){
         fprintf(outfile," %2d",j+1);
         break;
       }

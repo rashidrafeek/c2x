@@ -219,13 +219,12 @@ void sym_kpts(struct kpts *k_in, struct kpts *k_out, struct symmetry *s,
 
 /* Generate "Monkhurst Pack" set according to Castep's rules */
 void mp_gen(struct kpts *ks, struct unit_cell *c){
-  int i,j,k,n;
+  int i,j,k,sym,sym2,max_x,hit;
   int ngx,ngy,ngz;
   double kx,ky,kz;
   double d[3];
-  struct symmetry s;
-  struct kpts ks2;
-
+  struct atom kinv;
+  
   ngx=ks->mp->grid[0];
   ngy=ks->mp->grid[1];
   ngz=ks->mp->grid[2];
@@ -234,55 +233,58 @@ void mp_gen(struct kpts *ks, struct unit_cell *c){
     d[i]=ks->mp->disp[i];
     if ((ks->mp->grid[i]&1)==0) /* Grid even */
       d[i]+=1.0/(2*ks->mp->grid[i]); /* For thus says Castep */
+    d[i]=fmod(d[i],1.0/ks->mp->grid[i]);
+    if (d[i]<0) d[i]+=1.0/ks->mp->grid[i];
   }
 
-  ks->kpts=malloc(ngx*ngy*ngz*sizeof(struct atom));
+  /* inversion symmetry will map points onto each other only
+   * if all displacements are of zero or half a grid cell */
+  sym=1;
+  for(i=0;i<3;i++){
+    if ((!aeq(d[i],0.0))&&(!aeq(ks->mp->grid[i]*d[i],0.5))&&
+        (!aeq(ks->mp->grid[i]*d[i],1.0))) sym=0;
+  }
+
+  max_x=ngx;
+  if (sym) max_x=floor((0.5-d[0])*ngx)+1;
+  
+  ks->kpts=malloc(max_x*ngy*ngz*sizeof(struct atom));
   if (!ks->kpts) error_exit("Malloc error in mp_gen");
 
-  n=0;
-  for(i=0;i<ngx;i++){
+  ks->n=0;
+  for(i=0;i<max_x;i++){
     kx=(i)/(double)ngx+d[0];
+    sym2=0;
+    if ((sym)&&((aeq(kx,0.0))||(aeq(kx,0.5)))) sym2=1;
     for(j=0;j<ngy;j++){
       ky=(j)/(double)ngy+d[1];
       for(k=0;k<ngz;k++){
 	kz=(k)/(double)ngz+d[2];
-        ks->kpts[n].frac[0]=kx;
-        ks->kpts[n].frac[1]=ky;
-        ks->kpts[n].frac[2]=kz;
-        ks->kpts[n].wt=1.0/(ngx*ngy*ngz);
-	n++;
+        if (sym2){
+          kinv.frac[0]=-kx;
+          kinv.frac[1]=-ky;
+          kinv.frac[2]=-kz;
+          hit=k_in_list(&kinv,ks);
+          if (hit!=-1) {
+            ks->kpts[hit].wt+=1.0/(ngx*ngy*ngz);
+            continue;
+          }
+        }
+        ks->kpts[ks->n].frac[0]=kx;
+        ks->kpts[ks->n].frac[1]=ky;
+        ks->kpts[ks->n].frac[2]=kz;
+        ks->kpts[ks->n].wt=1.0/(ngx*ngy*ngz);
+        if ((sym)&&(sym2==0))
+          ks->kpts[ks->n].wt=2.0/(ngx*ngy*ngz);
+	ks->n++;
       }
     }
   }
 
-  ks->n=n;
-
   addabs(ks->kpts,ks->n,c->recip);
 
-  /* Remove inversion-related points */
-
-  s.n=2;
-  s.ops=malloc(2*sizeof(struct sym_op));
-  s.ops[0].tr=NULL;
-  for(i=0;i<3;i++)
-    for(j=0;j<3;j++)
-      s.ops[0].mat[i][j]=0.0;
-  for(i=0;i<3;i++) s.ops[0].mat[i][i]=1.0;
-  s.ops[1].tr=NULL;
-  for(i=0;i<3;i++)
-    for(j=0;j<3;j++)
-      s.ops[1].mat[i][j]=0.0;
-  for(i=0;i<3;i++) s.ops[1].mat[i][i]=-1.0;
-
-  sym_kpts(ks,&ks2,&s,c->basis);  
-
-  free(s.ops);
-  free(ks->kpts);
-  ks->kpts=ks2.kpts;
-
   if (debug>1) fprintf(stderr,"Generated %d kpts, after inversion %d\n",
-		       ks->n,ks2.n);
-  ks->n=ks2.n;
+		       ngx*ngy*ngz,ks->n);
   
 }
 

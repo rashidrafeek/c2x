@@ -20,18 +20,21 @@
 #include<stdlib.h> /* malloc */
 #include<string.h>
 #include<errno.h>
+#include<math.h>
 
 #include "c2xsf.h"
 
 #define LINE_SIZE 100
 
 static int strnncpy(char *dest, char *src, int n);
+void add_basis(struct unit_cell *c, struct contents *m);
 
 void pdb_read(FILE* infile, struct unit_cell *c, struct contents *m){
   double abc[6],*dptr;
-  int have_basis=0,i,j;
-  char buffer[LINE_SIZE+1],buff2[LINE_SIZE],*cptr,*cptr2;
+  int have_basis,i;
+  char buffer[LINE_SIZE+1],buff2[LINE_SIZE+1],*cptr,*cptr2;
 
+  have_basis=0;
   m->n=0;
 
   if (debug>2) fprintf(stderr,"pdb_read called\n");
@@ -40,7 +43,7 @@ void pdb_read(FILE* infile, struct unit_cell *c, struct contents *m){
     error_exit("Malloc error in pdb_read for c->basis");
 
   while(1){
-   for(i=0;i<LINE_SIZE-1;i++) buffer[i]=0;
+   for(i=0;i<LINE_SIZE;i++) buffer[i]=0;
     if (!fgets(buffer,LINE_SIZE,infile)) break;
 /* First six characters are record name */
     strnncpy(buff2,buffer,6);
@@ -55,6 +58,7 @@ void pdb_read(FILE* infile, struct unit_cell *c, struct contents *m){
     if ((!strcasecmp(buff2,"TITLE"))||(!strcasecmp(buff2,"HEADER"))){
       if (!m->title){
         m->title=malloc(strlen(buffer)-9);
+        if (!m->title) error_exit("malloc error for title");
         cptr=buffer+10;
         cptr2=m->title;
         while((*cptr)&&(*cptr!='\n')) *(cptr2++)=*(cptr++);
@@ -137,14 +141,7 @@ void pdb_read(FILE* infile, struct unit_cell *c, struct contents *m){
       fprintf(stderr,"Warning, ignoring PDB line entitled '%s'\n",buff2);
   }
 
-  if(have_basis==0){
-    if (debug) fprintf(stderr,"Warning, no unit cell in pdb file\n"
-                               "Creating dummy 10A box\n");
-    for(i=0;i<3;i++)
-      for(j=0;j<3;j++)
-        c->basis[i][j]=0;
-    for(i=0;i<3;i++) c->basis[i][i]=10;
-  }
+  if(have_basis==0) add_basis(c,m);
 
   if (debug>1) fprintf(stderr,"%d atoms read\n",m->n);
 
@@ -164,4 +161,23 @@ static int strnncpy(char *dest, char *src, int n){
   dest[i--]=0;
   while((i>=0)&&((dest[i]==' ')||(dest[i]=='\n')||(dest[i]=='\r'))) dest[i--]=0;
   return(i+2);
+}
+
+void add_basis(struct unit_cell *c, struct contents *m){
+  int i,j;
+  double greatest,least;
+
+  fprintf(stderr,"Warning: no basis specified, cuboid being created\n");
+  
+  for(i=0;i<3;i++){
+    for(j=0;j<3;j++) c->basis[i][j]=0;
+    greatest=least=m->atoms[0].abs[i];
+    for(j=0;j<m->n;j++){
+      greatest=max(greatest,m->atoms[j].abs[i]);
+      least=min(greatest,m->atoms[j].abs[i]);
+    }
+    greatest=greatest-least;
+    c->basis[i][i]=ceil(greatest)+7;
+  }
+
 }
