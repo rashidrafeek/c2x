@@ -31,6 +31,31 @@
 struct sym_op *sym_frac2abs(int spg_rot[][3][3],double spg_tr[][3],
 			    struct unit_cell *c,int nsym);
 
+int igr2hall[]={ 0,    1,  2,  3,  6,  9, 18, 21, 30, 39,
+                 57,  60, 63, 72, 81, 90,108,109,112,115,
+                 116,119,122,123,124,125,128,134,137,143,
+                 149,155,161,164,170,173,176,182,185,191,
+                 197,203,209,212,215,218,221,227,228,230,
+                 233,239,245,251,257,263,266,269,275,278,
+                 284,290,292,298,304,310,313,316,322,334,
+                 335,337,338,341,343,349,350,351,352,353,
+                 354,355,356,357,358,359,361,363,364,366,
+                 367,368,369,370,371,372,373,374,375,376,
+                 377,378,379,380,381,382,383,384,385,386,
+                 387,388,389,390,391,392,393,394,395,396,
+                 397,398,399,400,401,402,404,406,407,408,
+                 410,412,413,414,416,418,419,420,422,424,
+                 425,426,428,430,431,432,433,435,436,438,
+                 439,440,441,442,443,444,446,447,448,449,
+                 450,452,454,455,456,457,458,460,462,463,
+                 464,465,466,467,468,469,470,471,472,473,
+                 474,475,476,477,478,479,480,481,482,483,
+                 484,485,486,487,488,489,490,491,492,493,
+                 494,495,497,498,500,501,502,503,504,505,
+                 506,507,508,509,510,511,512,513,514,515,
+                 516,517,518,520,521,523,524,525,527,529,
+                 530};
+
 #ifdef SPGLIB
 int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
             int op, double tolmin){
@@ -219,6 +244,7 @@ int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
       m->atoms[i].frac[j]=spg_pos[i][j];
     m->atoms[i].atno=auid[spg_type[i]].atno;
     m->atoms[i].spin=auid[spg_type[i]].spin;
+    m->atoms[i].chg=0;
     m->atoms[i].label=auid[spg_type[i]].label;
   }
   addabs(m->atoms,m->n,c->basis);
@@ -260,7 +286,7 @@ struct sym_op *sym_frac2abs(int spg_rot[][3][3],double spg_tr[][3],
       if(!s[i].tr) error_exit("Malloc error for tr in sym_frac2abs");
       for(j=0;j<3;j++) s[i].tr[j]=spg_tr[i][0]*c->basis[0][j]+
                          spg_tr[i][1]*c->basis[1][j]+
-			 spg_tr[i][2]*c->basis[2][j];
+                         spg_tr[i][2]*c->basis[2][j];
     }
     else s[i].tr=NULL;
     /* Matrices are harder. Permute indices until answer looks right? */
@@ -275,6 +301,11 @@ struct sym_op *sym_frac2abs(int spg_rot[][3][3],double spg_tr[][3],
       for(k=0;k<3;k++)
         for(kk=0;kk<3;kk++)
           s[i].mat[j][k]+=c->basis[kk][j]*mat[kk][k];
+    /* We don't like matrix entries of "-0" */
+    for(j=0;j<3;j++)
+      for(k=0;k<3;k++)
+        if (fabs(s[i].mat[j][k])<1e-10) s[i].mat[j][k]=0;
+   
     if (debug>2){
       fprintf(stderr,"Sym op on exit:\n");
       for(j=0;j<3;j++)
@@ -291,6 +322,14 @@ struct sym_op *sym_frac2abs(int spg_rot[][3][3],double spg_tr[][3],
   return s;
 }
 
+void cspg_hall2sym(int hall, struct unit_cell *c, struct symmetry *s){
+  int rotations[192][3][3];
+  double translations[192][3];
+
+  s->n=spg_get_symmetry_from_database(rotations,translations,hall);
+  s->ops=sym_frac2abs(rotations,translations,c,s->n);
+}
+
 #else
 int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
             int op){
@@ -298,4 +337,30 @@ int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
           " in this version of c2x\n");
   exit(1);
 }
+
+void cspg_hall2sym(int hall, struct unit_cell *c, struct symmetry *s){
+  if (hall==1) return;
+  fprintf(stderr,"Error: spglib functionality not available"
+          " so cannot expand spacegroup\n");
+  exit(1);
+}
+
 #endif
+
+/* Does space group have two possible origins? */
+int spgr_is_double(int spgr){
+  int doubles[]={48,50,59,70,85,86,88,125,126,129,130,133,
+                 134,137,138,141,142,201,203,222,224,227,228,0};
+  int i,hit;
+
+  hit=0;
+  i=0;
+  while(doubles[i]){
+    if (doubles[i]==spgr){
+      hit=1;
+      break;
+    }
+    i++;
+  }
+  return hit;
+}

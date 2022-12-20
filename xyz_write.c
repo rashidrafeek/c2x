@@ -1,6 +1,6 @@
 /* Write an xyz format file */
 
-/* Copyright (c) 2007 MJ Rutter 
+/* Copyright (c) 2007, 2018 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -18,7 +18,7 @@
 
 /* Each frame (one here) has the format of
  * NATOMS
- * Comment line (blank here)
+ * Comment line
  * Atomic symbol x y z (repeated natoms times)
  */
 
@@ -36,8 +36,14 @@ void xyz_write(FILE* outfile, struct unit_cell *c, struct contents *m){
   else
     fmt="%3s %8f %8f %8f\n";
 
-  fprintf(outfile,"%d\n\n",m->n);
+  fprintf(outfile,"%d\n",m->n);
 
+  if (m->title)
+    fprintf(outfile,"%s\n",m->title);
+  else
+    fprintf(outfile,"\n");
+
+  
   for(i=0;i<m->n;i++)
     fprintf(outfile,fmt,
                      atno2sym(m->atoms[i].atno),m->atoms[i].abs[0],

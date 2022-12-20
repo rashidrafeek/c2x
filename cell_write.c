@@ -19,8 +19,10 @@
 
 #include<stdio.h>
 #include<string.h>
+#include<math.h>
 
 #include "c2xsf.h"
+
 
 static void cell_write_common(FILE* outfile, struct unit_cell *c,
 			      struct contents *m, struct kpts *k,
@@ -119,14 +121,16 @@ static void cell_write_lattice_abc(FILE* outfile, double* abc){
 static void cell_write_atoms_abs(FILE* outfile, struct contents *m){
   int i;
   double scale;
-  char *fmt;
+  char *fmt,*fmt2;
 
-  if (flags&HIPREC)
+  if (flags&HIPREC){
     fmt="%3s % .15f % .15f % .15f";
-  else
+    fmt2="%3s%s % .15f % .15f % .15f";
+  }
+  else{
     fmt="%3s % .9f % .9f % .9f";
-
-  if (flags&ONETEP_OUT) cell_write_species_block(outfile,m);
+    fmt2="%3s%s % .9f % .9f % .9f";
+  }
 
   if (flags&ONETEP_OUT) cell_write_species_block(outfile,m);
 
@@ -145,6 +149,10 @@ static void cell_write_atoms_abs(FILE* outfile, struct contents *m){
       fprintf(outfile,fmt,
               m->atoms[i].label,m->atoms[i].abs[0]*scale,
               m->atoms[i].abs[1]*scale,m->atoms[i].abs[2]*scale);
+    else if ((m->atoms[i].label)&&(m->atoms[i].label[0]==':'))
+      fprintf(outfile,fmt2,
+              atno2sym(m->atoms[i].atno),m->atoms[i].label,
+              m->atoms[i].abs[0],m->atoms[i].abs[1],m->atoms[i].abs[2]);
     else
       fprintf(outfile,fmt,
               atno2sym(m->atoms[i].atno),m->atoms[i].abs[0]*scale,
@@ -160,13 +168,17 @@ static void cell_write_atoms_abs(FILE* outfile, struct contents *m){
 
 static void cell_write_atoms(FILE *outfile, struct contents *m){
   int i;
-  char *fmt;
+  char *fmt,*fmt2;
 
-  if (flags&HIPREC)
+  if (flags&HIPREC){
     fmt="%3s % .15f % .15f % .15f";
-  else
+    fmt2="%3s%s % .15f % .15f % .15f";
+  }
+  else{
     fmt="%3s % .9f % .9f % .9f";
-
+    fmt2="%3s%s % .9f % .9f % .9f";
+  }
+  
   if (flags&ONETEP_OUT) cell_write_species_block(outfile,m);
 
   fprintf(outfile,"%%block POSITIONS_FRAC\n");
@@ -175,6 +187,10 @@ static void cell_write_atoms(FILE *outfile, struct contents *m){
       fprintf(outfile,fmt,
               m->atoms[i].label,m->atoms[i].frac[0],
               m->atoms[i].frac[1],m->atoms[i].frac[2]);
+    else if ((m->atoms[i].label)&&(m->atoms[i].label[0]==':'))
+      fprintf(outfile,fmt2,
+              atno2sym(m->atoms[i].atno),m->atoms[i].label,
+              m->atoms[i].frac[0],m->atoms[i].frac[1],m->atoms[i].frac[2]);
     else
       fprintf(outfile,fmt,
               atno2sym(m->atoms[i].atno),m->atoms[i].frac[0],
@@ -256,7 +272,7 @@ void cell_write_common(FILE* outfile, struct unit_cell *c, struct contents *m,
   }
 
   if (m->species_misc)
-    fprintf(outfile,"\n%s\n",m->species_misc);
+    fprintf(outfile,"\n%s",m->species_misc);
   
   if (((s->ops)&&(s->n>1))||((s->gen)&&(*s->gen))){
     if (s->tol){
@@ -299,9 +315,24 @@ void cell_write_common(FILE* outfile, struct unit_cell *c, struct contents *m,
   if ((k->mp)&&(k->mp->grid[0]>0)){
     fprintf(outfile,"\nKPOINT_MP_GRID %d %d %d\n",k->mp->grid[0],
             k->mp->grid[1],k->mp->grid[2]);
+    /* A shift of +/- 1/12 with a grid size of 6 is much better written
+     * as a shift of 1/4, which is equivalent as 1/12+1/6=1/4
+     * This generalises.
+     */
+    for(i=0;i<3;i++){
+      v[i]=k->mp->disp[i];
+      if ((k->mp->grid[i])&&((k->mp->grid[i]&1)==0)&&
+          (aeq(fabs(v[i]),0.5/k->mp->grid[i]))){
+        v[i]=0.5;
+        j=1;
+        while((j&k->mp->grid[i])==0){
+          j=j<<1;
+          v[i]*=0.5;
+        }
+      }
+    }
 
-    fprintf(outfile,fmt3,k->mp->disp[0],
-            k->mp->disp[1],k->mp->disp[2]);
+    fprintf(outfile,fmt3,v[0],v[1],v[2]);
   } else if(k->n) {
     fprintf(outfile,"\n%%block KPOINTS_LIST\n");
     for(i=0;i<k->n;i++)

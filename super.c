@@ -251,6 +251,7 @@ int super(struct unit_cell *c, struct contents *mtf,
             mtf->atoms[na].atno=old_atoms[at].atno;
             mtf->atoms[na].wt=old_atoms[at].wt;
             mtf->atoms[na].spin=old_atoms[at].spin;
+            mtf->atoms[na].chg=old_atoms[at].chg;
             mtf->atoms[na].label=old_atoms[at].label;
 	    atom_ctr[na]=1;
             na++;

@@ -5,6 +5,12 @@
  * This code is copyright MJ Rutter
  *
  * The author is well aware of faster ways of doing FFTs than this version.
+ *
+ * Sign convention is 
+ *   dir=-1, exponential is -ikx, generally regarded as forward
+ *   dir=+1, exponential is +ikx, generally regarded as backwards
+ *
+ * No scaling in either case.
  */
 
 
@@ -53,9 +59,6 @@ static int nfactors(int n);
 
 void fft3d(double* a, int* nn, int dir){
   int i,offset,lots,remainder,off;
-
-/* We have a sign convention problem */
-  dir=-dir;
 
   off=0;
   remainder=nn[1]*nn[2];

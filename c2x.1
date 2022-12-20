@@ -23,16 +23,17 @@ too.
 .LP
 An input file whose name ends '.pdb' is assumed to be in pdb format,
 ending in '.cif' is assumed to be in cif format, ending in '.res' is
-assumed to be in shelx97, ending '.cub' or '.cube' is assumed to be 
-in cube format, and ending in '.xsf' is assumed to be in xsf
-format. Input files ending  CHG, CHGCAR, POSCAR or CONTCAR are assumed
-to be in VASP 5.x format. Otherwise, if the first byte is either zero,
-10 or 30 it is
+assumed to be in shelx97, ending '.cub' or '.cube' is assumed to be in
+cube format, ending '.in' is assumed to be an Abinit input file, and
+ending in '.xsf' is assumed to be in xsf format. Input files ending
+CHG, CHGCAR, POSCAR or CONTCAR are assumed to be in VASP 5.x
+format. Otherwise, if the first byte is either zero, 10 or 30 it is
 assumed to be a .check file, else it is assumed to be a .cell file. It
 can also read .orbitals files (which are identical to .check files in
-format), and .castep_bin files (which lack wavefunctions). Furthermore,
-it can read .chdiff files and .cst_esp files. In these cases it needs
-a .cell or a .check file as well in order to obtain unit cell information.
+format), and .castep_bin files (which lack
+wavefunctions). Furthermore, it can read .chdiff files and .cst_esp
+files. In these cases it needs a .cell or a .check file as well in
+order to obtain unit cell information.
 
 .SH OPTIONS
 
@@ -67,6 +68,11 @@ read also a corresponding .chdiff file, and output its contents. The filename
 given must still be that of a .cell or .check file, as a .chdiff file
 contains no axes.
 .TP
+.B \-D=[x,y,z]
+if charge density read (-c), calculate dipole moment about fractional
+co-ordinates x,y,z, or 0.5,0.5,0.5 if co-ordinates not given. Assumes
+density has been read as eA^-3.
+.TP
 .B \-e
 read also a corresponding .cst_esp file, and output its contents. The filename
 given must still be that of a .cell or .check file, as a .cst_esp file
@@ -83,6 +89,10 @@ Fourier interpolate onto specified grid size. New grid may be coarser or finer
 than original. Any dimension given as zero is replaced by old grid size. If
 reading wavefunction, any grid truncation is done after transforming back to
 real space and converting to density etc.
+.TP
+.B \-I[=range]
+report whether bands have inversion, and parity under inversion. If combined
+with -b or -B, the last range given is used.
 .TP
 .B \-k[=range]
 include given kpoints for bands (default range is 1).
@@ -135,7 +145,11 @@ the rotation axis. Else the rotation axis will be perpendicular to the
 two axes given.
 .TP
 .B \-u
-use atomic units (Bohrs) when writing .cell files and 1D data.
+use atomic units (Bohrs) when writing .cell files and 1D data. Scale
+densities from A^-3 to Bohr^-3 when writing .cube files.
+.TP
+.B \-U
+scale densities from Bohr^-3 to A^-3 when reading .cube files.
 .TP
 .B \-v
 be verbose. Far too much output can be generated if specified more than twice.
@@ -172,6 +186,10 @@ will cause the 1st and 3rd axes to be exchanged.
 .LP
 The following output formats are recognised.
 
+.TP
+.B \-\-abinit
+Abinit .in file. The output is insufficient to be a valid input file to
+Abinit, but can easily be made so.
 .TP
 .B \-\-cell
 CASTEP .cell, cartesian cell, fractional co-ordinates. The output contains
@@ -235,6 +253,9 @@ a python dictionary, compatible with the Atoms data structure from ASE.
 .TP
 .B \-\-pya
 a python ASE Atoms data structure.
+.TP
+.B \-\-qe
+Quantum Espresso. Spins not supported.
 .TP
 .B \-\-shelx
 a subset of the SHELX97 format.
@@ -385,9 +406,18 @@ xcrysden, VESTA and jmol, for structures gdis.
 
 .SH BUGS
 
-None know.
+None known.
 
 Please report others to MJR.
+
+.SH ACKNOWLEGEMENTS
+
+If you wish to cite, please do so as "C2x: a tool for visualisation
+and input preparation for Castep and other electronic structure
+codes", MJ Rutter, Computer Physics Communications, vol 225C pages
+152-157 (2018).
+
+Details of spglib can be found at https://atztogo.github.io/spglib/
 
 .SH SEE ALSO
 

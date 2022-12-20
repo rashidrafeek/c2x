@@ -143,6 +143,8 @@ void sym_atom(struct atom *a, struct atom *b, struct sym_op *s,
 /* Unclear what the best thing is to do with spin. Leaving uninitialised
  * is not best */
   b->spin=a->spin;
+  b->label=a->label;
+  b->chg=a->chg;
   sym_vec(a,b,s,recip,1);
 
   for(i=0;i<3;i++){

@@ -319,15 +319,21 @@ void basis2abc(double b[3][3], double abc[6]){
   }
 }
 
-int atom_in_list(struct atom *b, struct atom *a, int n){
+/* See if atom is in a given list. Use global tolerance value in
+ * comparison of fractional co-ordinates, multiplied by axis length,
+ * so tolerance is effectively in Angstroms */
+int atom_in_list(struct atom *b, struct atom *a, int n, double basis[3][3]){
   int hit,i;
+  double abc[6];
+
+  basis2abc(basis,abc);
 
   hit=-1;
   for(i=0;i<n;i++){
     if ((a[i].atno==b->atno)&&
-        (fabs(a[i].frac[0]-b->frac[0])<tol)&&
-        (fabs(a[i].frac[1]-b->frac[1])<tol)&&
-        (fabs(a[i].frac[2]-b->frac[2])<tol)){
+        (fabs(a[i].frac[0]-b->frac[0])<tol*abc[0])&&
+        (fabs(a[i].frac[1]-b->frac[1])<tol*abc[1])&&
+        (fabs(a[i].frac[2]-b->frac[2])<tol*abc[2])){
       hit=i;
       break;
     }
@@ -336,3 +342,18 @@ int atom_in_list(struct atom *b, struct atom *a, int n){
   return hit;
 }
 
+/* Have one function for neatly initialising all components of an atom */
+void init_atoms(struct atom *a, int n){
+  int i,j;
+  for(i=0;i<n;i++){
+    a[i].atno=0;
+    for(j=0;j<3;j++) a[i].abs[j]=0;
+    for(j=0;j<3;j++) a[i].frac[j]=0;
+    for(j=0;j<3;j++) a[i].force[j]=0;
+    a[i].wt=0;
+    a[i].spin=0;
+    a[i].chg=0;
+    a[i].label=NULL;
+  }
+}
+				      

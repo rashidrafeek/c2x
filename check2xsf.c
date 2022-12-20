@@ -5,7 +5,7 @@
  */
 
 
-/* Copyright (c) 2007 -- 2017 MJ Rutter 
+/* Copyright (c) 2007 -- 2018 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -64,7 +64,7 @@ void vasp_write(FILE* outfile, struct unit_cell *c, struct contents *m,
 void xyz_write(FILE* outfile, struct unit_cell *c, struct contents *m);
 void cml_write(FILE* outfile, struct unit_cell *c, struct contents *m);
 void fdf_write(FILE* fdf, char* filename, struct unit_cell *c,
-               struct contents *m,struct grid *g);
+               struct contents *m,struct grid *g, struct es *e);
 void line_write(FILE* outfile, struct unit_cell *c, struct contents *m,
                 struct grid *g, char *line_spec);
 void lscan(char **p, struct contents *m, double x[3]);
@@ -73,6 +73,10 @@ void py_write(FILE* outfile, struct unit_cell *c, struct contents *m,
               char type);
 void fbin_write(FILE* outfile, struct grid *g);
 void f15_write(struct unit_cell *c, struct contents *m, struct kpts *k);
+void abinit_write(FILE* outfile, struct unit_cell *c, struct contents *m,
+                  struct kpts *k, struct symmetry *s, struct es *e);
+void qe_write(FILE* outfile, struct unit_cell *c, struct contents *m,
+                  struct kpts *k, struct es *e);
 
 void cell_read(FILE* infile, struct unit_cell *c, struct contents *m,
                struct kpts *k, struct symmetry *s);
@@ -92,6 +96,16 @@ void xsf_read(FILE* infile, struct unit_cell *c, struct contents *m,
 void vasp_read(FILE* infile, struct unit_cell *c, struct contents *m,
                 struct grid *gptr, struct es *elect);
 void denfmt_read(FILE* infile, struct unit_cell *c, struct grid *gptr);
+void fort34_read(FILE* infile, struct unit_cell *c, struct contents *m,
+              struct symmetry *s);
+void crystal_read(FILE* infile, struct unit_cell *c, struct contents *m,
+                  struct symmetry *s);
+void abinit_read(FILE* infile, struct unit_cell *c, struct contents *m,
+                 struct grid *gptr);
+void abinit_in_read(FILE* infile, struct unit_cell *c, struct contents *m,
+                 struct kpts *k, struct symmetry *s, struct es *e);
+void fdf_read(FILE* in, struct unit_cell *c, struct contents *m,
+               struct kpts *kp, struct es *e);
 
 void molecule_fix(int* m_abc, struct unit_cell *c, struct contents *m,
                   struct grid *g);
@@ -103,22 +117,36 @@ void primitive(struct unit_cell *c, struct contents *m, double basis[3][3]);
 void shorten(double basis[3][3]);
 void interpolate3d(struct grid *old_grid, struct grid *new_grid);
 double interpolate0d(struct grid *gptr,double x[3]);
-void mp_gen(struct kpts *ks, struct unit_cell *c);
 void fstar(struct kpts *ks, struct unit_cell *c, struct symmetry *rs);
 int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
             int op, double tolmin);
-
+void dipole(struct unit_cell *c, struct contents *m,
+            struct grid *g, double *dipole_ctr);
 
 /* Global variables for system description */
 
 int debug,flags;
 double tol=1e-4;
 
+void version(){
+  printf("c2x version " C2XSF_VER "\n");
+#ifdef SPGLIB
+  printf("Linked with spglib version %d.%d.%d\n",
+         spg_get_major_version(),
+         spg_get_minor_version(),
+         spg_get_micro_version());
+#else
+  printf("Not linked with spglib\n");
+#endif
+  exit(0);
+}
+
 int main(int argc, char **argv)
 {
   int i,j,k,opt=1,expand,rotate,half_shift=0,no_mp=0,prim=0,compact=0;
   int molecule=0;
   int sort_style=0;
+  int no_sym=0;
   int spg_op;
   int gen_mp=0, failure=0;
   int format,preserve_c;
@@ -127,7 +155,8 @@ int main(int argc, char **argv)
   char *cdfile,*cptr;
   FILE *infile,*outfile;
   double abc[6],new_cell[3][3],new_cell_rel[3][3],*new_mp,zpt[3],g_cut;
-  double tolmin=1e-4;
+  double tolmin=1e-4,ionic_charge;
+  double *dipole_ctr;
   int *m_abc;
   struct grid *gptr;
   struct unit_cell cell,nc;
@@ -146,6 +175,7 @@ int main(int argc, char **argv)
   elect.nspinors=1;
   elect.spin_method=NULL;
   elect.cut_off=0;
+  elect.etol=0;
 
   motif.atoms=NULL;
   motif.n=motif.forces=0;
@@ -173,6 +203,7 @@ int main(int argc, char **argv)
   grid1.next=NULL;
   grid1.data=NULL;
   grid1.name=NULL;
+  dipole_ctr=NULL;
   flags=0;
 
   opt=1;
@@ -224,6 +255,8 @@ int main(int argc, char **argv)
         else if (!strcmp(optp,"--pya")) format=PYA;
         else if (!strcmp(optp,"--denfmt")) format=DENFMT;
         else if (!strcmp(optp,"--den_fmt")) format=DENFMT;
+        else if (!strcmp(optp,"--abinit")) format=ABINIT;
+        else if (!strcmp(optp,"--qe")) format=QE;
         else if (!strcmp(optp,"--null")) format=CNULL;
 
         else if (!strcmp(optp,"--primitive")) spg_op|=CSPG_PRIM;
@@ -236,6 +269,7 @@ int main(int argc, char **argv)
 
         else if (!strcmp(optp,"--help")) help();
         else if (!strcmp(optp,"--refs")) refs();
+        else if (!strcmp(optp,"--version")) version();
        else {
           fprintf(stderr,"Invalid option %s.\n%s -h for usage.\n",
                    optp,argv[0]);
@@ -254,16 +288,7 @@ int main(int argc, char **argv)
           help();
           break;
         case 'V':
-          printf("c2x version " C2XSF_VER "\n");
-#ifdef SPGLIB
-          printf("Linked with spglib version %d.%d.%d\n",
-                 spg_get_major_version(),
-                 spg_get_minor_version(),
-                 spg_get_micro_version());
-#else
-          printf("Not linked with spglib\n");
-#endif
-          exit(0);
+          version();
           break;
         case 'a':
           rotate=1;
@@ -301,6 +326,17 @@ int main(int argc, char **argv)
         case 'd':
           flags|=CHDIFF;
           break;
+        case 'D':
+          dipole_ctr=malloc(3*sizeof(double));
+          if(*(optp+1)=='='){
+            i=sscanf(optp+2,"%lf,%lf,%lf",dipole_ctr,dipole_ctr+1,
+                     dipole_ctr+2);
+            if ((i==0)||(i==EOF)) dipole_ctr[0]=dipole_ctr[1]=dipole_ctr[2]=0.5;
+            else if (i!=3) error_exit("malformed option -D=");
+            while(*((++optp)+1));
+          }
+          else error_exit("malformed option -D");
+          break;
         case 'e':
           if(*(optp+1)=='='){
             i=sscanf(optp+2,"%lf-%lf",&tolmin,&tol);
@@ -315,6 +351,13 @@ int main(int argc, char **argv)
           break;
         case 'H':
           half_shift=1;
+          break;
+        case 'I':
+          flags|=BANDPARITY;
+          if(*(optp+1)=='='){
+            elect.band_range=optp+2;
+            while(*((++optp)+1));
+          }
           break;
         case 'i':
           if(*(optp+1)=='='){
@@ -355,6 +398,9 @@ int main(int argc, char **argv)
             while(*((++optp)+1));
           }
           molecule=1;
+          break;
+        case 'n':
+          no_sym++;
           break;
         case 'O':
           flags|=OCCUPANCIES;
@@ -430,7 +476,7 @@ int main(int argc, char **argv)
           flags|=AU;
           break;
         case 'U':
-          flags|=BANDU;
+          flags|=DE_AU;
           break;
         case 'w':
           flags|=OCC_WEIGHT;
@@ -535,6 +581,10 @@ int main(int argc, char **argv)
   i=strlen(file1);
   if((i>4)&&(!strcmp(file1+i-4,".pdb")))
     pdb_read(infile,&cell,&motif);
+  else if ((i==7)&&(!strcmp(file1,"fort.34")))
+    fort34_read(infile,&cell,&motif,&sym);
+  else if ((i>2)&&(!strcmp(file1+i-2,"12")))
+    crystal_read(infile,&cell,&motif,&sym);
   else if ((i>4)&&(!strcmp(file1+i-4,".res")))
     shelx_read(infile,&cell,&motif);
   else if ((i>4)&&(!strcmp(file1+i-4,".cif")))
@@ -542,6 +592,8 @@ int main(int argc, char **argv)
   else if ((i>4)&&(!strcmp(file1+i-4,".cub")))
     cube_read(infile,&cell,&motif,&grid1);
   else if ((i>5)&&(!strcmp(file1+i-5,".cube")))
+    cube_read(infile,&cell,&motif,&grid1);
+  else if ((i>5)&&(!strcmp(file1+i-5,"_CUBE")))
     cube_read(infile,&cell,&motif,&grid1);
   else if ((i>4)&&(!strcmp(file1+i-4,".xsf")))
     xsf_read(infile,&cell,&motif,&grid1);
@@ -553,8 +605,16 @@ int main(int argc, char **argv)
     vasp_read(infile,&cell,&motif,&grid1,&elect);
   else if ((i>=3)&&(!strcmp(file1+i-3,"CHG")))
     vasp_read(infile,&cell,&motif,&grid1,&elect);
+  else if ((i>=3)&&(!strcmp(file1+i-3,"DEN")))
+    abinit_read(infile,&cell,&motif,&grid1);
+  else if ((i>=3)&&(!strcmp(file1+i-3,"POT")))
+    abinit_read(infile,&cell,&motif,&grid1);
+  else if ((i>=3)&&(!strcmp(file1+i-3,".in")))
+    abinit_in_read(infile,&cell,&motif,&kp,&sym,&elect);
   else if ((i>=7)&&(!strcmp(file1+i-7,"den_fmt")))
     denfmt_read(infile,&cell,&grid1);
+  else if ((i>=4)&&(!strcmp(file1+i-4,".fdf")))
+    fdf_read(infile,&cell,&motif,&kp,&elect);
   /* If not a Castep ending, check for a VASP beginning */
   else if ((!(((i>5)&&(!strcmp(file1+i-5,".cell")))||
               ((i>6)&&(!strcmp(file1+i-6,".check")))||
@@ -626,6 +686,10 @@ int main(int argc, char **argv)
         (format!=FBIN)&&(format!=CNULL))
       error_exit("no atoms found!");
 
+  ionic_charge=0;
+  if (motif.atoms)
+    for(i=0;i<motif.n;i++) ionic_charge+=motif.atoms[i].chg;
+  
   /* We define MP grid to include origin, and displacements to be in terms of
    * mesh cells. Castep defines displacements in reciprocal space cells, and
    * has a shift of half a mesh cell if the MP parameter is even.
@@ -665,7 +729,19 @@ int main(int argc, char **argv)
   if (debug){
     fprintf(stderr,"Cell volume %f\n",cell.vol);
     fprintf(stderr,"natoms      %d\n",motif.n);
+    if (ionic_charge) fprintf(stderr,"Total ionic charge %f\n",ionic_charge);
+
+    if ((kp.mp)&&(kp.mp->grid[0]>0)){
+      fprintf(stderr,"kpoint MP grid %d %d %d\n",kp.mp->grid[0],
+              kp.mp->grid[1],kp.mp->grid[2]);
+      fprintf(stderr,"        offset %lf %lf %lf\n",kp.mp->disp[0],
+              kp.mp->disp[1],kp.mp->disp[2]);
+    }
+
   }
+
+  if ((dipole_ctr)&&(grid1.data)) dipole(&cell,&motif,&grid1,dipole_ctr);
+    
   if (debug>2){
     fprintf(stderr,"Ionic positions, fractional\n");
     for(i=0;i<motif.n;i++){
@@ -674,6 +750,7 @@ int main(int argc, char **argv)
       if (motif.atoms[i].spin) fprintf(stderr,"  spin=%f",motif.atoms[i].spin);
       if (motif.atoms[i].label) fprintf(stderr,"  label=%s",
                                          motif.atoms[i].label);
+      if (motif.atoms[i].chg) fprintf(stderr,"  chg=%f",motif.atoms[i].chg);
       fprintf(stderr,"\n");
     }
     fprintf(stderr,"Ionic positions, absolute\n");
@@ -842,6 +919,17 @@ int main(int argc, char **argv)
   if (rotate) cart2abc(&cell,&motif,abc,&grid1,1);
   if ((no_mp)&&(kp.mp)) {free(kp.mp);kp.mp=NULL;}
   if (sort_style) sort_atoms(&motif,sort_style);
+  if (no_sym){
+    sym.n=0;
+    if (sym.ops) free(sym.ops);
+  }
+  if (no_sym==2){
+    kp.n=0;
+    if (kp.mp){
+      free(kp.mp);
+      kp.mp=NULL;
+    }
+  }
 
   if (line_spec){
     line_write(outfile,&cell,&motif,&grid1,line_spec);
@@ -889,7 +977,7 @@ int main(int argc, char **argv)
       cml_write(outfile,&cell,&motif);
       break;
     case FDF:
-      fdf_write(outfile,file2,&cell,&motif,&grid1);
+      fdf_write(outfile,file2,&cell,&motif,&grid1,&elect);
       break;
     case SHELX:
       shelx_write(outfile,&cell,&motif);
@@ -911,6 +999,12 @@ int main(int argc, char **argv)
       break;
     case PYA:
       py_write(outfile,&cell,&motif,'a');
+      break;
+    case ABINIT:
+      abinit_write(outfile,&cell,&motif,&kp,&sym,&elect);
+      break;
+    case QE:
+      qe_write(outfile,&cell,&motif,&kp,&elect);
       break;
     case CNULL:
       break;
@@ -936,6 +1030,8 @@ void help(void){
          "-C           find compact set of cell vectors\n"
          "-d           read also a .chdiff file, constructing its name from\n"
          "               the .cell or .check file given\n"
+         "-D=[x,y,z]   calculate dipole moment about fractional co-ordinates\n"
+         "               x,y,z (default .5,.5,.5) assuming -c also given\n"
          "-e           read also a .cst_esp file, constructing its name from\n"
          "               the .cell or .check file given\n"
          "-e=eps       set tolerance for supercell operations. Default=%g\n"
@@ -944,6 +1040,7 @@ void help(void){
          "-H           shift atoms by half a grid cell\n",tol);
   printf("-i           output imaginary part of band\n"
          "-i=n1,n2,n3  Fourier interpolate 3D grids to specified grid\n"
+         "-I[=range]   report inversion symmetries of given bands\n"
          "-k=range     include given k-points (default 1) for bands\n"
          "-l           list k-points in .cell output, not MP parameters\n"
          "-L           produce (incorrect) left-handed abc output\n");
@@ -953,6 +1050,8 @@ void help(void){
          "-M=nx,ny,nz  generate regular k-point mesh including origin\n"
          "-M=nx,ny,nx,dx,dy,dz\n"
          "               ditto displaced by fraction of mesh cell\n"
+         "-n           discard symmetry information\n"
+         "               give twice to discard k-points too\n"
          "-O           print band occupancies and eigenvalues\n");
   printf("-P           find primitive cell\n"
          "-P=X:Y:npts  output 1D data with npts points along line\n"
@@ -972,6 +1071,10 @@ void help(void){
          "-T=(x1,y1,z1)(x2,y2,z2)[(x3,y3,z3)]\n"
          "             ditto, but first vec expressed in absolute coords\n"
          "-u           write .cell files and 1D axes in Bohr (atomic Units)\n"
+         "             scale densities on writing .cube files from A^-3 to "
+         "Bohr^-3\n"
+         "-U           scale densities on reading .cube files from "
+         "Bohr^-3 to A^-3\n"
          "-v           be verbose (may be repeated)\n"
          "-w           weight band by occupancy\n"
          "-W           weight band by kpt weight and occupancy\n");
@@ -987,6 +1090,7 @@ void help(void){
          "-15          use high precision in output.\n"
          "\n");
   printf("FORMAT is one of: xsf       XCrySDen (default)\n"
+	 "                  abinit    Abinit .in\n"
          "                  cell      CASTEP .cell, cartesian and fractional\n"
          "                  cell_abc                abc and fractional\n"
          "                  cell_abs                cartesian and absolute\n"
@@ -1006,6 +1110,9 @@ void help(void){
          "                  pdbn      PDB with atoms numbered\n"
          "                  py        python dictionary\n"
          "                  pya       python ASE Atoms\n"
+         "                  qe        Quantum Espresso\n"
+         "                  refs      List BibTeX references for this code "
+         "and exit\n"
          "                  shelx     SHELX97\n"
          "                  vasp      VASP output (POSCAR/CHG)\n"
          "                  xplor     Xplor\n"
@@ -1025,18 +1132,28 @@ void help(void){
   printf("range specifies band numbers as \"a,b-c,d\"\n"
          "-b and -B are mutually exclusive. Only one of the x and t"
          " options may be given\n\n");
-  printf("Input files ending .pdb are assumed to be in pdb format,\n"
+  printf("Input files ending .cif are assumed to be in a cif format,\n"
+	 "            ending .cub, .cube or _CUBE are assumed to be in "
+            "cube format,\n"
+	 "            ending .fdf are assumed to be in Siesta format,\n"
+	 "            ending .in are assumed to be in either Abinit or\n"
+         "              Quantum Espresso format,\n"
+         "            ending .pdb are assumed to be in pdb format,\n"
          "            ending .res are assumed to be in shelx97 format,\n"
          "            ending .xsf are assumed to be in xsf format,\n"
-	 "            ending .cub or .cube are assumed to be in cube format,\n"
-         "            ending .cif are assumed to be in a cif format.\n");
+	 "            ending POT or DEN are assumed to be in "
+	 "Abinit binary format,\n");
+  
   printf("            ending or beginning CHG, CHGCAR, POSCAR or CONTCAR "
          "are assumed \n"
-         "              to be in VASP 5.x format.\n\n"
+         "              to be in VASP 5.x format,\n"
+	 "            ending 12 are assumed to be in Crystal format,\n"
+	 "            called fort.34 are assumed to be in Crystal binary "
+	 "format.\n\n"
          "Otherwise "
          "automatic detection of .cell or .check input. Compatible with\n"
          ".check files from CASTEP 3.0 to 18.1 (and perhaps beyond).\n\n"
-         "Version " C2XSF_VER ", (c) MJ Rutter 2007 - 2017"
+         "Version " C2XSF_VER ", (c) MJ Rutter 2007 - 2018"
          " licenced under the GPL v3.\n\n");
   printf("If useful to a published paper, please consider citing using the\n"
          "references shown with the --refs argument.\n\n");
@@ -1055,7 +1172,9 @@ void refs(void){
          "  journal = {Computer Physics Communications},\n"
          "  author = {Rutter, M. J.},\n"
          "  year = {2018},\n"
-         "  volume = {to be published}\n"
+         "  volume = {225C},\n"
+         "  pages = {152--157},\n"
+         "  doi = \"10.1016/j.cpc.2017.12.008\"\n"
          "}\n");
 #ifdef SPGLIB
   printf("\nIf making use of the spglib functionality,"

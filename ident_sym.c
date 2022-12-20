@@ -217,6 +217,7 @@ void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
 
   if(!aeq(fabs(det),1)){
     fprintf(stderr,"Surprise: determinant is %f\n",det);
+    fprintf(out,"(Error)\n");
     return;
   }
 
@@ -232,7 +233,9 @@ void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
 	m[i][j]*=-1;
   }
 
-  angle=acos(0.5*(m[0][0]+m[1][1]+m[2][2]-1));
+  x=0.5*(m[0][0]+m[1][1]+m[2][2]-1);
+  if (aeq(x,1.0)) x=1.0; /* Else rounding errors lead to acos(1+epsilon) */
+  angle=acos(x);
   angle*=180/M_PI;
 
   if (debug>2) fprintf(stderr,"Angle looks like %f\n",angle);
@@ -245,6 +248,7 @@ void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
   if(aeq(angle,60)) mult=6;
   if (mult==0){
     fprintf(stderr,"Impossible angle %f in ident_sym\n",angle);
+    fprintf(out,"(Error)\n");
     return;
   }
 
@@ -262,6 +266,7 @@ void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
     if (aeq(vmod2(v),0)) vcross(m[2],m[0],v);
     if (aeq(vmod2(v),0)){
       fprintf(stderr,"Surprise! 1\n");
+      fprintf(out,"(Error)\n");
       return;
     }
   }

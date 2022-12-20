@@ -320,6 +320,7 @@ static int xsfreadatom(struct contents *m, int i, FILE* infile){
   else	  
     error_exit("error parsing atoms line in xsf_read");
   m->atoms[i].spin=0;
+  m->atoms[i].chg=0;
   m->atoms[i].label=NULL;
   return 1;
 }

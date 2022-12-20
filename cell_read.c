@@ -33,13 +33,13 @@
 
 #define PARSE_ERROR  fprintf(stderr,"Parse error on line %d %s\n",files->line,(files->name)?files->name:"")
 
-
 static int cellreadline(char *buffer, int len);
 static int cell_read_length(char *buff, double *x);
 
 static char *ptr;
 static char **title;
 
+  
 void spin_read(char *buff, double *spin){
   while (*buff==' ') buff++;
   if (!strncasecmp(buff,"spin",4)){
@@ -58,10 +58,10 @@ static FILE *infile;
 
 void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
                struct kpts *kp, struct symmetry *s){
-  int units,i,j,k,n,frac,nsym,success,default_units,nlabels;
+  int units,i,j,k,n,n2,frac,nsym,success,default_units,nlabels;
   int smisc_size=0,sblock_size=0;
   double lat_abc[6],*dptr;
-  char sym[4],*ptr2;
+  char sym[14],*ptr2;
   static char buffer[LINE_SIZE+1];
   double *sym_mat,*sym_disp;
   struct label {char *l; char *sym;} *labels;
@@ -111,10 +111,13 @@ void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
     }
 
     if ((!strncasecmp(ptr,"kpoint_mp_grid",14))||
-        (!strncasecmp(ptr,"kpoint_mp_offset",16))){
+        (!strncasecmp(ptr,"kpoints_mp_grid",15))||
+        (!strncasecmp(ptr,"kpoint_mp_offset",16))||
+        (!strncasecmp(ptr,"kpoints_mp_offset",17))){
       /* Set ptr2 to char after string matched */
       ptr2=ptr+14;
-      if (*ptr2=='e') ptr2+=2;
+      if ((ptr[6]=='s')||(ptr[6]=='S')) ptr2++;
+      if ((*ptr2=='e')||(*ptr2=='E')) ptr2+=2;
       /* Increment ptr2 over spaces, = and : */
       while ((*ptr2)&&((*ptr2==' ')||(*ptr2==':')||(*ptr2=='='))) ptr2++;
       if (!kp->mp){
@@ -123,15 +126,15 @@ void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
         for(i=0;i<3;i++) kp->mp->grid[i]=0;
         for(i=0;i<3;i++) kp->mp->disp[i]=0;
       }
-      if(!strncasecmp(ptr,"kpoint_mp_grid",14)){
+      if((!strncasecmp(ptr,"kpoint_mp_grid",14))||
+         (!strncasecmp(ptr,"kpoints_mp_grid",15))){
         if (sscanf(ptr2,"%d %d %d",kp->mp->grid,
                    kp->mp->grid+1,kp->mp->grid+2)!=3){
           fprintf(stderr,"Error parsing:\n%s\n",buffer);
           exit(1);
         }
       }else{
-        if (sscanf(ptr2,"%lf %lf %lf",kp->mp->disp,kp->mp->disp+1,
-                   kp->mp->disp+2)!=3){
+        if (multi_scan(ptr2,kp->mp->disp,3,NULL)!=3){
           fprintf(stderr,"Error parsing:\n%s\n",buffer);
           exit(1);
         }
@@ -162,7 +165,7 @@ void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
         cellreadline(buffer,LINE_SIZE);
       }
       for(i=0;i<3;i++){
-        if(sscanf(buffer,"%lf %lf %lf",c->basis[i],c->basis[i]+1,c->basis[i]+2)!=3){
+        if(multi_scan(buffer,c->basis[i],3,NULL)!=3){
           PARSE_ERROR;
           if (debug) fprintf(stderr,"%s\n",buffer);
         }
@@ -185,8 +188,7 @@ void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
         cellreadline(buffer,LINE_SIZE);
       }
       for(i=0;i<2;i++){
-        if(sscanf(buffer,"%lf %lf %lf",lat_abc+3*i,lat_abc+3*i+1,
-                  lat_abc+3*i+2)!=3){
+        if(multi_scan(buffer,lat_abc+3*i,3,NULL)!=3){
           PARSE_ERROR;
           exit(1);
         }
@@ -221,6 +223,7 @@ void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
 	m->atoms=realloc(m->atoms,(i+1)*sizeof(struct atom));
 	if (!m->atoms) error_exit("realloc error in cell_read");
         m->atoms[i].spin=0;
+        m->atoms[i].chg=0;
         m->atoms[i].label=NULL;
         if (frac) dptr=m->atoms[i].frac;
         else dptr=m->atoms[i].abs;
@@ -257,16 +260,37 @@ void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
           }            
         }
         else{ /* Not ONETEP */
-          if(sscanf(buffer,"%d %lf %lf %lf%n",&m->atoms[i].atno,dptr,
-                    dptr+1,dptr+2,&n)>=4)
-            spin_read(buffer+n,&m->atoms[i].spin);
-          else if(sscanf(buffer,"%3s %lf %lf %lf%n",sym,dptr,
-                         dptr+1,dptr+2,&n)>=4){
+          if(!strncasecmp(ptr,"%endblock",9)) break;
+          /* Try to read symbol / atomic number */
+          else if(sscanf(buffer,"%d%n",&m->atoms[i].atno,&n)>=1){
+            ;
+          }
+          else if (sscanf(buffer,"%12s%n",sym,&n)>=1){
+            /* Does symbol contain a colon? */
+            /* If so, colon and everything after it is stored in the label,
+             * and the part before should be an atomic symbol */
+            if ((sym[1]==':')||(sym[2]==':')||(sym[3]==':')){
+              ptr2=sym;
+              while(*ptr2!=':') ptr2++;
+              m->atoms[i].label=malloc(strlen(ptr2)+1);
+              strcpy(m->atoms[i].label,ptr2);
+              *ptr2=0;
+            }
+            else{
+              m->atoms[i].label=NULL;
+            }
             m->atoms[i].atno=atsym2no(sym);
-            m->atoms[i].label=NULL;
+          }
+          else{
+            PARSE_ERROR;
+            if (debug) fprintf(stderr,"%s\n",ptr); 
+            exit(1);
+          }
+          /* Now need to read co-ordinates */
+          if(multi_scan(buffer+n,dptr,3,&n2)==3){
+            n+=n2;
             spin_read(buffer+n,&m->atoms[i].spin);
           }
-          else if(!strncasecmp(ptr,"%endblock",9)) break;
           else{
             PARSE_ERROR;
             if (debug) fprintf(stderr,"%s\n",ptr); 
@@ -288,8 +312,11 @@ void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
         if (!strncasecmp(buffer,"%endblock",9)) break;
         kp->kpts=realloc(kp->kpts,(i+1)*sizeof(struct atom));
         if (!kp->kpts) error_exit("realloc error for kpts");
-        if (sscanf(buffer,"%lf %lf %lf %lf",kp->kpts[i].frac,kp->kpts[i].frac+1,
-                   kp->kpts[i].frac+2,&(kp->kpts[i].wt))!=4){
+        if (multi_scan(buffer,kp->kpts[i].frac,3,&j)!=3){
+          PARSE_ERROR;
+          exit(1);
+        }
+        if (single_scan(buffer+j,&(kp->kpts[i].wt),NULL)!=1){
           PARSE_ERROR;
           exit(1);
         }
@@ -350,10 +377,10 @@ void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
              (!strcasecmp(ptr,"species_atomic_set"))||
              (!strcasecmp(ptr,"species_gamma"))||
              (!strcasecmp(ptr,"species_ngwf_plot"))){
-      m->species_misc=realloc(m->species_misc,smisc_size+strlen("%BLOCK ")+1);
+      m->species_misc=realloc(m->species_misc,smisc_size+strlen("%block ")+1);
       if (!m->species_misc) error_exit("Realloc error in a species_ block");
-      strcpy(m->species_misc+smisc_size,"%BLOCK ");
-      smisc_size+=strlen("%BLOCK ");
+      strcpy(m->species_misc+smisc_size,"%block ");
+      smisc_size+=strlen("%block ");
 
       m->species_misc=realloc(m->species_misc,smisc_size+strlen(ptr)+2);
       if (!m->species_misc) error_exit("Realloc error in a species_ block");

@@ -88,6 +88,10 @@ static int endian;
 static int nbands;
 static double *cr_cell_vol;
 
+/* shared with dipole.c (not very elegant...) */
+
+extern int dipole_slab_dir;
+
 void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
                 struct kpts *kp, struct symmetry *s, struct grid *gptr,
                 struct es *elect, int *i_grid){
@@ -99,6 +103,7 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
   int *nsp,*nsp_max,*nionsp,*nsymops;
   char *ion_sym;
   double *ion_pos,*ion_force,*mag_mom,*sym_mat,*sym_disp;
+  double *species_charge;
   double *kpts_pos,*wkpts;
   int *mp_xyz;
   int *nkpts;
@@ -107,7 +112,10 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
   int section;
   char *spin_method;
   int nspins;
-  double cut;
+  double cut,x;
+  char *sym,*lab,*cptr;
+  char dipole_correction[21];
+  char dipole_dir;
   
   ion_sym_len=8;
   endian=0;
@@ -123,6 +131,7 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
   sym_disp=NULL;
   sym_mat=NULL;
   ion_sym=NULL;
+  species_charge=NULL;
   gptr2=NULL;
   section=1;
   ver_maj=0;
@@ -212,6 +221,7 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
       SCAN("CELL%IONIC_POSITIONS",(24*(*nsp)*(*nsp_max)),ion_pos);
       SCAN("CELL%SPECIES_SYMBOL",(ion_sym_len*(*nsp)),ion_sym);
       SCAN("CELL%INITIAL_MAGNETIC_MOMENT",(8*(*nsp)*(*nsp_max)),mag_mom);
+      SCAN("CELL%IONIC_CHARGE_REAL",(8*(*nsp)),species_charge);
       SCAN8R("CELL%VOLUME",8,cr_cell_vol);
       SCAN("NKPTS",4,nkpts);
       SCAN8R("KPOINTS",24*(*nkpts),kpts_pos);
@@ -292,6 +302,43 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
         else fseek(infile,4+tmp,SEEK_CUR);
         
       }
+      if (match(head,"BEGIN_ELEC_MIN")){
+        if ((ver_maj>6)||((ver_maj==6)&&(ver_min>=100))){
+          /* We have at 18 entries to skip */
+          for(i=0;i<18;i++){
+            fread(&tmp,4,1,infile);
+            if (endian) reverse4(&tmp);
+	    if ((i==4)&&(tmp==8)){
+	      fread(&x,8,1,infile);
+	      if (endian) reverse8(&x);
+	      elect->etol=x*H_eV;
+	      tmp=0;
+	    }
+            fseek(infile,4+tmp,SEEK_CUR);
+          }
+          fread(&tmp,4,1,infile);
+          if (endian) reverse4(&tmp);
+          if (tmp==20){
+            fread(dipole_correction,20,1,infile);
+            dipole_correction[20]=0;
+            fseek(infile,4,SEEK_CUR);
+            fread(&tmp,4,1,infile);
+            if (endian) reverse4(&tmp);
+            if (tmp==1){
+              fread(&dipole_dir,1,1,infile);
+              fseek(infile,4,SEEK_CUR);
+              if (dipole_correction[0]!='N'){                
+                dipole_slab_dir=dipole_dir-'X'+1;
+                if (dipole_slab_dir>64) dipole_slab_dir-=64; /* deal with
+                                                                lower case */
+              }
+              if ((debug&&(dipole_correction[0]!='N'))||(debug>1))
+                fprintf(stderr,"Dipole correction: %s (direction %c)\n",
+                        dipole_correction,dipole_dir);
+            }
+          }
+        }
+      }
       if (match(head,"END_CELL_GLOBAL")) {
         /* We have an urgent need for the volume so that densities can
          * be scaled as soon as they are read
@@ -328,12 +375,12 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
     case 3: case 4: /* matches select(section) */
       if (match(head,"wave")||match(head,"Gpt")){
 	if (match(head,"wave")){
-	  if ((flags&BANDS)||(flags&OCCUPANCIES))
+	  if ((flags&BANDS)||(flags&OCCUPANCIES)||(flags&BANDPARITY))
             wave_read(infile, *nkpts, kpts_pos, wkpts, 0,
                       gptr, elect, i_grid, m);
 	}
 	if (match(head,"Gpt")){
-	  if ((flags&BANDS)||(flags&OCCUPANCIES))
+	  if ((flags&BANDS)||(flags&OCCUPANCIES)||(flags&BANDPARITY))
             wave_read(infile, *nkpts, kpts_pos, wkpts, 1,
                       gptr, elect, i_grid, m);
 	}
@@ -511,6 +558,7 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
     reverse8n(ion_pos,3*(*nsp)*(*nsp_max));
     if (ion_force) reverse8n(ion_force,3*(*nsp)*(*nsp_max));
     if (mag_mom) reverse8n(mag_mom,(*nsp)*(*nsp_max));
+    if (species_charge) reverse8n(species_charge,*nsp);
     /* The following two are both reversed when read in */
     //    if (kpts_pos) reverse8n(kpts_pos,3*(*nkpts));
     //    if (wkpts) reverse8n(wkpts,*nkpts);
@@ -601,13 +649,28 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
 
   na=0;
   for(i=0;i<*nsp;i++){
+    sym=ion_sym+ion_sym_len*i;
+    if ((sym[1]==':')||(sym[2]==':')||(sym[3]==':')){
+      cptr=sym;
+      while(*cptr!=':') cptr++;
+      lab=malloc(ion_sym_len+1);
+      j=0;
+      while((cptr<ion_sym+ion_sym_len*(i+1))&&(*cptr!=' '))
+        lab[j++]=*(cptr++);
+      lab[j]=0;
+    }
+    else lab=NULL;
     for(j=0;j<nionsp[i];j++){
       if (mag_mom)
         m->atoms[na].spin=mag_mom[i*(*nsp_max)+j];
       else
         m->atoms[na].spin=0;
-      m->atoms[na].atno=atsym2no(ion_sym+ion_sym_len*i);
-      m->atoms[na].label=NULL;
+      if (species_charge)
+        m->atoms[na].chg=species_charge[i];
+      else
+        m->atoms[na].chg=0;
+      m->atoms[na].atno=atsym2no(sym);
+      m->atoms[na].label=lab;
       if((!m->atoms[na].atno)&&(debug))
         fprintf(stderr,"Warning: atom symbol %s converted to 0\n",
                 ion_sym+ion_sym_len*i);
@@ -943,7 +1006,8 @@ static void wave_read(FILE *infile, int nkpts, double *kpts_pos,
 	  fread(&tmp,4,1,infile);
 	  if (endian) reverse4(&tmp);
 	  if (tmp!=16*nplwv) error_exit("Error parsing wavefunction band");
-	  if ((flags&BANDS)&&inrange(k,kpt_range)&&inrange(nsp,spin_range)&&
+	  if (((flags&BANDS)||(flags&BANDPARITY))&&
+              inrange(k,kpt_range)&&inrange(nsp,spin_range)&&
 	      inrange(b,band_range)){
 	    if (debug>2) fprintf(stderr,"starting band read,"
 				 " kpt %d, band %d, spin %d\n",k,b,nsp);
@@ -992,7 +1056,19 @@ static void wave_read(FILE *infile, int nkpts, double *kpts_pos,
 	    if (debug>2) fprintf(stderr,"Before FFT g=0 component is %g+%gi\n",
 				 dptr2[0],dptr2[1]);
 	    if (debug>2) fprintf(stderr,"And normalisation is %g\n",sum);
-	    
+
+            if (((kpoint[0]==0)||aeq(fabs(kpoint[0]),0.5))&&
+                ((kpoint[1]==0)||aeq(fabs(kpoint[1]),0.5))&&
+                ((kpoint[2]==0)||aeq(fabs(kpoint[2]),0.5))&&
+                (flags&BANDPARITY)) inv_parity(dptr2,fft,b,kpoint);
+
+            /* Was the parity all we were requested to report? */
+            if (!(flags&BANDS)){
+              free(dptr2);
+              dptr2=NULL;
+              continue;
+            }
+
 	    /* Padding */
 	    
 	    if (i_grid){
@@ -1015,7 +1091,7 @@ static void wave_read(FILE *infile, int nkpts, double *kpts_pos,
 	    ffft[0]=nfft[2];
 	    ffft[1]=nfft[1];
 	    ffft[2]=nfft[0];
-	    fft3d(dptr2,ffft,-1);
+	    fft3d(dptr2,ffft,1);
 	    
 	    if (!(dptr3=malloc(8*nfft_pts)))
 	      error_exit("Malloc error in band read");

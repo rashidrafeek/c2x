@@ -10,7 +10,7 @@
  */
 
 
-/* Copyright (c) 2007 MJ Rutter 
+/* Copyright (c) 2007-2018 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -34,7 +34,7 @@
 #include "c2xsf.h"
 
 void fdf_write(FILE* fdf, char* filename, struct unit_cell *c,
-               struct contents *m, struct grid *g){
+               struct contents *m, struct grid *g, struct es *e){
   int i,j,k,nspec,*natomsp,*spatno,len;
   double *dptr1;
   float *fptr;
@@ -43,6 +43,8 @@ void fdf_write(FILE* fdf, char* filename, struct unit_cell *c,
 
   fprintf(fdf,"# fdf file created by c2x\n");
 
+  if (m->title) fprintf(fdf,"\nSystemName %s\n\n",m->title);
+  
   fprintf(fdf,"LatticeConstant  1.0 Ang\n");
 
   fprintf(fdf,"%%block LatticeVectors\n");
@@ -51,9 +53,8 @@ void fdf_write(FILE* fdf, char* filename, struct unit_cell *c,
   fprintf(fdf,"%%endblock LatticeVectors\n\n");
 
   /* Now we need to know the number of species.
-     It must be fewer than the number of atoms...
-     This is horribly inefficient, but I intend to
-     use it for ethene only... */
+   * It must be fewer than the number of atoms...
+   */
 
   nspec=0;
   natomsp=malloc(m->n*sizeof(int));
@@ -91,6 +92,25 @@ void fdf_write(FILE* fdf, char* filename, struct unit_cell *c,
                 m->atoms[j].frac[1],m->atoms[j].frac[2],i+1);
   fprintf(fdf,"%%endblock AtomicCoordinatesAndAtomicSpecies\n");
 
+  /* Optional colinear spins */
+  
+  j=0;
+  for(i=0;i<m->n;i++)
+    if (m->atoms[i].spin) {j=1;break;}
+
+  if (j){
+    fprintf(fdf,"\nSpinPolarized .true.\n");
+    fprintf(fdf,"%%block DMInitSpin\n");
+    for(i=0;i<m->n;i++)
+      if (m->atoms[i].spin) fprintf(fdf,"  %d  %f\n",i+1,m->atoms[i].spin);
+    fprintf(fdf,"%%endblock DMInitSpin\n");
+  }                           
+      
+  
+  if (e->etol){
+    fprintf(fdf,"\nDM.Require.Energy.Convergence .true.\n");
+    fprintf(fdf,"DM.Energy.Tolerance %g eV\n",e->etol*m->n);
+  }
 
   /* And now write density */
 
@@ -141,6 +161,8 @@ void fdf_write(FILE* fdf, char* filename, struct unit_cell *c,
       fwrite(&len,sizeof(int),1,bin);
     }
 
+  if (debug) fprintf(stderr,"Also wrote %s\n",filename);
+  
 }
 
 

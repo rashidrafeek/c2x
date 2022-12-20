@@ -222,7 +222,8 @@ void vasp_read(FILE* infile, struct unit_cell *c, struct contents *m,
       }
       m->atoms[k].atno=species[i];
       m->atoms[k].spin=0;
-       m->atoms[k].label=NULL;
+      m->atoms[k].chg=0;
+      m->atoms[k].label=NULL;
       k++;
     }
   }

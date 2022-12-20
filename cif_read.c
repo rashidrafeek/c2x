@@ -1,7 +1,7 @@
 /* A very simplistic reader which, whilst not an (mm)cif reader,
 * sometimes reads very basic versions of those files */
 
-/* Copyright (c) 2014 MJ Rutter 
+/* Copyright (c) 2014-2018 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -36,10 +36,9 @@ int scmp(char *s1, char *s2){
 
 void cif_read(FILE* infile, struct unit_cell *c, struct contents *m,
 	      struct symmetry *s){
-  int have_data=0,have_basis=0,hit,i,j,no_read,sym_warn=0;
+  int have_data=0,have_basis=0,hit,i,no_read,sym_warn=0;
   double abc[6];
   char buffer[LINE_SIZE+1], *buff;
-  struct atom b;
 
   for(i=0;i<6;i++) abc[i]=123456;
   m->n=0;
@@ -48,7 +47,7 @@ void cif_read(FILE* infile, struct unit_cell *c, struct contents *m,
   if (debug>2) fprintf(stderr,"cif_read called\n");
 
   if (!(c->basis=malloc(72)))
-    error_exit("Malloc error in pdb_read for c->basis");
+    error_exit("Malloc error in cif_read for c->basis");
 
   while(1){
     if (no_read) no_read=0;
@@ -122,29 +121,53 @@ void cif_read(FILE* infile, struct unit_cell *c, struct contents *m,
   }
 
   if (s->n>0){ /* Need to symmetrise atoms */
-    if (debug>1) fprintf(stderr,"%d atoms before symmetrisation\n",m->n);
-    reduce_cell_tol(m->atoms,m->n,c->basis);
-
-    for(i=0;i<m->n;i++){
-      for(j=0;j<s->n;j++){
-        sym_atom(m->atoms+i,&b,s->ops+j,c->recip);
-        if (atom_in_list(&b,m->atoms,m->n)==-1){
-	  m->atoms=realloc(m->atoms,(m->n+1)*sizeof(struct atom));
-	  if(!m->atoms) error_exit("realloc error in cif_read");
-          addabs(&b,1,c->basis);
-          m->atoms[m->n]=b;
-	  if (debug>2)
-	    fprintf(stderr,"Symmetrisation added %d (%f,%f,%f)\n",
-		    m->atoms[m->n].atno,m->atoms[m->n].frac[0],
-		    m->atoms[m->n].frac[1],m->atoms[m->n].frac[2]);
-	  m->n++;
-	}
-      }
-    }
-    if (debug>1) fprintf(stderr,"%d atoms after symmetrisation\n",m->n);
-    sort_atoms(m,1);
+    sym_expand(c,m,s);
   }
 }
+
+void sym_expand(struct unit_cell *c, struct contents *m, struct symmetry *s){
+  int i,j,k,sn,hit;
+  double *wt;
+  struct atom b,*satoms;
+  
+  if (debug>1) fprintf(stderr,"%d atoms before symmetrisation\n",m->n);
+  reduce_cell_tol(m->atoms,m->n,c->basis);
+  wt=malloc(m->n*s->n*sizeof(double)); /* We cannot end up with more atoms
+                                          than this */
+  if (!wt) error_exit("malloc error in sym_expand");
+  satoms=NULL;
+  sn=0;
+
+  for(i=0;i<m->n;i++){
+    for(j=0;j<s->n;j++){
+      sym_atom(m->atoms+i,&b,s->ops+j,c->recip);
+      hit=atom_in_list(&b,satoms,sn,c->basis);
+      if (hit==-1){
+        satoms=realloc(satoms,(sn+1)*sizeof(struct atom));
+        if(!satoms) error_exit("realloc error in sym_expand");
+        addabs(&b,1,c->basis);
+        satoms[sn]=b;
+        wt[sn]=1;
+        sn++;
+      }
+      else{ /* This deals, imperfectly, with low accuracy initial coords */
+        for(k=0;k<3;k++){
+          satoms[hit].frac[k]=(wt[hit]*satoms[hit].frac[k]+b.frac[k])/
+            (wt[hit]+1);
+        }
+        wt[hit]+=1;
+        addabs(satoms+hit,1,c->basis);
+      }
+    }
+  }
+  free(m->atoms);
+  m->atoms=satoms;
+  m->n=sn;
+  if (debug>1) fprintf(stderr,"%d atoms after symmetrisation\n",m->n);
+  free(wt);
+  sort_atoms(m,1);
+}
+
 
 static char* cif_loop(FILE *infile, struct unit_cell *c, struct contents *m,
 		      struct symmetry *s){
@@ -271,6 +294,7 @@ static char* cif_loop(FILE *infile, struct unit_cell *c, struct contents *m,
     if(!m->atoms) error_exit("realloc error in cif_read");
     
     m->atoms[m->n].spin=0;
+    m->atoms[m->n].chg=0;
     sscanf(buff+f[fx],"%lf",m->atoms[m->n].frac);
     sscanf(buff+f[fy],"%lf",m->atoms[m->n].frac+1);
     sscanf(buff+f[fz],"%lf",m->atoms[m->n].frac+2);

@@ -73,7 +73,7 @@ void interpolate3d(struct grid *old_grid, struct grid *new_grid){
 
   if (debug>1) fprintf(stderr,"first FFT in interpolate\n");
 
-  fft3d(o,ffft,1);
+  fft3d(o,ffft,-1);
 
   /* Pad onto interpolated reciprocal space grid */
 
@@ -93,7 +93,7 @@ void interpolate3d(struct grid *old_grid, struct grid *new_grid){
   ffft[1]=nfft[1];
   ffft[2]=nfft[0];
 
-  fft3d(n,ffft,-1);
+  fft3d(n,ffft,1);
 
   if (debug>1) fprintf(stderr,"end of second FFT in interpolate\n");
 

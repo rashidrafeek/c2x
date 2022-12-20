@@ -1,9 +1,12 @@
 /* Write a Gaussian cube file, one density only
  *       Units must be Bohr, not Angstoms
+ * If no density given, as density is a required part of a Guassian
+ * file, writes a 1x1x1 grid containing the value zero (in common with
+ * some other programs).
  */
 
 
-/* Copyright (c) 2007-2017 MJ Rutter 
+/* Copyright (c) 2007-2018 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -27,15 +30,28 @@
 void cube_write(FILE* outfile, struct unit_cell *c, struct contents *m,
                 struct grid *g){
   int i,j,k;
-  double x,y,z,*dptr1,*dptr2;
+  double x,y,z,zero,*dptr1,*dptr2;
   char *fmt1,*fmt2,*fmt3;
+
+  zero=0;
   
-  if (!g->data){
-    fprintf(stderr,"Cannot write .cube file when no 3D data requested.\n");
-    exit(1);
+  if (!g->data){ /* Make dummy 1x1x1 grid with value zero */
+    g->data=&zero;
+    g->size[0]=g->size[1]=g->size[2]=1;
   }
 
-  fprintf(outfile,"DENSITY:\n\n");
+  /* Cube files start with two lines of comments */
+  
+  if (m->title)
+    fprintf(outfile,"%s\n",m->title);
+  else
+    fprintf(outfile,"\n");
+
+  if (g->name)
+    fprintf(outfile,"%s\n",g->name);
+  else
+    fprintf(outfile,"\n");
+
 
   fprintf(outfile,"%d 0.0 0.0 0.0\n",m->n);
 
@@ -69,7 +85,12 @@ void cube_write(FILE* outfile, struct unit_cell *c, struct contents *m,
     for(j=0;j<g->size[1];j++){
       dptr1=dptr2+((k*g->size[1])+j)*g->size[2];
       for(i=0;i<g->size[2];i++)
-        fprintf(outfile,fmt3,*(dptr1+i));
+        if (flags&AU){
+          fprintf(outfile,fmt3,(*(dptr1+i))*BOHR*BOHR*BOHR);
+        }
+        else{
+          fprintf(outfile,fmt3,*(dptr1+i));
+        }
     }
   }
 }

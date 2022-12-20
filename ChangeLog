@@ -1,3 +1,103 @@
+2.16a
+-----
+
+Fix bug with debug output appearing in file, not stderr
+Further changes to XSF output to make it more VESTA-friendly
+
+2.16 (18/6/2018)
+----
+
+Correct MP grid offsets in QE files, and release 2.16
+
+2.15b (1/6/2018)
+-----
+
+Add optional range to -I option
+Add -I option to help text and man page
+
+2.15a
+-----
+
+-I option for reporting parity of psi on inversion
+
+2.15
+----
+
+Quantum Espresso .in reader
+-nn introduced for discarding kpoints (and sym ops)
+
+2.14a
+-----
+
+Add Quantum Espresso writer
+Abinit writer respects -15 for extra precision
+.fdf reader ignores .-_ in keywords
+Add support for < include files to fdf reader
+
+2.14
+----
+
+Initial support for reading .fdf (Siesta) files
+Remove restriction on ordering of items in .in files.
+Convert between Abinit's and Castep's different Monkorst-Pack conventions.
+
+2.12
+----
+
+Initial Abinit support: readers for .in and binary, writer for .in
+Support exponential notation (e and d) in .cell files
+
+2.11c
+-----
+
+Cube reader and writer support convention of 1x1x1 grid, value 0, for
+  no volumetic data
+Improvements to Crystal fort.12 and .34 readers
+
+2.11b
+-----
+
+Initial attempt at a Crystal fort.12 reader
+Fix bug in ident_sym which could lead to unexpected NaNs
+Add --version flag as synonym for -V
+
+2.11a
+-----
+
+Improve cif reading with low accuracy input
+Initial attempt at a (Crystal) fort.34 reader
+
+2.11
+----
+
+Add option to scale .cube output from A^-3 to Bohr^-3
+Add -U option to scale .cube input from Bohr^-3 to A^-3
+Add titles to cube files
+
+2.10 (1/2/2018)
+----
+
+Finalise --refs output
+Recognise files ending _CUBE as Gaussian cube
+Read ionic charges from cube files
+
+2.10p2
+------
+
+Change sign definition in FFT to be the same as Castep.
+Add dipole calculation.
+Read dipole_correction from .check file.
+
+2.10p1
+------
+
+Arithmetic expressions accepted in .cell files for:
+  unit cell defiition, atom co-ordinates, MP grid offset, kpoint list
+kpoints_mp_offset accepted as alias for kpoint_mp_offset in cell file
+kpoints_mp_grid accepted as alias for kpoint_mp_grid in cell file
+Read in ionic charges from .check file, report with -v
+Initial support for subspecies labelling in .cell and .check files
+
 2.05b
 -----
 

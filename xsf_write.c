@@ -59,7 +59,8 @@ x and z when writing the data...
 
 No longer, for VESTA reads the XSF format, and silently misinterprets it
 unless the vectors in the datagrid section are the same as in the cell
-description.
+description. It also gets upset if the first line is blank. A line
+containing a single '#' is fine.
 
 */
 
@@ -93,13 +94,13 @@ void xsf_write(FILE* outfile, struct unit_cell *c, struct contents *m,
 
   if (m->title) fprintf(outfile,"# %s\n\n",m->title);
   if (m->comment->txt){
-    fprintf(outfile,"\n");
+    fprintf(outfile,"#\n");
     comment=m->comment;
     while((comment)&&(comment->txt)){
       fprintf(outfile,"# %s\n",comment->txt);
       comment=comment->next;
     }
-    fprintf(outfile,"\n");
+    fprintf(outfile,"#\n");
   }
   
   if (molecule==0){

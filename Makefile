@@ -8,7 +8,9 @@ OBJS=check2xsf.o check_read.o xsf_write.o molecule_fix.o cube_write.o \
      esp_read.o interpolate.o line_write.o shelx_read.o shelx_write.o \
      fbin_write.o ident_sym.o primitive.o ksym.o f15.o cif_write.o \
      cube_read.o cif_read.o c2x2spg.o sort_atoms.o py_write.o \
-     xsf_read.o vasp_read.o denfmt_write.o denfmt_read.o
+     xsf_read.o vasp_read.o denfmt_write.o denfmt_read.o parse.o \
+     dipole.o fort34_read.o crystal_read.o abinit_read.o abinit_write.o \
+     abinit_in_read.o fdf_read.o qe_write.o qe_read.o parity.o
 
 
 # Recommended: -DQSORT -DSPGLIB
@@ -30,7 +32,7 @@ LIBS=-lsymspg
 # Don't define QSORT below unless your libc provides qsort()
 
 # Linux / x86_64 / gcc
-CFLAGS=-Wall -Wno-unused-result -DQSORT $(DEFS) -g
+CFLAGS=-Wall -g  -DQSORT $(DEFS)
 
 # Linux / IA32 / gcc
 #CFLAGS=-Wall -Wno-unused-result -O -D_FILE_OFFSET_BITS=64 -DQSORT $(DEFS) -g

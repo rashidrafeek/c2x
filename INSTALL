@@ -53,7 +53,7 @@ Further notes on compiling spglib
 With aclocal / autotools
 ------------------------
 
-The following recipe worked with spglib 1.9.9
+The following recipe worked with spglib 1.9.9 and 1.10.3.
 
 curl -o spglib.zip https://codeload.github.com/atztogo/spglib/zip/master
 unzip spglib.zip 
@@ -78,12 +78,13 @@ Without aclocal / autotools
 
 If you lack aclocal / autoheader / etc., which is likely to be the case
 if you are using MacOS, then the following recipe might also work.
-Again, it has been tested with spglib 1.9.9
+Again, it has been tested with spglib 1.9.9 and 1.10.3
 
 curl -o spglib.zip https://codeload.github.com/atztogo/spglib/zip/master
 unzip spglib.zip 
 cd spglib-master/src
 cp [c2x build directory]/Makefile.spglib Makefile
+[if using spglib 1.9.9 comment out MORE_OBJS line]
 make
 cp spglib.h libsymspg.a [c2x build directory]
 

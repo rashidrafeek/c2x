@@ -1,4 +1,4 @@
-#define C2XSF_VER "2.05b"
+#define C2XSF_VER "2.16a"
 
 /* Global variables for system description */
 
@@ -41,6 +41,8 @@
 #define PYA 19
 #define PY 20
 #define DENFMT 21
+#define ABINIT 22
+#define QE 23
 
 /* flags for reading and output */
 #define CHDEN 1
@@ -56,8 +58,8 @@
 #define CHDIFF 1024
 #define SHELX_AIRSS 2048
 #define LITTLE_OUT 4096
-#define BANDCMPLX 8192
-#define BANDU 16384
+#define BANDPARITY 8192
+#define BANDU 16384     /* unused? */
 #define CST_ESP 32768
 #define AU 65536
 #define GNUPLOT 131072
@@ -69,6 +71,7 @@
 #define ONETEP 8388608
 #define ONETEP_OUT 16777216
 #define CHGCAR 33554432
+#define DE_AU 67108864
 
 /* Last valid number 2^(PC_SHIFT-1)=134217728 */
 
@@ -93,10 +96,13 @@ struct cmt {char *txt; struct cmt *next;};
    two different atoms may poin to the same location */
 struct atom
    {unsigned int atno; double abs[3]; double frac[3]; double force[3];
-    double wt; double spin; char *label;};
+    double wt; double spin; double chg; char *label;};
 /* grid.next == NULL if grid unused */
+/* grids storage order is size[0]=ngx, size[1]=ngy, size[2]=ngz,
+     data[x*ngy*ngz+y*ngz+z] */
 struct grid {char *name; int size[3]; double *data;
              struct grid *next;};
+/* See ksym.c:mp_gen() for precise definition of mp_grid */
 struct mp_grid {int grid[3]; double disp[3];};
 struct vector {double v[3]; double mod2;};
 /* We store symmetry matrix and translations in absolute co-ords */
@@ -107,7 +113,7 @@ struct contents {int n; int forces; struct atom *atoms; char *title;
 struct kpts {int n; struct atom *kpts; struct mp_grid *mp;};
 struct symmetry {int n; double *tol; int *gen; struct sym_op *ops;};
 struct es {int nspins; int nspinors; char *spin_method; double cut_off;
-  char *band_range; char *kpt_range; char *spin_range;};
+  double etol; char *band_range; char *kpt_range; char *spin_range;};
 
 void error_exit(char* msg);
 void real2rec(struct unit_cell *cell);
@@ -119,6 +125,7 @@ void abc2cart(double *abc, struct unit_cell *cell);
 void basis2abc(double basis[3][3], double abc[6]);
 void cart2abc(struct unit_cell *c, struct contents *m, double *abc, 
               struct grid *g, int fix);
+void init_atoms(struct atom *a, int n);
 void print_globals(int level);
 void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out);
 void equiv_sym(struct sym_op *s, struct unit_cell *c, FILE *out);
@@ -127,14 +134,28 @@ void mat_f2a(double m1[3][3], double m2[3][3], double basis[3][3],
 void mat_a2f(double m1[3][3], double m2[3][3], double basis[3][3],
              double recip[3][3]);
 void equiv_read(struct sym_op *s, struct unit_cell *c, char *line);
-int atom_in_list(struct atom *b, struct atom *a, int n);
+int atom_in_list(struct atom *b, struct atom *a, int n, double basis[3][3]);
 void sym_atom(struct atom *a, struct atom *b, struct sym_op *s,
               double recip[3][3]);
 void sort_atoms(struct contents *mtf, int sort_style);
 void add_cmt(struct cmt *comment, char *txt);
+void sym_expand(struct unit_cell *c, struct contents *m, struct symmetry *s);
+int tokenmatch(char **s1, const char *s2);
+void inv_parity(double *d,int fft[3], int band, double kpt[3]);
 
 unsigned int atsym2no(char* sym);
 char* atno2sym(unsigned no);
+
+void cspg_hall2sym(int hall, struct unit_cell *c, struct symmetry *s);
+int spgr_is_double(int spgr);
+
+int ascan(char *in, double *result);
+int single_scan(char *buff, double *x, int *n);
+int multi_scan(char *buff, double *x, int rep, int *n);
+
+void mp_gen(struct kpts *ks, struct unit_cell *c);
+
+extern int igr2hall[];
 
 #ifndef min
 #define min(a,b) ((a)<(b)?(a):(b))
