@@ -1,6 +1,6 @@
 /* Write a CIF file */
 
-/* Copyright (c) 2014-2020 MJ Rutter 
+/* Copyright (c) 2014-2021 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -38,11 +38,16 @@ struct contents *reduce_atoms(struct contents *m, struct symmetry *s,
 
 void cif_write(FILE* outfile, struct unit_cell *c, struct contents *m, 
 	       struct symmetry *s, int mm){
-  int i,j,prec,site_charge,sym,*n_in_el,label;
+  int i,j,prec,site_charge,sym,*n_in_el,label,pdbx;
   unsigned char sep;
   double abc[6];
 
-  if (dict_get(m->dict,"CIF_is_PDBx")) mm=1;
+  pdbx=0;
+  
+  if (dict_get(m->dict,"CIF_is_PDBx")){
+    mm=1;
+    pdbx=1;
+  }
 
   sep='_';
   if (mm) sep='.';
@@ -66,8 +71,9 @@ void cif_write(FILE* outfile, struct unit_cell *c, struct contents *m,
 
   if (m->title) fprintf(outfile,"_struct%ctitle %s\n",sep,m->title);
 
-  make_rhs(c,m,NULL,NULL);
-  cart2abc(c,NULL,abc,NULL,1);
+  cart2abc_sym(c,m,abc,NULL,1,s);
+  //  make_rhs(c,m,NULL,NULL);
+  //  cart2abc(c,NULL,abc,NULL,1);
 
   fprintf(outfile,"\n");
   fprintf(outfile,"_cell%clength_a      %.*f\n",sep,prec,abc[0]);
@@ -81,7 +87,7 @@ void cif_write(FILE* outfile, struct unit_cell *c, struct contents *m,
   site_charge=0;
   if (dict_get(m->dict,"site_charge")) site_charge=1;
 
-  if (!dict_get(m->dict,"CIF_is_PDBx")){
+  if (!pdbx){
     fprintf(outfile,"\n");
     fprintf(outfile,"loop_\n"
 	    "_atom_site%ctype_symbol\n",sep);
@@ -157,19 +163,26 @@ void cif_write(FILE* outfile, struct unit_cell *c, struct contents *m,
 	      n_in_el[m->atoms[i].atno]);
     }
   }
-  if (s->n){
+  if (s->n){ /* Must print identity as first operation */
     fprintf(outfile,"\nloop_\n");
     if (mm==0){
       fprintf(outfile,"_symmetry_equiv_pos_as_xyz\n");
+      fprintf(outfile,"x,y,z\n");
       for(i=0;i<s->n;i++)
-	equiv_sym(s->ops+i,c,outfile);
+	if ((s->ops[i].tr)||(!is_identity(s->ops[i].mat)))
+	  equiv_sym(s->ops+i,c,outfile);
     }
     else{
       fprintf(outfile,"_space_group_symop.id\n");
       fprintf(outfile,"_space_group_symop.operation_xyz\n");
+      fprintf(outfile,"1  x,y,z\n");
+      j=2;
       for(i=0;i<s->n;i++){
-	fprintf(outfile,"%d ",i+1);
-	equiv_sym(s->ops+i,c,outfile);
+	if ((s->ops[i].tr)||(!is_identity(s->ops[i].mat))){
+	  fprintf(outfile,"%-2d ",j);
+	  equiv_sym(s->ops+i,c,outfile);
+	  j++;
+	}
       }
     }
   }

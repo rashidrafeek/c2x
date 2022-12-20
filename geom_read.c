@@ -30,16 +30,14 @@ void geom_read(FILE* infile, struct unit_cell *cf, struct contents *mf,
       ts->m=realloc(ts->m,nsteps*sizeof(struct contents));
       if (!ts->m) error_exit("realloc error for motifs");
       c=ts->cells+(nsteps-1);
+      init_cell(c);
       m=ts->m+(nsteps-1);
+      init_motif(m);
       
       c->basis=malloc(9*sizeof(double));
       if (!c->basis) error_exit("realloc error for basis");
       i=0;
-      m->atoms=NULL;
-      m->n=natoms=nforces=0;
-      m->title=NULL;
-      m->dict=NULL;
-      m->comment=NULL;
+      natoms=nforces=0;
       n=0;
       
       while(fgets(buffer,LINE_SIZE,infile)){

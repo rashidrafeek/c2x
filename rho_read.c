@@ -162,22 +162,14 @@ void rho_read(FILE* infile, struct unit_cell *c, struct contents *m,
   free(column);
   
   if (is_pot){
-    if (gptr->next) gptr=gptr->next;
-    gptr->next=malloc(sizeof(struct grid));
-    if (!gptr->next) error_exit("Malloc error for struct grid");
-    gptr->next->next=NULL;
-    gptr->next->data=NULL;
+    gptr=grid_new(gptr);
     gptr->name="Potential";
     for(i=0;i<3;i++) gptr->size[i]=grid[i];
     gptr->data=dptr1;
   }
   else{
     if (flags&CHDEN){
-      if (gptr->next) gptr=gptr->next;
-      gptr->next=malloc(sizeof(struct grid));
-      if (!gptr->next) error_exit("Malloc error for struct grid");
-      gptr->next->next=NULL;
-      gptr->next->data=NULL;
+      gptr=grid_new(gptr);
       gptr->name=NULL;
       for(i=0;i<3;i++) gptr->size[i]=grid[i];
       gptr->data=dptr1;

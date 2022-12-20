@@ -1,4 +1,4 @@
-/* Copyright (c) 2019 MJ Rutter 
+/* Copyright (c) 2019, 2021 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -30,6 +30,12 @@
 
 
 void fft3d(double *c, int *ngptar, int dir);
+
+/* From charge.c */
+double quadrupole(struct unit_cell *c, struct contents *m,
+                  struct grid *g, double *ctr);
+double quadrupole_ii(struct unit_cell *c, struct contents *m,
+                     struct grid *g, double *ctr, int dir);
 
 void dipole_calc(struct unit_cell *c, struct contents *m,
                  struct grid *g, double *dipole_ctr, double *dpole){
@@ -179,7 +185,8 @@ void dipole_calc(struct unit_cell *c, struct contents *m,
 
 
   fprintf(stderr,"Total charge: %f\n",i_charge-scale*rgrid[0]);
-  if (fabs(i_charge-scale*rgrid[0])>tol)
+  if ((fabs(i_charge-scale*rgrid[0])>tol)&&
+      (!dict_get(m->dict,"dipole_no_charge_warn")))
     fprintf(stderr,"Warning: total charge not zero\n");
   
   fprintf(stderr,"Total dipole (eA): (");
@@ -203,9 +210,12 @@ void dipole(struct unit_cell *c, struct contents *m,
 
   double dpole[3],mag,E,*dipole_ctr,v[3];
   int i,dipole_slab_dir,c_dir;
-  double va,vc,dE,mag2;
+  double va,vc,dE,mag2,quad;
 
   dipole_ctr=elect->dip_ctr;
+
+  fprintf(stderr,"Centre used for moments: (%f,%f,%f)\n",
+	  dipole_ctr[0],dipole_ctr[1],dipole_ctr[2]);
   
   dipole_calc(c,m,g,dipole_ctr,dpole);
   
@@ -217,6 +227,16 @@ void dipole(struct unit_cell *c, struct contents *m,
     fprintf(stderr,")\n");
   }
 
+  quad=quadrupole(c,m,g,dipole_ctr);
+  fprintf(stderr,"Trace of quadrupole tensor (eA^2): %f\n",quad);
+  for(i=0;i<3;i++){
+    quad=quadrupole_ii(c,m,g,dipole_ctr,i);
+    fprintf(stderr,"         quadrupole_%c%c (eA^2):     %f\n",
+	    i+'a',i+'a',quad);
+  }
+  
+  if (!elect->dip_corr_dir) return; /* Report, don't correct */
+  
   dipole_slab_dir=-1;
   if (elect->dip_corr_dir){
     dipole_slab_dir=elect->dip_corr_dir[0]-'a';
@@ -316,9 +336,11 @@ void dipole(struct unit_cell *c, struct contents *m,
 	  dE=-4*M_PI*mag*mag*(exp(-2*M_PI)-exp(-2*M_PI*vc/va))/(EPS0*va*va*va);
 	  fprintf(stderr,"Additional correction if point dipole:"
                   "         %14.6f eV\n",dE);
-	  fprintf(stderr,"Leading to corrected energy of:"
-                  "                %14.6f eV\n",
-		  *elect->energy+E+dE);
+	  if (elect->energy){
+	    fprintf(stderr,"Leading to corrected energy of:"
+		    "                %14.6f eV\n",
+		    *elect->energy+E+dE);
+	  }
 	}
         else fprintf(stderr,"This version cannot "
                 "calculate dipole corrections for non-tetragonal cells.\n");

@@ -14,7 +14,7 @@
  * https://www.quantum-espresso.org/Doc/INPUT_PW.html
  */
 
-/* Copyright (c) 2018, 2019 MJ Rutter 
+/* Copyright (c) 2018-2021 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -40,8 +40,8 @@
 
 void qe_write(FILE* outfile, struct unit_cell *c, struct contents *m,
 	      struct kpts *k, struct es *e){
-  int nspec,i,j,*spatno,okay,xtra;
-  char *fmt,*ptr;
+  int nspec,i,j,*spatno,okay,xtra,need_ions;
+  char *fmt,*ptr,*calc_type;
   double *spspin,dtmp;
   int *spxtra,*atxtra;
   struct kpts *k2;
@@ -60,8 +60,9 @@ void qe_write(FILE* outfile, struct unit_cell *c, struct contents *m,
   }
   if (dict_get(m->dict,"QE_prefix"))
     fprintf(outfile,"  prefix = '%s',\n",(char*)dict_get(m->dict,"QE_prefix"));
-  fprintf(outfile,"  calculation = '%s',\n",dict_get(m->dict,"QE_calculation")?
-	  (char*)dict_get(m->dict,"QE_calculation"):"scf");
+  calc_type=dict_get(m->dict,"QE_calculation")?
+    (char*)dict_get(m->dict,"QE_calculation"):"scf";
+  fprintf(outfile,"  calculation = '%s',\n",calc_type);
   if (dict_get(m->dict,"QE_forc_conv_thr"))
     fprintf(outfile,"  forc_conv_thr = %g,\n",
             *(double*)dict_get(m->dict,"QE_forc_conv_thr"));
@@ -153,14 +154,17 @@ void qe_write(FILE* outfile, struct unit_cell *c, struct contents *m,
     fprintf(outfile,"%s",(char*)dict_get(m->dict,"QE_electron_list"));
   fprintf(outfile,"/\n");
 
-  if (dict_get(m->dict,"QE_ions_list")){
+  need_ions=0;
+  if (strcasecmp(calc_type,"scf")) need_ions=1;
+  if (dict_get(m->dict,"QE_ions_list")) need_ions=1;
+  if (m->velocities) need_ions=1;
+
+  if (need_ions){
     fprintf(outfile,"&IONS\n");
     if (m->velocities) fprintf(outfile,"  ion_velocities = 'from_input',\n");
-    fprintf(outfile,"%s/\n",(char*)dict_get(m->dict,"QE_ions_list"));
-  }
-  else if (m->velocities){
-    fprintf(outfile,"&IONS\n");
-    fprintf(outfile,"  ion_velocities = 'from_input'\n/\n");
+    if (dict_get(m->dict,"QE_ions_list"))
+      fprintf(outfile,"%s",(char*)dict_get(m->dict,"QE_ions_list"));
+    fprintf(outfile,"/\n");
   }
             
   if (dict_get(m->dict,"QE_cell_list"))

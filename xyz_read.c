@@ -56,6 +56,7 @@ void xyz_read(FILE* infile, struct unit_cell *c, struct contents *m){
 
   m->atoms=malloc(m->n*sizeof(struct atom));
   if (!m->atoms) error_exit("Malloc error for atoms");
+  init_atoms(m->atoms,m->n);
   
   for(i=0;i<m->n;i++){
     if (!fgets(buffer,LINE_SIZE,infile)) error_exit("Unexpected EOF");

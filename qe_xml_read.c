@@ -44,7 +44,7 @@ void qe_xml_read(FILE* infile, char *filename, struct unit_cell *c,
   FILE *ch,*pot;
   struct sp {char *name; double mass; char *p_pot;
     double chg; double mag;} *species;
-  int nspec,nsym,fft[3],*iptr,nkpt,nbands;
+  int nspec,nsym,fft[3],*iptr,nkpt,nbands,ver_maj,ver_min;
   double *symrel,*symtr,mat[3][3],*dptr,alat,sum;
   struct kpts *k_in;
   
@@ -60,6 +60,8 @@ void qe_xml_read(FILE* infile, char *filename, struct unit_cell *c,
   species=NULL;
   nbands=0;
   nkpt=0;
+  /* Be optimistic */
+  ver_maj=ver_min=6;
 
   /* Get directory part of filename */
   cwd=NULL;
@@ -90,8 +92,18 @@ void qe_xml_read(FILE* infile, char *filename, struct unit_cell *c,
 
   /* First scan for input section */
   
-  while(fgets(buffer,LINE_SIZE,infile))
+  while(fgets(buffer,LINE_SIZE,infile)){
+    if (strstr(buffer,"<creator NAME=\"PWSCF\"")){
+      cptr=strstr(buffer,"VERSION=\"");
+      if (cptr){
+	i=sscanf(cptr+9,"%d.%d",&ver_maj,&ver_min);
+	if (i!=2) ver_maj=ver_min=6;
+	else if (debug) fprintf(stderr,"Output from PWscf %d.%d series\n",
+				ver_maj,ver_min);
+      }
+    }
     if (strstr(buffer,"<input>")) break;
+  }
 
   while(fgets(buffer,LINE_SIZE,infile)){
     if (strstr(buffer,"</input>")) break;
@@ -172,28 +184,6 @@ void qe_xml_read(FILE* infile, char *filename, struct unit_cell *c,
 	dict_add(m->dict,"QE_nosym",iptr);
       }
     }
-    else if ((ts)&&(strstr(buffer,"<cell>"))){ /* Need to read initial cell */
-      ts->cells=realloc(ts->cells,(ts->nc+1)*sizeof(struct unit_cell));
-      if (!ts->cells) error_exit("Realloc error for ts->cells");
-      ts->cells[ts->nc].basis=NULL;
-      ts->cells[ts->nc].stress=NULL;
-      read_basis(infile,ts->cells+ts->nc);
-      ts->nc++;
-    }
-    else if ((ts)&&(strstr(buffer,"<atomic_positions>"))){
-      ts->m=realloc(ts->m,(ts->nm+1)*sizeof(struct contents));
-      if (!ts->m) error_exit("Realloc error for ts->m");
-      ts->m[ts->nm].atoms=NULL;
-      ts->m[ts->nm].title=NULL;
-      ts->m[ts->nm].comment=NULL;
-      ts->m[ts->nm].block_species=NULL;
-      ts->m[ts->nm].species_misc=NULL;
-      ts->m[ts->nm].dict=NULL;
-      ts->m[ts->nm].forces=0;
-      ts->m[ts->nm].n=0;
-      read_atoms(infile,ts->m+ts->nm);
-      ts->nm++;
-    }
   }
   
   /* Now scan for output section, also reading timesteps if req */
@@ -214,8 +204,8 @@ void qe_xml_read(FILE* infile, char *filename, struct unit_cell *c,
       read_basis(infile,c);
     }
     else if(strstr(buffer,"<atomic_structure ")){
-      cptr=strstr(buffer,"<atomic_structure>");
-      cptr=strstr(buffer,"alat=");
+      cptr=strstr(buffer,"<atomic_structure ");
+      cptr=strstr(cptr,"alat=");
       cptr+=5;
       if (*cptr=='"') cptr++;
       sscanf(cptr,"%lf",&alat);
@@ -401,8 +391,9 @@ void qe_xml_read(FILE* infile, char *filename, struct unit_cell *c,
                  m->atoms[i].force+2);
         if (j!=3) fprintf(stderr,"Warning: error parsing forces\n");
         else
-          for(j=0;j<3;j++)  /* Units assumed to be Ha/alat */
-            m->atoms[i].force[j]*=H_eV/(alat*BOHR);
+	  /* Units were Ha/alat prior to pwscf 6.6, then Ha/Bohr */
+          for(j=0;j<3;j++)
+            m->atoms[i].force[j]*=H_eV/BOHR;
       }
       m->forces=1;
     }
@@ -578,6 +569,39 @@ void qe_xml_read(FILE* infile, char *filename, struct unit_cell *c,
 			   species[i].mass,species[i].p_pot,species[i].chg);
     }
   }
+
+  /* If timeseries, add final position */
+
+  if (ts){
+    if (ts->nc){
+      ts->cells=realloc(ts->cells,(ts->nc+1)*sizeof(struct unit_cell));
+      if (!ts->cells) error_exit("Realloc error for ts->cells");
+      ts->cells[ts->nc]=*c;
+      ts->cells[ts->nc].basis=malloc(9*sizeof(double));
+      if (!ts->cells[ts->nc].basis)
+	error_exit("Malloc error for basis");
+      memcpy(ts->cells[ts->nc].basis,c->basis,9*sizeof(double));
+      ts->nc++;
+    }
+    if (ts->nm){
+      ts->m=realloc(ts->m,(ts->nm+1)*sizeof(struct contents));
+      if (!ts->m) error_exit("Realloc error for ts->m");
+      ts->m[ts->nm]=*m;
+      ts->m[ts->nm].atoms=malloc(m->n*sizeof(struct atom));
+      if (!ts->m[ts->nm].atoms) error_exit("Malloc error for ts atoms");
+      memcpy(ts->m[ts->nm].atoms,m->atoms,m->n*sizeof(struct atom));
+      ts->m[ts->nm].dict=NULL;
+      ts->nm++;
+    }
+    if (ts->nen){
+      ts->energies=realloc(ts->energies,(ts->nen+1)*sizeof(double));
+      if (!ts->energies) error_exit("Realloc error for ts->energies");
+      ts->energies[ts->nen]=*e->energy;
+      ts->nen++;
+    }
+    ts->nsteps++;
+  }
+
   
   /* Fix all units etc */
 
@@ -629,10 +653,16 @@ void qe_xml_read(FILE* infile, char *filename, struct unit_cell *c,
   
 
   real2rec(c);
-
-  
   addfrac(m->atoms,m->n,c->recip);
 
+  /* The same for timeseries data */
+  if ((ts)&&(ts->nm==ts->nc)){
+    for(i=0;i<ts->nm;i++){
+      real2rec(ts->cells+i);
+      addfrac(ts->m[i].atoms,ts->m[i].n,ts->cells[i].recip);
+    }
+  }
+  
   if (nspec){
     for(i=0;i<m->n;i++){
       cptr=m->atoms[i].label;
@@ -678,10 +708,13 @@ void qe_xml_read(FILE* infile, char *filename, struct unit_cell *c,
 
       mat_f2a(mat,s->ops[i].mat,c->basis,c->recip);
 
+      /* The translations seem to differ in sign from other conventions */
+      
       for(j=0;j<3;j++){
         s->ops[i].tr[j]=0;
         for(jj=0;jj<3;jj++)
-          s->ops[i].tr[j]+=symtr[3*i+jj]*c->basis[jj][j];
+          s->ops[i].tr[j]-=symtr[3*i+jj]*c->basis[jj][j];
+	if (aeq(s->ops[i].tr[j],-0.5)) s->ops[i].tr[j]=0.5;
       }
     }
   }
@@ -690,6 +723,16 @@ void qe_xml_read(FILE* infile, char *filename, struct unit_cell *c,
     for(i=0;i<nbands*e->nspins*k->n;i++)
       e->eval[i]*=H_eV;
   e->nbands=nbands;
+
+  if ((ver_maj<6)||((ver_maj==6)&&(ver_min<6))){
+    if (debug)
+      fprintf(stderr,"Cannot parse forces from PWscf versions < 6.6\n");
+    m->forces=0;
+    if (ts){
+      for(i=0;i<ts->nm;i++)
+	ts->m[i].forces=0;
+    }
+  }
   
   if ((flags&CHDEN)||(flags&SPINDEN)){
     i=strlen(filename);
@@ -891,10 +934,8 @@ double qe_pot_charge(FILE *infile){
 
 static void read_step(FILE *infile, char *buffer,struct time_series *ts){
   int i,j,n;
-  double alat;
   char *ptr,*cptr;
   struct contents *m;
-  struct atom atmp;
   
   ptr=strstr(buffer,"<step n_step=");
   if (!ptr) return;
@@ -913,62 +954,34 @@ static void read_step(FILE *infile, char *buffer,struct time_series *ts){
     if(strstr(buffer,"<cell>")){
       ts->cells=realloc(ts->cells,(ts->nc+1)*sizeof(struct unit_cell));
       if (!ts->cells) error_exit("Realloc error for ts->cells");
-      ts->cells[ts->nc].basis=NULL;
-      ts->cells[ts->nc].stress=NULL;
+      init_cell(ts->cells+ts->nc);
       read_basis(infile,ts->cells+ts->nc);
       ts->nc++;
-    }
-    else if(strstr(buffer,"<atomic_structure ")){
-      cptr=strstr(buffer,"<atomic_structure>");
-      cptr=strstr(buffer,"alat=");
-      cptr+=5;
-      if (*cptr=='"') cptr++;
-      sscanf(cptr,"%lf",&alat);
     }
     else if(strstr(buffer,"<atomic_positions>")){
       ts->m=realloc(ts->m,(ts->nm+1)*sizeof(struct contents));
       if (!ts->m) error_exit("Realloc error for ts->m");
-      ts->m[ts->nm].atoms=NULL;
-      ts->m[ts->nm].title=NULL;
-      ts->m[ts->nm].comment=NULL;
-      ts->m[ts->nm].block_species=NULL;
-      ts->m[ts->nm].species_misc=NULL;
-      ts->m[ts->nm].dict=NULL;
-      ts->m[ts->nm].forces=0;
-      ts->m[ts->nm].n=0;
+      init_motif(ts->m+ts->nm);
       read_atoms(infile,ts->m+ts->nm);
       ts->nm++;
     }
     else if(strstr(buffer,"<forces ")){
-      if (ts->nm<=1) error_exit("Impossible: forces before atoms");
-      if (debug) fprintf(stderr,"%d parsing forces with alat=%f\n",
-                         n,alat);
-      m=ts->m+(ts->nm-2);
+      m=ts->m+(ts->nm-1);
       for(i=0;i<m->n;i++){
         fgets(buffer,LINE_SIZE,infile);
         j=sscanf(buffer,"%lf %lf %lf",m->atoms[i].force,m->atoms[i].force+1,
                  m->atoms[i].force+2);
         if (j!=3) fprintf(stderr,"Warning: error parsing forces\n");
         else
-          if (alat){
-            for(j=0;j<3;j++){  /* Units assumed to be Ha/alat */
-              m->atoms[i].force[j]*=H_eV/(alat*BOHR);
-            }
-            /* The following seems to be necessary... */
-            for(j=0;j<3;j++)
-              atmp.abs[j]=m->atoms[i].force[j];
-            addfrac(&atmp,1,ts->cells[ts->nc-2].recip);
-            addabs(&atmp,1,ts->cells[ts->nc-1].basis);
-            for(j=0;j<3;j++)
-              m->atoms[i].force[j]=atmp.abs[j];
-          }
-          else
-            fprintf(stderr,"Warning: forces without alat\n");
+	  for(j=0;j<3;j++){  /* Units assumed to be Ha/B from PWscf 6.6 */
+	    m->atoms[i].force[j]*=H_eV/BOHR;
+	  }
       }
       m->forces=1;
     }
     else if (strstr(buffer,"<etot>")){
       ts->energies=realloc(ts->energies,(ts->nen+1)*sizeof(double));
+      if (!ts->energies) error_exit("Realloc error for ts->energies");
       cptr=strstr(buffer,"<etot>")+6;
       i=sscanf(cptr,"%lf",ts->energies+ts->nen);
       if (i!=1){

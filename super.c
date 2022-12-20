@@ -121,6 +121,8 @@ int super(struct unit_cell *c, struct contents *mtf,
     struct contents rmtf;
 
     rcell.basis=malloc(9*sizeof(double));
+    if (!rcell.basis) error_exit("Malloc error in super");
+
     for(i=0;i<3;i++)
       for(j=0;j<3;j++){
 	rcell.basis[i][j]=c->recip[i][j];
@@ -133,6 +135,7 @@ int super(struct unit_cell *c, struct contents *mtf,
     addabs(rmtf.atoms,rmtf.n,rcell.basis);
 
     new_cell.basis=malloc(9*sizeof(double));
+    if (!new_cell.basis) error_exit("Malloc error in super");
     for(i=0;i<3;i++)
       for(j=0;j<3;j++)
 	new_cell.basis[i][j]=new_basis[i][j];

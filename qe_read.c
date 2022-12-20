@@ -1,6 +1,6 @@
 /* Read a PWscf input file */
 
-/* Copyright (c) 2018, 2019 MJ Rutter 
+/* Copyright (c) 2018, 2021 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -226,6 +226,7 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
 	while ((*ptr)&&(isspace(*ptr))) ptr++;
         if (*ptr=='=') ptr++;
 	p3=malloc(sizeof(double));
+	if (!p3) error_exit("malloc error in qe_read");
 	if (qe_float_read(&ptr,(double*)p3))
 	  dict_add(m->dict,"QE_forc_conv_thr",p3);
 	else fprintf(stderr,"Warning: error parsing QE_forc_conv_thr\n");
@@ -234,6 +235,7 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
 	while ((*ptr)&&(isspace(*ptr))) ptr++;
         if (*ptr=='=') ptr++;
 	p3=malloc(sizeof(int));
+	if (!p3) error_exit("malloc error in qe_read");
 	if (qe_int_read(&ptr,(int*)p3))
 	  dict_add(m->dict,"QE_iprint",p3);
 	else fprintf(stderr,"Warning: error parsing QE_iprint\n");
@@ -327,6 +329,7 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
 	while ((*ptr)&&(isspace(*ptr))) ptr++;
         if (*ptr=='=') ptr++;
 	p3=malloc(sizeof(double));
+	if (!p3) error_exit("malloc error in qe_read");
 	if (qe_float_read(&ptr,(double*)p3))
 	  dict_add(m->dict,"QE_degauss",p3);
 	else fprintf(stderr,"Warning: error parsing QE_degauss\n");
@@ -335,6 +338,7 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
 	while ((*ptr)&&(isspace(*ptr))) ptr++;
         if (*ptr=='=') ptr++;
 	e->charge=malloc(sizeof(double));
+	if (!e->charge) error_exit("malloc error in qe_read");
 	if (!qe_float_read(&ptr,e->charge)){
 	  fprintf(stderr,"Warning: error parsing QE_tot_charge\n");
           free(e->charge);
@@ -352,6 +356,7 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
 	while ((*ptr)&&(isspace(*ptr))) ptr++;
         if (*ptr=='=') ptr++;
 	p3=malloc(sizeof(int));
+	if (!p3) error_exit("malloc error in qe_read");
 	if (qe_logical_read(&ptr,(int*)p3))
 	  dict_add(m->dict,"QE_nosym",p3);
 	else fprintf(stderr,"Warning: error parsing QE_nosym\n");
@@ -387,33 +392,39 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
       }
       else if (!tokenmatch(&ptr,"A")){
         if (!abc) abc=malloc(6*sizeof(double));
+	if (!abc) error_exit("malloc error for abc");
         if (!qe_float_read(&ptr,abc))
           error_exit("Error parsing A");
       }
       else if (!tokenmatch(&ptr,"B")){
         if (!abc) abc=malloc(6*sizeof(double));
+	if (!abc) error_exit("malloc error for abc");
         if (!qe_float_read(&ptr,abc+1))
           error_exit("Error parsing B");
       }
       else if (!tokenmatch(&ptr,"C")){
         if (!abc) abc=malloc(6*sizeof(double));
+	if (!abc) error_exit("malloc error for abc");
         if (!qe_float_read(&ptr,abc+2))
           error_exit("Error parsing C");
       }
       else if (!tokenmatch(&ptr,"cosAB")){
         if (!abc) abc=malloc(6*sizeof(double));
+	if (!abc) error_exit("malloc error for abc");
         if (!qe_float_read(&ptr,&x))
           error_exit("Error parsing cosAB");
         abc[5]=acos(x)*180/M_PI;
       }
       else if (!tokenmatch(&ptr,"cosAC")){
         if (!abc) abc=malloc(6*sizeof(double));
+	if (!abc) error_exit("malloc error for abc");
         if (!qe_float_read(&ptr,&x))
           error_exit("Error parsing cosAC");
         abc[4]=acos(x)*180/M_PI;
       }
       else if (!tokenmatch(&ptr,"cosBC")){
         if (!abc) abc=malloc(6*sizeof(double));
+	if (!abc) error_exit("malloc error for abc");
         if (!qe_float_read(&ptr,&x))
           error_exit("Error parsing cosBC");
         abc[3]=acos(x)*180/M_PI;
@@ -423,6 +434,7 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
 	if (!ntyp) error_exit("starting_magnetization before ntyp");
 	if (!magmom) {
 	  magmom=malloc(ntyp*sizeof(double));
+	  if (!magmom) error_exit("malloc error for magmom");
 	  for(j=0;j<ntyp;j++) magmom[j]=0;
 	}
 	ptr+=strlen("starting_magnetization(");
@@ -540,6 +552,7 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
         if (!strncasecmp(ptr,"gamma",5)){
           k->n=1;
           k->kpts=malloc(sizeof(struct atom));
+	  if (!k->kpts) error_exit("malloc error for kpts");
           k->kpts[0].wt=1;
           for(i=0;i<3;i++)
             k->kpts[0].frac[i]=0;
@@ -548,6 +561,7 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
         }
         else if (!strncasecmp(ptr,"automatic",9)){
           k->mp=malloc(sizeof(struct mp_grid));
+	  if (!k->mp) error_exit("malloc error for kpt grid");
           qe_readline(&ptr,infile);
           if (sscanf(ptr,"%d %d %d %d %d %d",k->mp->grid,
                      k->mp->grid+1,k->mp->grid+2,
@@ -649,12 +663,16 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
     c->basis[0][2]=c->basis[1][1]=c->basis[1][2]=c->basis[2][1]=x;
     c->basis[0][0]=c->basis[2][0]=-x;
   }
-  else if (ibrav==3){ /* bcc */
+  else if ((ibrav==3)||(ibrav==-3)){ /* bcc */
     x=0.5*celldm[1]*BOHR;
     if (abc) x=0.5*abc[0];
-    c->basis[0][0]=c->basis[0][1]=c->basis[0][2]=
-      c->basis[1][1]=c->basis[1][2]=c->basis[2][2]=x;
-    c->basis[1][0]=c->basis[2][0]=c->basis[2][1]=-x;
+    for(i=0;i<3;i++)
+      for(j=0;j<3;j++)
+	c->basis[i][j]=x;
+    if (ibrav==3)
+      c->basis[1][0]=c->basis[2][0]=c->basis[2][1]=-x;
+    else
+      c->basis[0][0]=c->basis[1][1]=c->basis[2][2]=-x;
   }
   else if (ibrav==4){ /* hexagonal */
     x=celldm[1]*BOHR;
@@ -838,6 +856,22 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
     c->basis[1][1]=y*sin(gamma);
     c->basis[2][0]=x/2;
     c->basis[2][2]=z/2;
+  }
+  else if (ibrav==-13){ /* Monoclinic base-centred */   
+    x=celldm[1]*BOHR;
+    if (abc) x=abc[0];
+    y=x*celldm[2];
+    if (abc) y=abc[1];
+    z=x*celldm[3];
+    if (abc) z=abc[2];
+    beta=acos(celldm[5]);
+    if (abc) beta=M_PI*abc[4]/180;
+    c->basis[0][0]=x/2;
+    c->basis[0][2]=y/2;
+    c->basis[1][0]=-x/2;
+    c->basis[1][1]=y/2;
+    c->basis[2][0]=z*cos(beta);
+    c->basis[2][2]=z*sin(beta);
   }
   else if ((ibrav==14)||(abc)){  /* Triclinic */   
     x=celldm[1]*BOHR;

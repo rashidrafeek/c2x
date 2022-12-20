@@ -40,12 +40,72 @@ void band_store(struct grid **gp, double *dptr, double occ, double wkpt,
 		struct contents *m, int fft[3]);
 void band2real(double *psi, double *out, int nfft[3], double kpoint[3]);
 
+double *band2grid(double *dptr, int fft[3], int *pwgrid, int npw, int gamma){
+  double *psi_g;
+  int i,offset,n0,n1,n2,nfftpts,goff[3];
+
+  nfftpts=fft[0]*fft[1]*fft[2];
+  
+  for(i=0;i<3;i++) goff[i]=0;
+  if (gamma){
+    gamma++;
+    if (gamma&1) goff[0]=1;
+    if (gamma>5) goff[1]=1;
+    if ((gamma-2)&2) goff[2]=1;
+  }
+  
+  psi_g=malloc(2*nfftpts*sizeof(double));
+  if (!psi_g) error_exit("Malloc error for psi");
+
+  for(i=0;i<2*nfftpts;i++) psi_g[i]=0;
+  for(i=0;i<npw;i++){
+    offset=pwgrid[3*i+2]+fft[2]*(pwgrid[3*i+1]+
+                                 fft[1]*pwgrid[3*i]);
+    if ((offset<0)||(offset>nfftpts)){
+      fprintf(stderr,"Impossible offset in band2grid off=%d i=%d\n",
+              offset,i);
+      exit(1);
+    }
+    psi_g[2*offset]=dptr[2*i];
+    psi_g[2*offset+1]=dptr[2*i+1];
+  }
+
+  if (gamma>1){ /* construct psi(-k)=conjg(psi(k)) */
+    if (debug>1) fprintf(stderr,"Gamma point storage type %d\n",gamma);
+    for(i=0;i<npw;i++){
+      if ((gamma==2)&&(pwgrid[3*i]==0)&&
+          (pwgrid[3*i+1]==0)&&(pwgrid[3*i+2]==0)) continue;
+      n0=fft[2]-pwgrid[3*i+2]-goff[2];
+      if (n0==fft[2]) n0=0;
+      n1=fft[1]-pwgrid[3*i+1]-goff[1];
+      if (n1==fft[1]) n1=0;
+      n2=fft[0]-pwgrid[3*i]-goff[0];
+      if (n2==fft[0]) n2=0;
+      offset=n0+fft[2]*(n1+fft[1]*n2);
+      if ((offset<0)||(offset>nfftpts)){
+        fprintf(stderr,
+                "Impossible -offset in band2grid off=%d i=%d\n",
+                offset,i);
+        exit(1);
+      }
+      psi_g[2*offset]=dptr[2*i];
+      psi_g[2*offset+1]=-dptr[2*i+1];
+    }
+  }
+
+  return psi_g;
+  
+}
+
 /* Use abinit's definition of gamma, less one.
  *  gamma=0  -- not gamma
  *  gamma=1  -- gamma
  *  gamma>1  -- abinit's istwfk = gamma+1
  *
  * ikpt, ispinor, isppol and nb all start from 0, not 1
+ *
+ * isppol=-1 means both components of a spinor wavefunction being presented
+ *   for gcoeff or wavecar output
  *
  */
 
@@ -54,9 +114,11 @@ void band_process(double *dptr, int fft[3], int *pwgrid, int npw, int gamma,
 		  struct grid **gp, struct es *elect, struct kpts *kp,
 		  struct contents *m, int ikpt, int ispinor, int isppol,
 		  int nb, int *i_grid){
-  int i,offset;
+  int i,off;
   int nfftpts,ffft[3],nfft[3],goff[3];
-  int n0,n1,n2,off;
+#if 0
+  int n0,n1,n2,offset;
+#endif
   double scale,occ,*psi,*kpoint,eval[2];
 
   off=elect->nbands*elect->nbspins*ikpt+isppol*elect->nbands;
@@ -68,16 +130,17 @@ void band_process(double *dptr, int fft[3], int *pwgrid, int npw, int gamma,
   for(i=0;i<3;i++) nfft[i]=fft[i];
   nfftpts=fft[0]*fft[1]*fft[2];
   
-  scale=1.0;
-  kpoint=kp->kpts[ikpt].frac;
-
   for(i=0;i<3;i++) goff[i]=0;
   if (gamma){
     gamma++;
     if (gamma&1) goff[0]=1;
     if (gamma>5) goff[1]=1;
     if ((gamma-2)&2) goff[2]=1;
+    gamma--;
   }
+  
+  scale=1.0;
+  kpoint=kp->kpts[ikpt].frac;
 
   if (flags&GCOEFF){
     if (elect->eval)
@@ -91,8 +154,24 @@ void band_process(double *dptr, int fft[3], int *pwgrid, int npw, int gamma,
     else
       gcoeff_write(dptr,pwgrid,npw,fft,gamma,goff,c,m,kp,ikpt,isppol,nb+1,
                     eval,occ,elect);
+    return;
+  }
+
+  if (isppol==-1){
+    fprintf(stderr,"Unable to process spinor wavefunction\n");
+    return;
   }
   
+  psi=band2grid(dptr,fft,pwgrid,npw,gamma);
+#if 0
+  for(i=0;i<3;i++) goff[i]=0;
+  if (gamma){
+    gamma++;
+    if (gamma&1) goff[0]=1;
+    if (gamma>5) goff[1]=1;
+    if ((gamma-2)&2) goff[2]=1;
+  }
+
   psi=malloc(16*nfftpts);
   if (!psi) error_exit("Malloc error for psi");
   for(i=0;i<2*nfftpts;i++) psi[i]=0;
@@ -129,6 +208,7 @@ void band_process(double *dptr, int fft[3], int *pwgrid, int npw, int gamma,
       psi[2*offset+1]=-dptr[2*i+1];
     }
   }
+#endif
 
   if ((aeq(kpoint[0],0)||aeq(fabs(kpoint[0]),0.5))&&
       (aeq(kpoint[1],0)||aeq(fabs(kpoint[1]),0.5))&&
@@ -308,7 +388,7 @@ void band_store(struct grid **gp, double *dptr, double occ, double wkpt,
     g->data=dptr;
     for(i=0;i<3;i++) g->size[i]=fft[i];
     g->name=malloc(40);
-    if (!g->name) error_exit("mallock error for name");
+    if (!g->name) error_exit("malloc error for name");
     if (elect->nspinors==2)
       sprintf(g->name,"band_vs%d_k%d_b%d",nspr,k,b);
     else if (elect->nspins==2)
@@ -320,6 +400,7 @@ void band_store(struct grid **gp, double *dptr, double occ, double wkpt,
     g=g->next;
     g->data=NULL;
     g->next=NULL;
+    g->origin_abs=NULL;
     if ((flags&OCC_WEIGHT)||(flags&K_WEIGHT)){
       snprintf(cbuff,CBUFF,
 	       "Weight %f used for spin %d kpt %d band %d",

@@ -1,9 +1,9 @@
-#define C2XSF_VER "2.35a"
+#define C2XSF_VER "2.40c"
 
 /* Global variables for system description */
 
 /* Note Castep 8, 16 and 17 use CODATA 2010
- *                18 and 19 use CODATA 2014
+ *                18 to at least 21 use CODATA 2014
  *
  * See https://physics.nist.gov/cuu/Constants/index.html
  */
@@ -65,6 +65,15 @@
 #define ELK 30
 #define NPY 31
 
+/* Constants for data combining operations */
+/* Exclusive operations */
+#define C2X_ADD 1
+#define C2X_DIFF 2
+#define C2X_MASK 3
+/* Non-exclusive operations */
+#define C2X_MERGE 256
+#define C2X_EXC_MASK 0xff
+
 /* flags for reading and output */
 #define CHDEN 1
 #define SPINDEN 2
@@ -89,7 +98,7 @@
 #define OCC_WEIGHT 1048576
 #define K_WEIGHT 2097152
 #define OCCUPANCIES 4194304
-/*#define ONETEP 8388608 */
+#define REPLACE_RHO 8388608
 /* Alternate output format: changes CELL to ONETEP,
  *                          changes CUBE to MO CUBE
  */
@@ -126,7 +135,7 @@
 struct dct {char *key; void *value; struct dct *next;};
 struct cmt {char *txt; struct cmt *next;};
 /* Currently atom.labels leak and should not be freed, as pointers for
-   two different atoms may poin to the same location */
+   two different atoms may point to the same location */
 struct atom
    {unsigned int atno; double abs[3]; double frac[3]; double force[3];
      double v[3]; double wt; double spin; double chg; double site_chg;
@@ -136,32 +145,39 @@ struct species {unsigned int atno;};
 /* grid.next == NULL if grid unused */
 /* grids storage order is size[0]=ngx, size[1]=ngy, size[2]=ngz,
      data[x*ngy*ngz+y*ngz+z] */
-struct grid {char *name; int size[3]; double *data;
+struct grid {char *name; int size[3]; double *origin_abs; double *data;
              struct grid *next;};
 /* See ksym.c:mp_gen() for precise definition of mp_grid */
 struct mp_grid {int grid[3]; double disp[3];};
 struct vector {double v[3]; double mod2;};
-/* We store symmetry matrix and translations in absolute co-ords */
+/* We store symmetry matrix and translations in absolute co-ords
+   And the matrix is the transpose of Castep's convention, or
+   identical to SPGlib's convention */
 struct sym_op {double mat[3][3]; double *tr;};
 struct unit_cell {double (*basis)[3]; double recip[3][3]; double vol;
   double (*stress)[3];};
 struct contents {int n; int forces; int velocities; struct atom *atoms;
   char *title; struct cmt *comment; char *block_species; char *species_misc;
   struct dct *dict; int nspec; struct species *spec;};
-struct kpts {int n; struct atom *kpts; struct mp_grid *mp; double *spacing;};
+struct kpts {int n; struct atom *kpts; struct mp_grid *mp; double *spacing;
+             int bs_n; struct atom *bs_kpts; struct mp_grid *bs_mp;
+             double *bs_spacing;
+             int path_n; struct atom *path; double *path_spacing;};
 struct symmetry {int n; double *tol; int *gen; struct sym_op *ops;};
 struct es {int nspins; int nspinors; char *spin_method; double cut_off;
   double etol; char *band_range; char *kpt_range; char *spin_range;
   char *dip_corr; char *dip_corr_dir; double *dip_ctr; double *charge;
   double *energy; double *e_fermi; int nbands; int nbspins; double nel;
-  double nup_minus_down; double *occ; double *eval; int max_nplwv;};
+  double nup_minus_down; double *occ; double *eval; int max_nplwv;
+  double *path_eval; double *path_occ; struct kpts *path_kpt;
+  int path_nbands;};
 
 struct time_series {int nsteps; int nc; struct unit_cell *cells;
   int nm; struct contents *m; int nen; double *energies;
   int nenth; double *enthalpies;};
 
 struct infiles { FILE* f; struct infiles *next; struct infiles *last;
-  char *name; int line; int include;};
+  char *name; int line; int include; struct infiles *ret; int count;};
 
 void *dict_get(struct dct *dict, char *key);
 void dict_add(struct dct *dict, char *key, void *value);
@@ -235,7 +251,7 @@ void band_process(double *dptr, int fft[3], int *pwgrid, int npw, int gamma,
 		  struct grid **gp, struct es *elect, struct kpts *kp,
 		  struct contents *m, int ikpt, int ispinor, int isppol,
 		  int nb, int *i_grid);
-
+double *band2grid(double *dptr, int fft[3], int *pwgrid, int npw, int gamma);
 extern int igr2hall[];
 
 int super(struct unit_cell *c, struct contents *m,
@@ -248,6 +264,7 @@ void simple_super(struct unit_cell *c, struct contents *m,
 double dist(double a,double b);
 double atom_dist(struct atom *a, struct atom *b, double basis[3][3]);
 double vmod2(double v[3]);
+int is_identity(double m[3][3]);
 void make_rhs(struct unit_cell *c, struct contents *m, double *abc,
               struct grid *gptr);
 void cell_check(struct unit_cell *c, struct contents *m);
@@ -259,7 +276,21 @@ int cspg_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
 void xv_read(FILE* infile, struct unit_cell *c, struct contents *m);
 void fdf_read(FILE* in, struct unit_cell *c,
               struct contents *m, struct kpts *kp, struct es *e);
+void siesta_kp_read(FILE* infile, struct kpts *k);
 int sscanfmsn(char *buffer, char **str, int *n);
+struct grid *grid_new(struct grid *gptr);
+void init_grid(struct grid *gptr);
+void init_cell(struct unit_cell *c);
+void init_motif(struct contents *m);
+void init_elect(struct es *e);
+void init_kpts(struct kpts *k);
+void init_sym(struct symmetry *s);
+void init_tseries(struct time_series *ts);
+void interpolate3d(struct grid *old_grid, struct grid *new_grid);
+
+void reverse4n(int *data,int n);
+void reverse8n(double *data,int n);
+int self_little_endian(void);
 
 #ifndef min
 #define min(a,b) ((a)<(b)?(a):(b))

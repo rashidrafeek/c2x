@@ -1,6 +1,6 @@
 This version of c2x is intended to be built with spglib
 ( https://github.com/atztogo/spglib/releases ).
-It has been tested with spglib 1.9.9 and 1.12.2.
+It has been tested with spglib 1.16.0.
 
 The build of c2x itself is controlled by its Makefile. This can be edited,
 and then one simply types "make" and the result should be an
@@ -78,7 +78,7 @@ Without aclocal / autotools
 
 If you lack aclocal / autoheader / etc., which is likely to be the case
 if you are using MacOS, then the following recipe might also work.
-It has been tested with spglib 1.9.9, 1.10.3 and 1.12.2.
+It has been tested with spglib 1.9.9, 1.10.3, 1.12.2 and 1.16.0.
 
 curl -o spglib.zip https://codeload.github.com/atztogo/spglib/zip/master
 unzip spglib.zip 

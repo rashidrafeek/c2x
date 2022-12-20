@@ -256,6 +256,7 @@ void cart2abc_sym(struct unit_cell *c, struct contents *m, double *abc,
   if (s){
     rot=malloc(9*s->n*sizeof(double));
     tr=malloc(3*s->n*sizeof(double));
+    if ((!rot)||(!tr)) error_exit("malloc error for symops");
 
     for(i=0;i<s->n;i++){
       mat_a2f(s->ops[i].mat,rot[i],c->basis,c->recip);
@@ -521,6 +522,8 @@ void cell_check(struct unit_cell *c, struct contents *m){
   struct unit_cell compact_cell;
 
   n1=n2=0;
+
+  if (!c->basis) return;
   
   if (fabs(c->vol)<2)
     fprintf(stderr,"*** WARNING: surprisingly small cell volume %g\n",
@@ -613,10 +616,112 @@ void addspec(struct contents *m){
 
   m->nspec=nspec;
   m->spec=malloc(nspec*sizeof(struct species));
+  if (!m->spec) error_exit("malloc error for species");
 
   for(i=0;i<nspec;i++)
     m->spec[i].atno=species[i];
 
   free(species);
   
+}
+
+struct grid *grid_new(struct grid *gptr){
+  if (gptr->next) gptr=gptr->next;
+  gptr->next=malloc(sizeof(struct grid));
+  if (!gptr->next) error_exit("Malloc error for struct grid");
+  init_grid(gptr->next);
+  return(gptr);
+}
+
+void init_cell(struct unit_cell *c){
+  int i,j;
+  
+  c->basis=NULL;
+  c->stress=NULL;
+  c->vol=0;
+  for(i=0;i<3;i++)
+    for(j=0;j<3;j++)
+      c->recip[i][j]=0.0;
+}
+
+void init_elect(struct es *e){
+  e->band_range="-";
+  e->kpt_range="1";
+  e->spin_range="-";
+  e->nspins=1;
+  e->nbspins=1;
+  e->nspinors=1;
+  e->spin_method=NULL;
+  e->cut_off=0;
+  e->etol=0;
+  e->dip_corr=NULL;
+  e->dip_corr_dir=NULL;
+  e->dip_ctr=NULL;
+  e->charge=NULL;
+  e->energy=NULL;
+  e->e_fermi=NULL;
+  e->nbands=0;
+  e->occ=NULL;
+  e->eval=NULL;
+  e->nel=e->nup_minus_down=0;
+  e->max_nplwv=0;
+  e->path_eval=e->path_occ=NULL;
+  e->path_kpt=NULL;
+  e->path_nbands=0;
+}
+
+void init_motif(struct contents *m){
+  m->atoms=NULL;
+  m->n=m->nspec=m->forces=m->velocities=0;
+  m->title=NULL;
+  m->species_misc=NULL;
+  m->block_species=NULL;
+  m->spec=NULL;
+  m->comment=malloc(sizeof(struct cmt));
+  if (!m->comment) error_exit("malloc error for struct cmt");
+  m->comment->txt=NULL;
+  m->comment->next=NULL;
+  m->dict=malloc(sizeof(struct dct));
+  if (!m->dict) error_exit("malloc error for struct dict");
+  m->dict->key=NULL;
+  m->dict->next=NULL;
+}
+
+void init_grid(struct grid *g){
+  int i;
+  
+  for(i=0;i<3;i++) g->size[i]=0;
+  g->next=NULL;
+  g->data=NULL;
+  g->name=NULL;
+  g->origin_abs=NULL;
+}
+
+void init_kpts(struct kpts *k){
+  k->n=0;
+  k->kpts=NULL;
+  k->mp=NULL;
+  k->spacing=NULL;
+  k->bs_n=0;
+  k->bs_kpts=NULL;
+  k->bs_mp=NULL;
+  k->bs_spacing=NULL;
+  k->path_n=0;
+  k->path=NULL;
+  k->path_spacing=NULL;
+}
+
+void init_sym(struct symmetry *s){
+  s->tol=NULL;
+  s->ops=NULL;
+  s->n=0;
+}
+
+void init_tseries(struct time_series *ts){
+  ts->nsteps=0;
+  ts->cells=NULL;
+  ts->m=NULL;
+  ts->energies=NULL;
+  ts->enthalpies=NULL;
+  ts->nc=ts->nm=ts->nen=ts->nenth=0;
 }

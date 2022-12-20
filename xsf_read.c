@@ -142,12 +142,7 @@ void xsf_read(FILE* infile, struct unit_cell *c, struct contents *m,
            * simply datagrid_3d, and some programs use this... */
 	  if((!strncasecmp(buffer,"begin_datagrid_3d",17))||
              (!strncasecmp(buffer,"datagrid_3d",11))){
-	    if (gptr->next) gptr=gptr->next;
-	    gptr->next=malloc(sizeof(struct grid));
-	    if (!gptr->next) error_exit("Malloc error for struct grid");
-	    gptr->next->next=NULL;
-	    gptr->next->data=NULL;
-	    gptr->next->name=NULL;
+	    gptr=grid_new(gptr);
 	    if ((!strncasecmp(buffer,"begin_datagrid_3d",17))&&
                 (strlen(buffer)>18)){
 	      gptr->name=malloc(strlen(buffer)-17);

@@ -46,6 +46,7 @@ static void reverse4(void *data){
    *((int*)data)=out;
 }
 
+#if 0
 static void reverse8n(double *data, int n){
 /* reverse endian n words of 8 byte data */
    int i;
@@ -70,6 +71,7 @@ static void reverse8n(double *data, int n){
      *(data+i)=out;
    }
 }
+#endif
 
 void esp_read(FILE* infile, struct contents *m, struct grid *gptr,
 	      struct es *elect){
@@ -125,11 +127,7 @@ void esp_read(FILE* infile, struct contents *m, struct grid *gptr,
     if (inrange(ns,elect->spin_range)){
   /* Set up grid to receive data */
 
-      if (gptr->next) gptr=gptr->next;
-      gptr->next=malloc(sizeof(struct grid));
-      if (!gptr->next) error_exit("Malloc error for struct grid");
-      gptr->next->next=NULL;
-      gptr->next->data=NULL;
+      gptr=grid_new(gptr);
       if (nspins==1) {
 	gptr->name=dict_get(m->dict,"grid_name");
 	if (!gptr->name) gptr->name="ESP";

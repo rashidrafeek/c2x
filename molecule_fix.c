@@ -54,16 +54,31 @@ void molecule_fix(int m_abc[3], double m_rel[3], struct unit_cell *c,
       for(i=0;i<3;i++) ashift[i]=m_rel[i];
     }
     else{
-      for(k=0;k<3;k++){
-	amin=1000;
-	amax=-1000;
-	for(i=0;i<m->n;i++){
-	  if (m->atoms[i].frac[k]>amax)
-	    amax=m->atoms[i].frac[k];
-	  if (m->atoms[i].frac[k]<amin)
-	    amin=m->atoms[i].frac[k];
+      /* Have we one data grid with an offset origin? */
+      if ((gptr)&&(gptr->origin_abs)&&((!gptr->next)||(!gptr->next->data))){
+	if (debug) fprintf(stderr,"Shifting atoms by (%f,%f,%f) A\n",
+			   -gptr->origin_abs[0],-gptr->origin_abs[1],
+			   -gptr->origin_abs[2]);
+	for(i=0;i<m->n;i++)
+	  for(k=0;k<3;k++)
+	    m->atoms[i].abs[k]-=gptr->origin_abs[k];
+	addfrac(m->atoms,m->n,c->recip);
+	free(gptr->origin_abs);
+	gptr->origin_abs=NULL;
+	return;
+      } /* General case */
+      else{
+	for(k=0;k<3;k++){
+	  amin=1000;
+	  amax=-1000;
+	  for(i=0;i<m->n;i++){
+	    if (m->atoms[i].frac[k]>amax)
+	      amax=m->atoms[i].frac[k];
+	    if (m->atoms[i].frac[k]<amin)
+	      amin=m->atoms[i].frac[k];
+	  }
+	  ashift[k]=0.5-0.5*(amax+amin);
 	}
-	ashift[k]=0.5-0.5*(amax+amin);
       }
     }
     if (!gptr->data){

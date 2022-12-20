@@ -105,6 +105,10 @@ void m1fft(double* a, int n, int str, int dir, int rep, int rstr){
   nf=nfactors(n);
   factors=malloc(nf*sizeof(int));
   powers=malloc(nf*sizeof(int));
+  if ((!factors)||(!powers)){
+    fprintf(stderr,"Malloc error in FFT");
+    exit(1);
+  }
   factor(n,factors,powers);
 
   for(f=0;f<nf;f++){

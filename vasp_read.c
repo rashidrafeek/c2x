@@ -324,11 +324,7 @@ void vasp_read(FILE* infile, char *filename, struct unit_cell *c,
   /* If we wanted the charge density, now rescue onto a grid */
 
   if ((locpot)||(flags&CHDEN)){
-    if (gptr->next) gptr=gptr->next;
-    gptr->next=malloc(sizeof(struct grid));
-    if (!gptr->next) error_exit("Malloc error for struct grid");
-    gptr->next->next=NULL;
-    gptr->next->data=NULL;
+    gptr=grid_new(gptr);
     
     if(!(gptr->data=malloc(isize*sizeof(double))))
       error_exit("Malloc error in vasp_read for grid data");
@@ -439,11 +435,7 @@ void vasp_read(FILE* infile, char *filename, struct unit_cell *c,
         (ffts[1]==fft[1])&&
         (ffts[2]==fft[2])){
       if (debug) fprintf(stderr,"Spin density found\n");
-      if (gptr->next) gptr=gptr->next;
-      gptr->next=malloc(sizeof(struct grid));
-      if (!gptr->next) error_exit("Malloc error for struct grid");
-      gptr->next->next=NULL;
-      gptr->next->data=NULL;
+      gptr=grid_new(gptr);
 
       isize=fft[0]*fft[1]*fft[2];
       if(!(gptr->data=malloc(isize*sizeof(double))))
@@ -596,7 +588,7 @@ int vasp_grid_fill(int *pwgrid, double recip[3][3], double kpt[3],
 void vasp_psi_read(FILE* infile, char *filename, struct unit_cell *c,
                    struct contents *m, struct kpts *k, struct grid *gptr,
                    struct es *elect, int *i_grid){
-  int i,j,ns,tmp,nb,ik;
+  int i,j,ns,tmp,nb,ik,ii;
   int nspins,reclen,nkpts,nbands,nplwv,*pwgrid,fft[3];
   int gamma,wt_warn,khdr_len,okay;
   double junk,version,ecut,kpt[3];
@@ -656,6 +648,9 @@ void vasp_psi_read(FILE* infile, char *filename, struct unit_cell *c,
   fread(&junk,8,1,infile);
   nbands=junk;
 
+  if (debug>1) fprintf(stderr,"nkpts=%d, nbands=%d, nspins=%d\n",
+                       nkpts,nbands,nspins);
+  
   tmp=(3*nbands+4)*8;
   if (tmp>reclen){
     if (version==53300){
@@ -687,6 +682,7 @@ void vasp_psi_read(FILE* infile, char *filename, struct unit_cell *c,
     free(c->basis); /* DP version in WAVECAR should be more accurate */
   }
   c->basis=malloc(9*sizeof(double));
+  if (!c->basis) error_exit("Malloc error for basis");
   for(i=0;i<3;i++)
     for(j=0;j<3;j++)
       c->basis[i][j]=basis[i][j];
@@ -777,6 +773,13 @@ void vasp_psi_read(FILE* infile, char *filename, struct unit_cell *c,
             for(i=0;i<3;i++) k->kpts[ik].frac[i]=kpt[i]=0;
             if (debug) fprintf(stderr,"Gamma point storage\n");
           }
+          else if ((nplwv==2*tmp)&&(nspins==1)){
+            if (elect->nspinors==1){
+              elect->nspinors=2;
+              if (debug) fprintf(stderr,"Spinor wavefunction detected\n");
+            }
+            for(ii=0;ii<3*(nplwv/2);ii++) pwgrid[ii+3*(nplwv/2)]=pwgrid[ii];
+          }
           else{
             fprintf(stderr,"Unexpected number of plane wave components: "
                     "skipping kpt %d (%.6f,%.6f,%.6f)\n",ik+1,
@@ -801,9 +804,18 @@ void vasp_psi_read(FILE* infile, char *filename, struct unit_cell *c,
             for(i=0;i<2*nplwv;i++)
               psi[i]=psi_float[i];
             free(psi_float);
-            
-            band_process(psi,fft,pwgrid,nplwv,gamma,c,
-                         &gptr,elect,k,m,ik,0,ns,nb,i_grid);
+
+	    if ((flags&GCOEFF)&&(elect->nspinors==2)){
+		band_process(psi,fft,pwgrid,nplwv,gamma,c,
+			     &gptr,elect,k,m,ik,-1,ns,nb,i_grid);
+	    }
+	    else{
+	      for(ii=0;ii<elect->nspinors;ii++){
+		tmp=nplwv/elect->nspinors;
+		band_process(psi+2*ii*tmp,fft,pwgrid,nplwv,gamma,c,
+			     &gptr,elect,k,m,ik,ii,ns,nb,i_grid);
+	      }
+	    }
 
             free(psi);
 
@@ -1055,6 +1067,7 @@ void vasp_potcar_read(FILE *infile, struct unit_cell *c, struct contents *m,
       if(sscanf(p," ZVAL = %lf",&dtmp)==1){
 	if (i>=nspec){
 	  fprintf(stderr,"Unexpected number of ZVAL entries in POTCAR\n");
+	  free(ch);
 	  return;
 	}
 	ch[i++]=dtmp;
@@ -1062,6 +1075,12 @@ void vasp_potcar_read(FILE *infile, struct unit_cell *c, struct contents *m,
     }
   }
 
+  if (i!=nspec){
+    fprintf(stderr,"Too few ZVAL entries in POTCAR\n");
+    free(ch);
+    return;
+  }
+  
   k=0;
   for(i=0;i<nspec;i++){
     for(j=0;j<nionsp[i];j++){

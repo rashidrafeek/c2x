@@ -37,6 +37,7 @@ void fdf_write(FILE* fdf, char* filename, struct unit_cell *c,
                struct grid *g, struct es *e){
   int i,j,nspec;
   double dtmp;
+  char *fmt;
 
   fprintf(fdf,"# fdf file created by c2x\n");
 
@@ -48,8 +49,12 @@ void fdf_write(FILE* fdf, char* filename, struct unit_cell *c,
   
   fprintf(fdf,"LatticeConstant  1.0 Ang\n");
 
+  if (flags&HIPREC)
+    fmt="% 19.15f % 19.15f % 19.15f\n";
+  else
+    fmt="% 11.7f % 11.7f % 11.7f\n";
   fprintf(fdf,"%%block LatticeVectors\n");
-  for(i=0;i<3;i++)fprintf(fdf,"%f %f %f\n",c->basis[i][0],
+  for(i=0;i<3;i++)fprintf(fdf,fmt,c->basis[i][0],
         c->basis[i][1],c->basis[i][2]);
   fprintf(fdf,"%%endblock LatticeVectors\n\n");
 
@@ -68,11 +73,15 @@ void fdf_write(FILE* fdf, char* filename, struct unit_cell *c,
 
   fprintf(fdf,"AtomicCoordinatesFormat Fractional\n");
     /* Write out atoms, sorted by species */
+  if (flags&HIPREC)
+    fmt=" % .15f % .15f % .15f %d\n";
+  else
+    fmt=" % .9f % .9f % .9f %d\n";
   fprintf(fdf,"%%block AtomicCoordinatesAndAtomicSpecies\n");
   for(i=0;i<nspec;i++)
     for(j=0;j<m->n;j++)
       if (m->atoms[j].atno==m->spec[i].atno)
-        fprintf(fdf," %f %f %f %d\n",m->atoms[j].frac[0],
+        fprintf(fdf,fmt,m->atoms[j].frac[0],
                 m->atoms[j].frac[1],m->atoms[j].frac[2],i+1);
   fprintf(fdf,"%%endblock AtomicCoordinatesAndAtomicSpecies\n");
 
@@ -106,17 +115,17 @@ void fdf_write(FILE* fdf, char* filename, struct unit_cell *c,
     dtmp=kp->mp->disp[0]*kp->mp->grid[0];
     if ((kp->mp->grid[0]&1)==0) dtmp+=0.5;
     dtmp=fmod(dtmp,1.0);
-    fprintf(fdf,"%f\n",dtmp);
+    fprintf(fdf,"%.8f\n",dtmp);
     fprintf(fdf,"0 %d 0 ",kp->mp->grid[1]);
     dtmp=kp->mp->disp[1]*kp->mp->grid[1];
     if ((kp->mp->grid[1]&1)==0) dtmp+=0.5;
     dtmp=fmod(dtmp,1.0);
-    fprintf(fdf,"%f\n",dtmp);
+    fprintf(fdf,"%.8f\n",dtmp);
     fprintf(fdf,"0 0 %d ",kp->mp->grid[2]);
     dtmp=kp->mp->disp[2]*kp->mp->grid[2];
     if ((kp->mp->grid[2]&1)==0) dtmp+=0.5;
     dtmp=fmod(dtmp,1.0);
-    fprintf(fdf,"%f\n",dtmp);
+    fprintf(fdf,"%.8f\n",dtmp);
     fprintf(fdf,"%%endblock kgrid_Monkhorst_Pack\n");
   }
 

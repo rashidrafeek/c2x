@@ -8,7 +8,7 @@
  */
 
 
-/* Copyright (c) 2007-2020 MJ Rutter 
+/* Copyright (c) 2007-2021 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -70,8 +70,6 @@
 int match(char *s1, char *s2);
 void reverse4(void *data);
 void reverse8(void *data);
-void reverse4n(int *data,int n);
-void reverse8n(double *data,int n);
 static void wave_read(FILE *infile, struct kpts *kp,
                       int gamma, struct grid *g, struct unit_cell *c,
                       struct es *elect, int *i_grid,struct contents *m);
@@ -87,7 +85,7 @@ static double *cr_cell_vol;
 void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
                 struct kpts *kp, struct symmetry *s, struct grid *gptr,
                 struct es *elect, int *i_grid){
-  int tmp;
+  int tmp,okay;
   char head[HEAD_LEN+1];
   char cbuff[CBUFF+1];
   int i,j,k,density,na,fft[3],ion_sym_len,ps_pot_len,ver_maj,ver_min;
@@ -97,10 +95,10 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
   char *ion_sym,*ps_pots;
   double *ion_pos,*ion_force,*ion_vel,*mag_mom,*sym_mat,*sym_disp;
   double *species_charge;
-  double *kpts_pos,*wkpts;
-  int *mp_xyz;
-  int *nkpts;
-  double *mp_off;
+  double *kpts_pos,*wkpts,*bs_kpts_pos,*bs_wkpts;
+  int *mp_xyz,*bs_mp_xyz;
+  int *nkpts,*bs_nkpts;
+  double *mp_off,*bs_mp_off;
   struct grid *gptr2;
   int section;
   char *spin_method;
@@ -116,10 +114,10 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
   ion_pos=ion_force=ion_vel=mag_mom=NULL;
   nsp=nsp_max=nionsp=NULL;
   ps_pots=NULL;
-  kpts_pos=NULL;
-  nkpts=NULL;
-  wkpts=mp_off=NULL;
-  mp_xyz=NULL;
+  kpts_pos=bs_kpts_pos=NULL;
+  nkpts=bs_nkpts=NULL;
+  wkpts=bs_wkpts=mp_off=bs_mp_off=NULL;
+  mp_xyz=bs_mp_xyz=NULL;
   s->tol=NULL;
   nsymops=NULL;
   sym_disp=NULL;
@@ -132,6 +130,7 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
   nspins=1;
   nbands=0;
   c->basis=NULL;
+  conv=1;
 
   if(debug>2) fprintf(stderr,"check_read called with flags=%d\n",flags);
 
@@ -231,10 +230,17 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
 	SCAN8R("KPOINTS",24*(*nkpts),kpts_pos);
 	SCAN8R("KPOINT_WEIGHTS",8*(*nkpts),wkpts);
       }
+      SCAN("NUM_BS_KPOINTS",4,bs_nkpts);
+      if (bs_nkpts){
+	SCAN8R("BS_KPOINTS",24*(*bs_nkpts),bs_kpts_pos);
+	SCAN8R("BS_KPOINT_WEIGHTS",8*(*bs_nkpts),bs_wkpts);
+      }
       SCAN("SYMMETRY_GENERATE",4,s->gen);
       SCAN("SYMMETRY_TOL",8,s->tol);
       SCAN("KPOINT_MP_GRID",12,mp_xyz);
       SCAN("KPOINT_MP_OFF",24,mp_off);
+      SCAN("BS_KPOINT_MP_GRID",12,bs_mp_xyz);
+      SCAN("BS_KPOINT_MP_OFFSET",24,bs_mp_off);
       SCAN("NUM_SYMMETRY_OPERATIONS",4,nsymops);
       if (nsymops){
 	SCAN("SYMMETRY_OPERATIONS",72*(*nsymops),sym_mat);
@@ -506,38 +512,54 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
                then store as real */
             if (debug>2)
               fprintf(stderr,"We think we have found a charge density grid\n");
-
-            if (flags&CHDEN){
-              if (gptr->next) gptr=gptr->next;
-	      gptr->next=malloc(sizeof(struct grid));
-	      if (!gptr->next) error_exit("Malloc error for struct grid");
-	      gptr->next->next=NULL;
-	      gptr->next->data=NULL;
-              gptr->name="Density";
-              for(i=0;i<3;i++) gptr->size[i]=fft[i];
-              gptr->data=malloc(8*fft[0]*fft[1]*fft[2]);
-              if (!gptr->data){
-                fprintf(stderr,"Error allocating density grid\n");
-                exit(1);
-              }
-            } /* End if (flags&CHDEN) */
-            if ((nspins==2)&&(flags&SPINDEN)){
-              gptr2=gptr;
-              if (gptr2->next) gptr2=gptr2->next;
-	      gptr2->next=malloc(sizeof(struct grid));
-	      if (!gptr2->next) error_exit("Malloc error for struct grid");
-	      gptr2->next->next=NULL;
-	      gptr2->next->data=NULL;
-              gptr2->name="Spin";
-              for(i=0;i<3;i++) gptr2->size[i]=fft[i];
-              gptr2->data=malloc(8*fft[0]*fft[1]*fft[2]);
-              if (!gptr2->data){
-                fprintf(stderr,"Error allocating density grid\n");
-                exit(1);
-              }
-            }
+	    if (flags&REPLACE_RHO){
+	      if ((!gptr)||(!gptr->data))
+		error_exit("Cannot replace rho as no grid data read");
+	      okay=1;
+	      for(i=0;i<3;i++)
+		if (gptr->size[i]!=fft[i]) okay=0;
+	      if (!okay){
+		fprintf(stderr,"Cannot replace rho as grids differ.\n");
+		fprintf(stderr,"Read %dx%dx%d, found %dx%dx%d\n",
+			gptr->size[0],gptr->size[1],gptr->size[2],
+			fft[0],fft[1],fft[2]);
+		exit(1);
+	      }
+	      if (nspins!=1)
+		error_exit("Cannot replace density unless nspins=1");
+	      if (debug) fprintf(stderr,"Found density to replace\n");
+	    }
+	    else{
+	      if (flags&CHDEN){
+		gptr=grid_new(gptr);
+		gptr->name="Density";
+		for(i=0;i<3;i++) gptr->size[i]=fft[i];
+		gptr->data=malloc(8*fft[0]*fft[1]*fft[2]);
+		if (!gptr->data){
+		  fprintf(stderr,"Error allocating density grid\n");
+		  exit(1);
+		}
+	      } /* End if (flags&CHDEN) */
+	      if ((nspins==2)&&(flags&SPINDEN)){
+		gptr2=gptr;
+		gptr2=grid_new(gptr2);
+		gptr2->name="Spin";
+		for(i=0;i<3;i++) gptr2->size[i]=fft[i];
+		gptr2->data=malloc(8*fft[0]*fft[1]*fft[2]);
+		if (!gptr2->data){
+		  fprintf(stderr,"Error allocating density grid\n");
+		  exit(1);
+		}
+	      }
+	    }
             if ((flags&CHDEN)||(flags&SPINDEN)){
+	      /* Columns are stored as complex, not real */
               column=malloc(16*fft[2]);
+	      if (!column) error_exit("malloc error for FFT column");
+	      if (flags&REPLACE_RHO){
+		conv=1;
+		if ((!(flags&RAW))&&(cr_cell_vol)) conv=*cr_cell_vol;
+	      }
               while(tmp==(nspins*16*fft[2]+8)){
                 fread(&i,4,1,infile);
                 if (endian) reverse4(&i);
@@ -548,10 +570,20 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
 		  error_exit("Unexpected FFT column in density\n");
 		}
                 if (flags&CHDEN){
-                  fread(column,16*fft[2],1,infile);
-                  dptr1=gptr->data+((i-1)*fft[1]+(j-1))*fft[2];
-                  dptr2=column;
-                  for(k=0;k<fft[2];k++){*dptr1++=*dptr2;dptr2+=2;}
+		  dptr1=gptr->data+((i-1)*fft[1]+(j-1))*fft[2];
+		  dptr2=column;
+		  if (flags&REPLACE_RHO){
+		    for(k=0;k<fft[2];k++){
+		      *(dptr2++)=*(dptr1++)*conv;
+		      *(dptr2++)=0;
+		    }
+		    if (endian) reverse8n(column,16*fft[2]);
+		    fwrite(column,16*fft[2],1,infile);
+		  }
+		  else{
+		    fread(column,16*fft[2],1,infile);
+		    for(k=0;k<fft[2];k++){*dptr1++=*dptr2;dptr2+=2;}
+		  }
                 }
                 else fseek(infile,16*fft[2],SEEK_CUR);
                 if (nspins==2){
@@ -570,6 +602,10 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
                 if (endian) reverse4(&tmp);
               } /* end while(tmp==(spins... ) */
               free(column);
+	      if (flags&REPLACE_RHO){
+		fprintf(stderr,"Charge density replaced\n");
+		exit(0);
+	      }
               fseek(infile,-4,SEEK_CUR);
               /* Correct endianness */
               if (endian){
@@ -631,20 +667,33 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
     }
   }
 
-#if 0
-  /* Rescue k-points into sane structure */
-  if ((kpts_pos)&&(wkpts)){
-    if(!(kp->kpts=malloc((*nkpts)*sizeof(struct atom))))
-      error_exit("Malloc error for kpts");
-    for(i=0;i<*nkpts;i++){
-      for(j=0;j<3;j++) kp->kpts[i].frac[j]=kpts_pos[3*i+j];
-      kp->kpts[i].wt=wkpts[i];
+  /* Rescue BS k-points into sane structure */
+  if ((bs_kpts_pos)&&(bs_wkpts)){
+    if(!(kp->bs_kpts=malloc((*bs_nkpts)*sizeof(struct atom))))
+      error_exit("Malloc error for BS kpts");
+    for(i=0;i<*bs_nkpts;i++){
+      for(j=0;j<3;j++) kp->bs_kpts[i].frac[j]=bs_kpts_pos[3*i+j];
+      kp->bs_kpts[i].wt=bs_wkpts[i];
     }
-    kp->n=*nkpts;
-    free(wkpts);
-    free(kpts_pos);
+    kp->bs_n=*bs_nkpts;
+    free(bs_wkpts);
+    free(bs_kpts_pos);
+    /* These are meaningful only if they differ from the SCF kpoints */
+    if (kp->bs_n==kp->n){
+      j=1;
+      for(i=0;i<kp->n;i++)
+	if ((kp->kpts[i].frac[0]!=kp->kpts[i].frac[0])||
+	    (kp->kpts[i].frac[1]!=kp->kpts[i].frac[1])||
+	    (kp->kpts[i].frac[2]!=kp->kpts[i].frac[2])||
+	    (kp->kpts[i].wt!=kp->kpts[i].wt)) j=0;
+      if (j){
+	kp->bs_n=0;
+	free(kp->bs_kpts);
+	kp->bs_kpts=NULL;
+      }
+    }
   }
-#endif
+
   
   if((mp_xyz)&&(mp_off)&&(mp_xyz[0])&&(mp_xyz[1])&&(mp_xyz[2])){
     if(!(kp->mp=malloc(sizeof(struct mp_grid))))
@@ -659,6 +708,34 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
     kp->mp->disp[2]=mp_off[2];
     free(mp_off);
     free(mp_xyz);
+  }
+
+
+  if((bs_mp_xyz)&&(bs_mp_off)&&(bs_mp_xyz[0])&&(bs_mp_xyz[1])&&(bs_mp_xyz[2])){
+    /* Tests for zero are valid before endian reversal */
+    if (endian) {reverse4n(bs_mp_xyz,3);reverse8n(bs_mp_off,3);}
+    /* This grid is meanful only if it differs from the standard one */
+    j=1;
+    if (kp->mp){
+      for(i=0;i<3;i++)
+	if (bs_mp_xyz[i]!=kp->mp->grid[i]) j=0;
+      for(i=0;i<3;i++)
+	if (bs_mp_off[i]!=kp->mp->disp[i]) j=0;
+    }
+    else
+      j=0;
+    if (j==0){
+      if(!(kp->bs_mp=malloc(sizeof(struct mp_grid))))
+        error_exit("Malloc error for mp");
+      kp->bs_mp->grid[0]=bs_mp_xyz[0];
+      kp->bs_mp->grid[1]=bs_mp_xyz[1];
+      kp->bs_mp->grid[2]=bs_mp_xyz[2];
+      kp->bs_mp->disp[0]=bs_mp_off[0];
+      kp->bs_mp->disp[1]=bs_mp_off[1];
+      kp->bs_mp->disp[2]=bs_mp_off[2];
+    }
+    free(bs_mp_off);
+    free(bs_mp_xyz);
   }
 
 
@@ -694,13 +771,16 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
     for(i=0;i<s->n;i++){
       /* Translations are relative */
       s->ops[i].tr=malloc(3*sizeof(double));
+      /* And sometimes have fractional co-ords of 0.999... in place of 0 */
+      for(j=0;j<3;j++)
+	if (aeq(fabs(sym_disp[3*i+j]),1.0)) sym_disp[3*i+j]=0;
       for(j=0;j<3;j++) s->ops[i].tr[j]=sym_disp[3*i]*c->basis[0][j]+
 			 sym_disp[3*i+1]*c->basis[1][j]+
 			 sym_disp[3*i+2]*c->basis[2][j];
-      /* But rotations are absolute */
+      /* Rotations are absolute, but need transposing */
       for(j=0;j<3;j++)
 	for(k=0;k<3;k++)
-	  s->ops[i].mat[j][k]=sym_mat[9*i+3*j+k];
+	  s->ops[i].mat[j][k]=sym_mat[9*i+j+3*k];
     }
     free(sym_disp);
     free(sym_mat);
@@ -1208,6 +1288,7 @@ static void wave_read(FILE *infile, struct kpts *kp,
     g=g->next;
     g->data=NULL;
     g->next=NULL;
+    g->origin_abs=NULL;
   }    
   if (pwgrid) free(pwgrid);
   if (pwg2)   free(pwg2);

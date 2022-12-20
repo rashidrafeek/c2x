@@ -124,16 +124,16 @@ void elk_read(FILE* infile, struct unit_cell *c, struct contents *m,
       if (n!=3) error_exit("error parsing ngridk");
     }
     else if (!strcasecmp(line,"vkloff")){
-      vkloff=malloc(3*sizeof(int));
-      if (!vkloff) error_exit("malloc error for ngridk");
+      vkloff=malloc(3*sizeof(double));
+      if (!vkloff) error_exit("malloc error for vkloff");
       if (!elk_readline(line,LINE_SIZE,infile))
-	error_exit("EOF reading ngridk");
+	error_exit("EOF reading vkloff");
       n=sscanf(line,"%lf %lf %lf",vkloff,vkloff+1,vkloff+2);
       if (n!=3) error_exit("error parsing vkloff");
     }
     else if (!strcasecmp(line,"sppath")){
       if (!elk_readline(line,LINE_SIZE,infile))
-	error_exit("EOF reading ngridk");
+	error_exit("EOF reading sppath");
       dict_strcat(m->dict,"Elk_sppath",line);
     }
   }
@@ -157,8 +157,10 @@ void elk_read(FILE* infile, struct unit_cell *c, struct contents *m,
       else
 	k->mp->disp[i]=0.5/ngridk[i];
     if (vkloff){
-      for(i=0;i<3;i++)
-	k->mp->disp[i]=fmod(k->mp->disp[i]+vkloff[i],1.0/ngridk[i]);
+      for(i=0;i<3;i++){
+	k->mp->disp[i]=fmod(k->mp->disp[i]+vkloff[i]/ngridk[i],1.0/ngridk[i]);
+	if (aeq(k->mp->disp[i],1.0/ngridk[i])) k->mp->disp[i]=0;
+      }
       free(vkloff);
     }
     free(ngridk);
@@ -179,11 +181,7 @@ void elk3d_read(FILE* infile, struct unit_cell *c, struct contents *m,
   if (sscanf(line,"%d %d %d",&ngx,&ngy,&ngz)!=3)
     error_exit("failed to read grid from Elk 3D file");
 
-  if (gptr->next) gptr=gptr->next;
-  gptr->next=malloc(sizeof(struct grid));
-  if (!gptr->next) error_exit("Malloc error for struct grid");
-  gptr->next->next=NULL;
-  gptr->next->data=NULL;
+  gptr=grid_new(gptr);
 
   gptr->size[0]=ngx;
   gptr->size[1]=ngy;

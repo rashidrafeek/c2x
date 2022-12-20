@@ -126,8 +126,14 @@ void xsf_write(FILE* outfile, struct unit_cell *c, struct contents *m,
     y=m->atoms[i].abs[1];
     z=m->atoms[i].abs[2];
     if (m->forces)
-      fprintf(outfile,fmtd6f,m->atoms[i].atno,x,y,z,
-              m->atoms[i].force[0],m->atoms[i].force[1],m->atoms[i].force[2]);
+      if (flags&AU) /* Use Ha/A, as specified by .xsf specification */
+	fprintf(outfile,fmtd6f,m->atoms[i].atno,x,y,z,
+		m->atoms[i].force[0]/H_eV,m->atoms[i].force[1]/H_eV,
+		m->atoms[i].force[2]/H_eV);
+      else
+	fprintf(outfile,fmtd6f,m->atoms[i].atno,x,y,z,
+		m->atoms[i].force[0],m->atoms[i].force[1],
+		m->atoms[i].force[2]);
     else
       fprintf(outfile,fmtd3f,m->atoms[i].atno,x,y,z);
   }

@@ -83,6 +83,7 @@ void primitive(struct unit_cell *c, struct contents *m, double vfinal[3][3]){
   if (nrare==1) return;
 
   lattice_vecs=malloc(nrare*sizeof(int));
+  if (!lattice_vecs) error_exit("malloc error for lattice_vecs");
   nlattice_vecs=0;
 
   for(i=0;i<m->n;i++){
@@ -159,6 +160,7 @@ void primitive(struct unit_cell *c, struct contents *m, double vfinal[3][3]){
     /* Form array of lattice vecs in absolute co-ords */
   
     lv=malloc((3+nlattice_vecs)*sizeof(struct vector));
+    if (!lv) error_exit("malloc error for lvectors");
     for(i=0;i<nlattice_vecs;i++){
       for(j=0;j<3;j++){
         lv[i].v[j]=0;

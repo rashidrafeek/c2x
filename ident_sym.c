@@ -1,4 +1,4 @@
-/* Copyright (c) 2013 -- 2017 MJ Rutter 
+/* Copyright (c) 2013 -- 2021 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -200,14 +200,21 @@ void equiv_read(struct sym_op *s, struct unit_cell *c, char *line){
 }
 
 void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
-  int i,j,inv,mult,screw;
+  int i,j,inv,mult,screw,glide;
   double m[3][3];
-  double a[3],af[3],off[3];
+  double a[3],af[3],off[3],glide_tr[3];
   double v[3],v2[3];
   double det,angle,x;
+#if 0
+  struct atom atm;
+  struct unit_cell scell;
+  double sreal[3][3];
 
+  scell.basis=sreal; /* avoid a malloc */
+#endif  
   inv=0;
   screw=0;
+  glide=0;
   for(i=0;i<3;i++) off[i]=0;
   for(i=0;i<3;i++)
     for(j=0;j<3;j++)
@@ -270,7 +277,7 @@ void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
     if (aeq(vmod2(v),0)) vcross(m[2],m[0],v);
     if (aeq(vmod2(v),0)){
       fprintf(stderr,"Surprise! 1\n");
-      fprintf(out,"(Error)\n");
+      fprintf(out,"(Error in ident_sym)\n");
       return;
     }
   }
@@ -303,15 +310,16 @@ void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
 	x/=vmod2(a);  /* dot with unit vector parallel to axis, then divide by
 		       * repeat length in that direction. Hence no sqrt. */
 	for(i=0;i<3;i++) v[i]-=x*a[i];
-        for (screw=1;screw<=mult;screw++)
-          if(aeq(x*screw,floor(x*screw+0.5))) break;
-        if (screw>mult){
+        if (x<0) x+=1;
+        screw=x*mult+0.5;
+        if (screw==mult) screw=0;
+        if ((screw)&&((screw>mult)||(!aeq(x*mult,screw)))){
           screw=0;
-	  fprintf(stderr,"Screw problem, x=%f mult=%d\n",x,mult);
+	  fprintf(stderr,"Screw problem, x=%f mult=%d screw=%d\n",x,mult,screw);
 	  fprintf(stderr,"Axis (%f,%f,%f) Disp (%f,%f,%f)\n",
 		  a[0],a[1],a[2],s->tr[0],s->tr[1],s->tr[2]);
-          fprintf(stderr,"Is (%f,%f,%f) a lattice vector?\n",
-                  mult*x*a[0],mult*x*a[1],mult*x*a[2]);
+          if (screw>mult) fprintf(stderr,"Is (%f,%f,%f) a lattice vector?\n",
+				  mult*x*a[0],mult*x*a[1],mult*x*a[2]);
         }
       }
     }
@@ -321,8 +329,27 @@ void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
 	for(i=0;i<3;i++) off[i]=0.5*v[i];
       }
       else if((inv==1)&&(aeq(angle,180))){ /* A mirror -- two evals are one */
-	for(i=0;i<3;i++) off[i]=0.5*v[i];  /* Hmmm. Should take only bit
-					    * parallel to a */
+	/* split into parallel and perpendicular to axis parts */
+	x=0;
+	for(i=0;i<3;i++) x+=v[i]*a[i];
+	x=x/vmod2(a);
+	for(i=0;i<3;i++) {
+	  v2[i]=v[i]-x*a[i];
+	  off[i]=x*a[i];
+	}
+	/* Offset is half translation parallel to axis */
+	for(i=0;i<3;i++) off[i]=0.5*off[i];
+	/* Convert glide vector to fractional co-ords */
+	for(i=0;i<3;i++){
+	  glide_tr[i]=v2[0]*c->recip[i][0]+v2[1]*c->recip[i][1]+
+	    v2[2]*c->recip[i][2];
+	  glide_tr[i]=fmod(glide_tr[i],1);
+	  if (glide_tr[i]<-0.5+tol) glide_tr[i]+=1;
+	  if (glide_tr[i]>1-tol) glide_tr[i]=0;
+	  if (fabs(glide_tr[i])<tol) glide_tr[i]=0;
+	}
+	for(i=0;i<3;i++)
+	  if (!aeq(glide_tr[i],0)) glide=1;
       }
       else if (aeq(angle,0)){ /* A pure translation */
 	for(i=0;i<3;i++) off[i]=v[i];
@@ -332,18 +359,20 @@ void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
 	  for(j=0;j<3;j++)
 	    m[i][j]=-s->mat[i][j];
 	for(i=0;i<3;i++) m[i][i]+=1.0;
-	/* We now have 1-R, and the translation is we have is the result
+	/* We now have 1-R, and the translation we have is the result
          * of (1-R)t, where t is the translation we want. Unfortunately,
          * if R is a proper rotation, it has an evalue of 1, so 1-R
          * has a zero evalue and is uninvertable. Fix this by adding a matrix
 	 * with two zero evals, and one non-zero eval whose evec is along
 	 * the rotation axis. This squashes the zero evalue, and leaves
-	 * the others and their evectors alone.
+	 * the others and their evectors alone. For added points, ensure
+         * that the evalue added is one.
 	 */
 	if (inv==0){
+	  x=a[0]*a[0]+a[1]*a[1]+a[2]*a[2];
 	  for(i=0;i<3;i++)
 	    for(j=0;j<3;j++)
-	      m[i][j]+=a[i]*a[j];
+	      m[i][j]+=a[i]*a[j]/x;
 	}
 
 	if(minvert(m)){
@@ -362,6 +391,24 @@ void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
 	}
 	for(i=0;i<3;i++)
 	  off[i]=m[i][0]*v[0]+m[i][1]*v[1]+m[i][2]*v[2];
+#if 0
+	/* Should we reduce this vector? */
+	for(i=0;i<3;i++)
+	  for(j=0;j<3;j++)
+	    scell.basis[i][j]=m[j][0]*c->basis[i][0]+
+	      m[j][1]*c->basis[i][1]+m[j][2]*c->basis[i][2];
+	real2rec(&scell);
+	init_atoms(&atm,1);
+	for(i=0;i<3;i++) atm.abs[i]=off[i];
+	addfrac(&atm,1,scell.recip);
+	/*
+	fprintf(stderr,"Alt0=%f %f %f\n",atm.frac[0],atm.frac[1],atm.frac[2]);
+	*/
+	reduce_cell_tol(&atm,1,scell.basis,tol);
+	for(i=0;i<3;i++) if (atm.frac[i]>0.5) atm.frac[i]-=1;
+	addabs(&atm,1,scell.basis);
+	for(i=0;i<3;i++) off[i]=atm.abs[i];
+#endif 
       }
     }
   }
@@ -370,8 +417,10 @@ void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
   for(i=0;i<3;i++){
     v[i]=off[0]*c->recip[i][0]+off[1]*c->recip[i][1]+off[2]*c->recip[i][2];
     v[i]=fmod(v[i],1);
-    if (v[i]<0) v[i]+=1;
+    if (v[i]<-tol) v[i]+=1;
     if (v[i]>1-tol) v[i]=0;
+    if (fabs(v[i])<tol) v[i]=0;
+    if (fabs(af[i])<tol) af[i]=0;
   }
 
   if (mult==1){
@@ -389,6 +438,23 @@ void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
   if (screw)
     fprintf(out,"%d_%d axis along (%6.3f,%6.3f,%6.3f)",mult,screw,
 	    af[0],af[1],af[2]);
+  else if (mult==-2){
+    if (glide){
+      fprintf(out,"glide plane (%6.3f,%6.3f,%6.3f)",
+	      af[0],af[1],af[2]);
+      fprintf(out," offset (%g,%g,%g)",
+	      v[0],v[1],v[2]);
+      fprintf(out," glide (%.4g,%.4g,%.4g)\n",glide_tr[0],glide_tr[1],
+	    glide_tr[2]);
+    }
+    else{
+      fprintf(out,"mirror plane (%6.3f,%6.3f,%6.3f)",
+	      af[0],af[1],af[2]);
+      fprintf(out," offset (%g,%g,%g)\n",
+	      v[0],v[1],v[2]);
+    }
+    return;
+  }
   else
     fprintf(out,"%2d  axis along (%6.3f,%6.3f,%6.3f)",mult,
 	    af[0],af[1],af[2]);
@@ -397,6 +463,8 @@ void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
     fprintf(out," through (0,0,0)\n");
   else
     fprintf(out," through (%f,%f,%f)\n",v[0],v[1],v[2]);
+
+  
 }
 
 void mpr(double m[3][3]){

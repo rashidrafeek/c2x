@@ -7,7 +7,7 @@
 
 #include "c2xsf.h"
 
-#define LINE_SIZE 100
+#define LINE_SIZE 200
 void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
                struct kpts *kp, struct symmetry *s);
 
@@ -187,17 +187,58 @@ static void siesta_bands_read(FILE* infile, struct unit_cell *c,
   int nbands,nspins,nkpts;
   int ik,nb,is,off,i,j;
   char buffer[LINE_SIZE+1],*cptr,*newfile;
-  double dtmp;
+  double dtmp,path;
   FILE *f;
   struct kpts kdummy;
-  
+
   if (debug) fprintf(stderr,"Reading Siesta bands file\n");
   
   if (!fgets(buffer,LINE_SIZE,infile)) error_exit("Unexpected EOF");
-
+  dtmp=0;
+  sscanf(buffer,"%lf",&dtmp);
+  if (dtmp==0)
+    if (!fgets(buffer,LINE_SIZE,infile)) error_exit("Unexpected EOF");
+  
   if (!fgets(buffer,LINE_SIZE,infile)) error_exit("Unexpected EOF");
   if (sscanf(buffer,"%d %d %d",&nbands,&nspins,&nkpts)!=3)
     error_exit("Error parsing third line");
+
+  if (dtmp==0){
+    fprintf(stderr,"Siesta bands file contains lines\n");
+    e->path_eval=malloc(nbands*nspins*nkpts*sizeof(double));
+    e->path_nbands=nbands;
+    e->path_kpt=malloc(sizeof(struct kpts));
+    if (!e->path_kpt) error_exit("malloc error for kpts");
+    init_kpts(e->path_kpt);
+    e->path_kpt->n=nkpts;
+    e->nspins=nspins;
+    if (!e->path_eval) error_exit("malloc error for evals");
+
+    path=-1;
+    for(ik=0;ik<nkpts;ik++){
+      if (!fgets(buffer,LINE_SIZE,infile)) error_exit("Unexpected EOF");
+      if (sscanf(buffer,"%lf %n",&dtmp,&off)!=1)
+	error_exit("parse error for kpt");
+      if (dtmp<path)
+	error_exit("path moves backwards");
+      path=dtmp;
+      cptr=buffer+off;
+      for(nb=0;nb<nbands;nb++){
+	for(is=0;is<nspins;is++){
+	  if (sscanf(cptr,"%lf%n",&dtmp,&off)!=1){
+	    if (!fgets(buffer,LINE_SIZE,infile)) error_exit("Unexpected EOF");
+	    cptr=buffer;
+	    if (sscanf(cptr,"%lf%n",&dtmp,&off)!=1) error_exit("Parse error");
+	  }
+	  e->path_eval[nb+nbands*is+nbands*nspins*ik]=dtmp;
+	  cptr+=off;
+	}
+      }
+    }
+    if (debug) fprintf(stderr,"Read %d bands, %d spins, %d kpts\n",
+		       nbands,nspins,nkpts);
+    return;
+  }
 
   e->eval=malloc(nbands*nspins*nkpts*sizeof(double));
   e->nbands=nbands;
@@ -205,23 +246,23 @@ static void siesta_bands_read(FILE* infile, struct unit_cell *c,
   if (!e->eval) error_exit("malloc error for evals");
   k->n=nkpts;
   k->kpts=malloc(nkpts*sizeof(struct atom));
-  if (!e->eval) error_exit("malloc error for kpoints");
+  if (!k->kpts) error_exit("malloc error for kpoints");
   
   for(ik=0;ik<nkpts;ik++){
     if (!fgets(buffer,LINE_SIZE,infile)) error_exit("Unexpected EOF");
     if (sscanf(buffer,"%lf %lf %lf %n",k->kpts[ik].abs,k->kpts[ik].abs+1,
-               k->kpts[ik].abs+2,&off)!=3)
+	       k->kpts[ik].abs+2,&off)!=3)
       error_exit("parse error for kpt");
     cptr=buffer+off;
     for(nb=0;nb<nbands;nb++){
       for(is=0;is<nspins;is++){
-        if (sscanf(cptr,"%lf%n",&dtmp,&off)!=1){
-          if (!fgets(buffer,LINE_SIZE,infile)) error_exit("Unexpected EOF");
-          cptr=buffer;
-          if (sscanf(cptr,"%lf%n",&dtmp,&off)!=1) error_exit("Parse error");
-        }
-        e->eval[nb+nbands*is+nbands*nspins*ik]=dtmp;
-        cptr+=off;
+	if (sscanf(cptr,"%lf%n",&dtmp,&off)!=1){
+	  if (!fgets(buffer,LINE_SIZE,infile)) error_exit("Unexpected EOF");
+	  cptr=buffer;
+	  if (sscanf(cptr,"%lf%n",&dtmp,&off)!=1) error_exit("Parse error");
+	}
+	e->eval[nb+nbands*is+nbands*nspins*ik]=dtmp;
+	cptr+=off;
       }
     }
   }

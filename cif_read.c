@@ -84,6 +84,7 @@ void cif_read(FILE* infile, struct unit_cell *c, struct contents *m,
 
     if (scmp(buff,"_struct_title ")||scmp(buff,"_struct.title ")){
       m->title=malloc(strlen(buff+strlen("_struct_title")));
+      if (!m->title) error_exit("malloc error for title");
       strcpy(m->title,buff+strlen("_struct_title")+1);
     }
     else if (scmp(buff,"_cell_length_a ")||scmp(buff,"_cell.length_a "))
@@ -328,6 +329,7 @@ static char* cif_loop(FILE *infile, struct unit_cell *c, struct contents *m,
   }
 
   f=malloc((maxfield+1)*sizeof(int));
+  if (!f) error_exit("malloc error");
   first=1;
 
   while(1){

@@ -5,17 +5,24 @@
 
 #include "c2xsf.h"
 
+static void calc_gap(int nspins,struct kpts *k,int nbands,
+		     double *eval, int ivb, int use_fermi, double *e_fermi);
+
 void print_basis(double basis[3][3]){
   int i;
   char *fmt;
-  
-  if (flags&HIPREC)
-    fmt="% 19.15f % 19.15f % 19.15f   modulus %19.15f\n";
-  else
-    fmt="% 11.7f % 11.7f % 11.7f   modulus %11.7f\n";
-  for(i=0;i<3;i++)
+
+  if (basis){
+    if (flags&HIPREC)
+      fmt="% 19.15f % 19.15f % 19.15f   modulus %19.15f\n";
+    else
+      fmt="% 11.7f % 11.7f % 11.7f   modulus %11.7f\n";
+    for(i=0;i<3;i++)
       fprintf(stderr,fmt,basis[i][0],basis[i][1],basis[i][2],
               sqrt(vmod2(basis[i])));
+  }
+  else
+    fprintf(stderr,"No basis present\n");
 }
 
 void print_cell(struct unit_cell *c, struct contents *m){
@@ -23,27 +30,33 @@ void print_cell(struct unit_cell *c, struct contents *m){
   char *fmt;
   double abc[6];
 
-  if (flags&HIPREC)
-    fmt="% 19.15f % 19.15f % 19.15f\n";
-  else
-    fmt="% 11.7f % 11.7f % 11.7f\n";
-  fprintf(stderr,"Lattice:\n");
-  print_basis(c->basis);
-  fprintf(stderr,"\n");
-
-  if (flags&HIPREC)
-    fmt="%c=% 19.15f ";
-  else
-    fmt="%c=% 11.7f ";
-  cart2abc(c,NULL,abc,NULL,0);
-  for(i=0;i<3;i++)
-  fprintf(stderr,fmt,'a'+i,abc[i]);
-  if (flags&HIPREC)
-    fmt="\nalpha=% 19.15f beta=% 19.15f gamma=% 19.15f\n";
-  else
-    fmt="\nalpha=% 11.7f beta=% 11.7f gamma=% 11.7f\n";
-  fprintf(stderr,fmt,abc[3],abc[4],abc[5]);
+  if (c->basis){
+    if (flags&HIPREC)
+      fmt="% 19.15f % 19.15f % 19.15f\n";
+    else
+      fmt="% 11.7f % 11.7f % 11.7f\n";
+    fprintf(stderr,"Lattice:\n");
+    print_basis(c->basis);
+    fprintf(stderr,"\n");
     
+    if (flags&HIPREC)
+      fmt="%c=% 19.15f ";
+    else
+      fmt="%c=% 11.7f ";
+    cart2abc(c,NULL,abc,NULL,0);
+    for(i=0;i<3;i++)
+      fprintf(stderr,fmt,'a'+i,abc[i]);
+    if (flags&HIPREC)
+      fmt="\nalpha=% 19.15f beta=% 19.15f gamma=% 19.15f\n";
+    else
+      fmt="\nalpha=% 11.7f beta=% 11.7f gamma=% 11.7f\n";
+    fprintf(stderr,fmt,abc[3],abc[4],abc[5]);
+  }
+  else{
+    fprintf(stderr,"No basis present\n");
+    return;
+  }
+  
   if (m){
     fprintf(stderr,"\nAtomic positions:\n");
     if (flags&HIPREC)
@@ -150,10 +163,40 @@ int band_cmp(const void *ptr1, const void *ptr2){
   
 }
 
+struct band { double energy; double weight;};
+
+static struct band *populate_bands(double *eval, int nbands,
+				   int nbspins, struct kpts *kpt){
+  int i,k,b,nb;
+  double wt;
+  struct band *bands;
+
+  nb=kpt->n*nbspins*nbands;
+  bands=malloc(nb*sizeof(struct band));
+  if (!bands) error_exit("malloc error in calc_fermi");
+
+  i=0;
+  for(k=0;k<kpt->n;k++){
+    if (kpt->kpts) wt=kpt->kpts[k].wt;
+    else wt=1.0/kpt->n;
+    if (nbspins==1) wt*=2;
+    for(b=0;b<nbspins*nbands;b++){
+      bands[i].energy=eval[i];
+      bands[i].weight=wt;
+      i++;
+    }
+  }
+
+  qsort(bands,nb,sizeof(struct band),band_cmp);
+
+  return(bands);
+
+}
+
 double calc_efermi(struct es *elect, struct kpts *kpt, double nel){
-  int k,ns,b,nb,i;
-  double wt,total,fill,ef;
-  struct band { double energy; double weight;} *bands;
+  int nb,i;
+  double total,fill,ef;
+  struct band *bands;
 
   if (!elect->eval){
     fprintf(stderr,"Unable to calculate Fermi level without eigenvalues\n");
@@ -162,24 +205,9 @@ double calc_efermi(struct es *elect, struct kpts *kpt, double nel){
   
   ef=0;
   nb=kpt->n*elect->nbspins*elect->nbands;
-  bands=malloc(nb*sizeof(struct band));
-  if (!bands) error_exit("malloc error in calc_fermi");
 
-  i=0;
-  for(k=0;k<kpt->n;k++){
-    wt=kpt->kpts[k].wt;
-    if (elect->nbspins==1) wt*=2;
-    for(ns=0;ns<elect->nbspins;ns++){
-      for(b=0;b<elect->nbands;b++){
-	bands[i].energy=elect->eval[i];
-	bands[i].weight=wt;
-	i++;
-      }
-    }
-  }
-
-  qsort(bands,nb,sizeof(struct band),band_cmp);
-
+  bands=populate_bands(elect->eval,elect->nbands,elect->nbspins,kpt);
+  
   i=0;
   total=0;
   while((i<nb)&&(total+bands[i].weight<nel)) total+=bands[i++].weight;
@@ -209,8 +237,35 @@ double calc_efermi(struct es *elect, struct kpts *kpt, double nel){
     }
   }
 
+  free(bands);
+  
   return ef;
   
+}
+
+/* This version ignores kpt weights */
+double calc_nel(double *eval, int nbands, int nspins, struct kpts *kpt,
+		double e_fermi){
+  int i;
+  double nel,nb;
+  struct band *bands;
+  
+  nb=kpt->n*nspins*nbands;
+
+  bands=populate_bands(eval,nbands,nspins,kpt);
+
+  i=0;
+  while((bands[i].energy<e_fermi)&&(i<nb)) i++;
+
+  nel=i;
+
+  while((bands[i].energy==e_fermi)&&(i<nb)) {i++; nel+=0.5;}
+  
+  if (nspins==1) nel*=2;
+
+  free(bands);
+  
+  return(nel/kpt->n);
 }
 
 void print_elect(struct es *elect){
@@ -240,104 +295,162 @@ void print_energy(double e){
 }
 
 void print_gap(struct es *elect, struct kpts *kpt, struct contents *m){
-  int ns,i,k,nel,ivb,ind;
-  int vbm_ind,cbm_ind,dgap_ind;
-  double chg,vbm,cbm,dgap;
-
-  chg=0;
-  vbm_ind=cbm_ind=dgap_ind=-1;
+  int i,nel,ivb,use_fermi;
+  double chg;
   
-  if (!elect->eval){
+  chg=0;
+  use_fermi=0;
+  
+  if ((!elect->eval)&&(!elect->path_eval)){
     fprintf(stderr,"Cannot print band gap without eigenvalues\n");
     return;
   }
 
-  if (elect->nel==0){
-    for(i=0;i<m->n;i++)
-      chg+=m->atoms[i].chg;
-    if ((chg)&&(elect->charge)) chg-=*elect->charge;
-    if (chg>0)
-      fprintf(stderr,"Assuming nel=%lf from total ionic charge\n",chg);
+  if ((elect->nel==0)&&(elect->e_fermi)){
+    fprintf(stderr,"Calculating band gap from Fermi level with no knowledge "
+	    "of no of electrons\n");
+    use_fermi=1;
+    ivb=-1;
   }
-  else chg=elect->nel;
+  else{
+    if (elect->nel==0){
+      for(i=0;i<m->n;i++)
+	chg+=m->atoms[i].chg;
+      if ((chg)&&(elect->charge)) chg-=*elect->charge;
+      if (chg>0)
+	fprintf(stderr,"Assuming nel=%lf from total ionic charge\n",chg);
+    }
+    else chg=elect->nel;
   
-  nel=(int)(chg+0.5);
+    nel=(int)(chg+0.5);
 
-  if (nel==0){
-    fprintf(stderr,"Unable to determine number of electrons\n");
-    return;
+    if (nel==0){
+      fprintf(stderr,"Unable to determine number of electrons "
+	      "or Fermi level\n");
+      return;
+    }
+
+    if (fabs(chg-nel)>tol){
+      fprintf(stderr,"Non integer number of electrons\n");
+      return;
+    }
+
+    if (nel&1){
+      fprintf(stderr,"Odd number of electrons, so metallic\n");
+      return;
+    }
+
+    if (debug) fprintf(stderr,"Nel=%d\n",nel);
+
+    ivb=nel/2;
+
   }
 
-  if (fabs(chg-nel)>tol){
-    fprintf(stderr,"Non integer number of electrons\n");
-    return;
+  if (elect->eval){
+    fprintf(stderr,"Band gap from grid\n");
+    calc_gap(elect->nbspins,kpt,elect->nbands,elect->eval,ivb,use_fermi,
+		   elect->e_fermi);
   }
-
-  if (nel&1){
-    fprintf(stderr,"Odd number of electrons, so metallic\n");
-    return;
+  if (elect->path_eval){
+    fprintf(stderr,"Band gap from line\n");
+    calc_gap(elect->nbspins,elect->path_kpt,elect->path_nbands,
+	     elect->path_eval,ivb,use_fermi,elect->e_fermi);
   }
+}
 
-  if (debug) fprintf(stderr,"Nel=%d\n",nel);
+static void calc_gap(int nspins,struct kpts *kpt,int nbands,
+		     double *eval, int ivb, int use_fermi, double *e_fermi){
+  int k,ns,ind;
+  int vbm_ind,cbm_ind,dgap_ind,nel;
+  double vbm,cbm,dgap;
 
-  ivb=nel/2;
-
-  if (ivb+1>elect->nbands){
+  if ((ivb>=0)&&(ivb+1>nbands)){
     fprintf(stderr,"No conduction bands calculated\n");
     return;
   }
+
+  if (debug>1) fprintf(stderr,"Calc gap called %d spins %d bands %d kpts\n",
+		       nspins,nbands,kpt->n);
+
+  if (use_fermi){
+    nel=calc_nel(eval,nbands,nspins,kpt,*e_fermi)+0.5;
+    fprintf(stderr,"Calculated number of electrons %d\n",nel);
+    if (nel&1){
+      fprintf(stderr,"Odd number of electrons, so metallic\n");
+      return;
+    }
+    if (nspins==1) ivb=nel/2;
+    else ivb=nel;
+  }
   
-  for(ns=0;ns<elect->nbspins;ns++){
+  for(ns=0;ns<nspins;ns++){
   
+    vbm_ind=cbm_ind=dgap_ind=-1;
     /* Set to huge values */
     vbm=-1e20;
     cbm=1e20;
     dgap=1e20;
     
     for(k=0;k<kpt->n;k++){
-      ind=k*(elect->nbspins*elect->nbands)+ns*elect->nbands+ivb-1;
-      if (elect->eval[ind]>vbm){
-	vbm=elect->eval[ind];
+      ind=k*nspins*nbands+ns*nbands+ivb-1;
+      if (use_fermi){
+	if ((eval[ind]>*e_fermi)||
+	    (eval[ind+1]<*e_fermi)){
+	  fprintf(stderr,"System is metallic\n");
+	  return;
+	}
+      }
+      if (eval[ind]>vbm){
+	vbm=eval[ind];
 	vbm_ind=k;
       }
-      if (elect->eval[ind+1]<cbm){
-	cbm=elect->eval[ind+1];
+      if (eval[ind+1]<cbm){
+	cbm=eval[ind+1];
 	cbm_ind=k;
       }
-      if (elect->eval[ind+1]-elect->eval[ind]<dgap){
-	dgap=elect->eval[ind+1]-elect->eval[ind];
+      if (eval[ind+1]-eval[ind]<dgap){
+	dgap=eval[ind+1]-eval[ind];
 	dgap_ind=k;
       }
     }
 
-    if (elect->nbspins==2){
+    if (nspins==2){
       if (ns==0) fprintf(stderr,"\nSpin up:\n");
       else fprintf(stderr,"\nSpin down:\n");
     }
 
     fprintf(stderr,"\nValence band maximum:    ");
     print_energy(vbm);
-    fprintf(stderr," at k=(%f,%f,%f)\n",kpt->kpts[vbm_ind].frac[0],
-	    kpt->kpts[vbm_ind].frac[1],kpt->kpts[vbm_ind].frac[2]);
+    if (kpt->kpts)
+      fprintf(stderr," at k=(%f,%f,%f)\n",kpt->kpts[vbm_ind].frac[0],
+	      kpt->kpts[vbm_ind].frac[1],kpt->kpts[vbm_ind].frac[2]);
+    else
+      fprintf(stderr,"\n");
 
 
-    if ((elect->e_fermi)&&(vbm>*elect->e_fermi))
+    if ((e_fermi)&&(vbm>*e_fermi))
       fprintf(stderr,"*** Problem: VMB > E_Fermi\n");
     
     fprintf(stderr,"Conduction band minimum: ");
     print_energy(cbm);
-    fprintf(stderr," at k=(%f,%f,%f)\n",kpt->kpts[cbm_ind].frac[0],
-	    kpt->kpts[cbm_ind].frac[1],kpt->kpts[cbm_ind].frac[2]);
+    if (kpt->kpts)
+      fprintf(stderr," at k=(%f,%f,%f)\n",kpt->kpts[cbm_ind].frac[0],
+	      kpt->kpts[cbm_ind].frac[1],kpt->kpts[cbm_ind].frac[2]);
+    else
+      fprintf(stderr,"\n");
 
-    if ((elect->e_fermi)&&(cbm<*elect->e_fermi))
+    if ((e_fermi)&&(cbm<*e_fermi))
       fprintf(stderr,"*** Problem: CBM < E_Fermi\n");
 
     if (cbm-vbm>0){
       fprintf(stderr,"Direct gap:              ");
       print_energy(dgap);
-    
-      fprintf(stderr," at k=(%f,%f,%f)\n",kpt->kpts[dgap_ind].frac[0],
-	      kpt->kpts[dgap_ind].frac[1],kpt->kpts[dgap_ind].frac[2]);
+
+      if (kpt->kpts)
+	fprintf(stderr," at k=(%f,%f,%f)\n",kpt->kpts[dgap_ind].frac[0],
+		kpt->kpts[dgap_ind].frac[1],kpt->kpts[dgap_ind].frac[2]);
+      else
+	fprintf(stderr,"\n");
 
       if (vbm_ind!=cbm_ind){
 	fprintf(stderr,"Indirect gap:            ");

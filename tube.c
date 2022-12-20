@@ -246,6 +246,7 @@ void tube(struct unit_cell *c, struct contents *m, int rpt[3], double spacing){
   new_basis[2][2]=abc[1];
 
   atoms=malloc(m->n*rep*sizeof(struct atom));
+  if (!atoms) error_exit("malloc error for atoms");
   init_atoms(atoms,m->n*rep);
   
   for(i=0;i<rep;i++){

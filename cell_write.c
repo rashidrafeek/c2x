@@ -260,7 +260,7 @@ void cell_write_common(FILE* outfile, struct unit_cell *c, struct contents *m,
                      struct kpts *k, struct symmetry *s){
   int i,j;
   double v[3],scale;
-  char *fmt1,*fmt2,*fmt3;
+  char *fmt1,*fmt2,*fmt3,*fmt4;
 
   if (m->velocities){
     fprintf(outfile,"\n%%block IONIC_VELOCITIES\n");
@@ -281,11 +281,13 @@ void cell_write_common(FILE* outfile, struct unit_cell *c, struct contents *m,
   fmt1="% 19.15f % 19.15f % 19.15f\n";
   if (flags&HIPREC){
     fmt2="% 19.15f % 19.15f % 19.15f     %19.15f\n";
-    fmt3="KPOINT_MP_OFFSET %.9f %.9f %.9f\n";
+    fmt3="%s %.15g %.15g %.15g\n";
+    fmt4="% 19.15f % 19.15f % 19.15f\n";
   }
   else{
     fmt2="% 13.9f % 13.9f % 13.9f     %12.9f\n";
-    fmt3="KPOINT_MP_OFFSET %.9f %.9f %.9f\n";
+    fmt3="%s %.9g %.9g %.9g\n";
+    fmt4="% 13.9f % 13.9f % 13.9f\n";
   }
 
   if (m->species_misc)
@@ -310,9 +312,10 @@ void cell_write_common(FILE* outfile, struct unit_cell *c, struct contents *m,
         fprintf(outfile,"! ");
         ident_sym(s->ops+i,c,outfile);
       }
+      /* Note transpose on output */
       for(j=0;j<3;j++)
-        fprintf(outfile,fmt1,s->ops[i].mat[j][0],
-                s->ops[i].mat[j][1],s->ops[i].mat[j][2]);
+        fprintf(outfile,fmt1,s->ops[i].mat[0][j],
+                s->ops[i].mat[1][j],s->ops[i].mat[2][j]);
       /* Though the matrix is in cartesian co-ords, the associated
        * translation is expected in fractional co-ords... */
       if (s->ops[i].tr){
@@ -349,7 +352,7 @@ void cell_write_common(FILE* outfile, struct unit_cell *c, struct contents *m,
       }
     }
 
-    fprintf(outfile,fmt3,v[0],v[1],v[2]);
+    fprintf(outfile,fmt3,"KPOINT_MP_OFFSET", v[0],v[1],v[2]);
   }
   else if(k->n) {
     fprintf(outfile,"\n%%block KPOINTS_LIST\n");
@@ -360,5 +363,37 @@ void cell_write_common(FILE* outfile, struct unit_cell *c, struct contents *m,
   }
   else if (k->spacing){
     fprintf(outfile,"\nkpoint_mp_spacing %g\n",*k->spacing);
+  }
+
+  if ((k->bs_mp)&&(k->bs_mp->grid[0]>0)){
+    fprintf(outfile,"\nBS_KPOINT_MP_GRID %d %d %d\n",k->bs_mp->grid[0],
+            k->bs_mp->grid[1],k->bs_mp->grid[2]);
+    fprintf(outfile,fmt3,"BS_KPOINT_MP_OFFSET",k->bs_mp->disp[0],
+	    k->bs_mp->disp[1],k->bs_mp->disp[2]);
+  }
+  else if (k->bs_n){
+    fprintf(outfile,"\n%%block BS_KPOINT_LIST\n");
+    for(i=0;i<k->bs_n;i++)
+      if (k->bs_kpts[i].wt)
+	fprintf(outfile,fmt2,k->bs_kpts[i].frac[0],
+		k->bs_kpts[i].frac[1],k->bs_kpts[i].frac[2],k->bs_kpts[i].wt);
+    else
+	fprintf(outfile,fmt4,k->bs_kpts[i].frac[0],
+		k->bs_kpts[i].frac[1],k->bs_kpts[i].frac[2]);
+    fprintf(outfile,"%%endblock BS_KPOINT_LIST\n");
+  }
+  else if (k->bs_spacing){
+    fprintf(outfile,"\nbs_kpoint_mp_spacing %g\n",*k->bs_spacing);
+  }
+  
+  if (k->path_n){
+    fprintf(outfile,"\n%%block BS_KPOINT_PATH\n");
+    for(i=0;i<k->path_n;i++)
+      fprintf(outfile,fmt4,k->path[i].frac[0],
+              k->path[i].frac[1],k->path[i].frac[2]);
+    fprintf(outfile,"%%endblock BS_KPOINT_PATH\n");
+  }
+  if (k->path_spacing){
+    fprintf(outfile,"\nbs_kpoint_path_spacing %g\n",*k->path_spacing);
   }
 }

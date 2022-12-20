@@ -1,6 +1,23 @@
 /* Calculate Madelung constant and leading term in correction for
- * charged cells */
+ * charged cells. Also calculate quadrupole moment as needed for
+ * 0D charged cell correction (Makov and Payne, PRB 51 4014 (1995))
+ * and 2D charged cell correction (Rutter, Electron Struct (2021)) */
 
+/* Copyright (c) 2019 -- 2021 MJ Rutter 
+ * 
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation, either version 3
+ * of the Licence, or (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see http://www.gnu.org/licenses/
+ */
 
 #include<stdio.h>
 #include<stdlib.h>
@@ -15,7 +32,7 @@ double madelung(struct unit_cell *c){
   int i,j,k,ii,jj,kk,m;
 
   sigma=M_PI*pow(0.7/(c->vol*c->vol),1.0/3.0);
-  fprintf(stderr,"sigma=%f\n",sigma);
+  if (debug>1) fprintf(stderr,"sigma=%f\n",sigma);
 
   /* Real space sum */
 
@@ -220,6 +237,8 @@ void charge_corr(struct unit_cell *c, struct contents *m,
 	    "Unable to correct for charge as no electron density read\n");
     return;
   }
+
+  dict_strcat(m->dict,"dipole_no_charge_warn","");
   
   if (elect->charge) charge=*elect->charge;
   else{ /* Need to calculate charge in cell */
@@ -269,9 +288,9 @@ void charge_corr(struct unit_cell *c, struct contents *m,
 
     quad=quadrupole(c,m,g,ctr);
 
-    fprintf(stderr,"Quadrupole correction: %.6f eV\n",
+    fprintf(stderr,"Quadrupole correction:      %12.6f eV\n",
 	    charge*quad/(6*EPS0*c->vol));
-    fprintf(stderr,"Final corrected energy: %.6f eV\n",
+    fprintf(stderr,"Final corrected energy:     %12.6f eV\n",
 	    *elect->energy+energy-charge*quad/(6*EPS0*c->vol));
   }
   else{  /* 3D to 2D slab correction */

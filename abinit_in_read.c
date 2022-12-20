@@ -5,7 +5,7 @@
  * spread across multiple lines.
  */
 
-/* Copyright (c) 2018-2020 MJ Rutter 
+/* Copyright (c) 2018-2021 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -31,6 +31,7 @@
 #include "c2xsf.h"
 
 #define LINE_SIZE 132  /* Thus says abinit */
+#define SLINE_SIZE 300 /* For Siesta, N.B. SLINE_SIZE >= LINE_SIZE */
 
 static int ab_len_read(char *line, int off, double *data, int n,
 		       FILE* infile);
@@ -40,7 +41,7 @@ static int ab_float_read(char *line, int off, double *data, int n,
 			  FILE* infile);
 static int ab_int_read(char *line, int off, int *data, int n,
 		       FILE* infile);
-static int ab_string_read(char *line, int off, char **str);
+static int ab_string_read(char *line, int off, char **str, FILE* infile);
 static int ab_readline(char *buffer, char **p, FILE* infile);
 
 /* from cif_read */
@@ -83,11 +84,13 @@ void abinit_in_read(FILE* in, struct unit_cell *c, struct contents *m,
   *ptr=0;
 
   files=malloc(sizeof(struct infiles));
-  if (!files) error_exit("Malloc error for files in abinit_in_read");
+  if (!files) error_exit("malloc error for files in abinit_in_read");
   files->f=in;
   files->next=files->last=NULL;
   files->name=NULL;
   files->line=0;
+  files->ret=NULL;
+  files->count=0;
   infile=files->f;
   dir=dict_get(m->dict,"in_dir");
   
@@ -135,18 +138,26 @@ void abinit_in_read(FILE* in, struct unit_cell *c, struct contents *m,
     }
     
     if (!tokenmatch(&ptr,"include")){
-      ptr+=ab_string_read(ptr,0,&p2);
+      ptr+=ab_string_read(ptr,0,&p2,infile);
       include_file(&files,dir,p2);
       if (debug>1) fprintf(stderr,"Now reading %s\n",ptr);
       free(p2);
       infile=files->f;
     }
     else if (!tokenmatch(&ptr,"pp_dirpath")){
-      ptr+=ab_string_read(ptr,0,&p2);
+      ptr+=ab_string_read(ptr,0,&p2,infile);
       dict_add(m->dict,"Abinit_pp_dirpath",p2);
     }
+    else if (!tokenmatch(&ptr,"output_file")){
+      ptr+=ab_string_read(ptr,0,&p2,infile);
+      dict_add(m->dict,"Abinit_output_file",p2);
+    }
+    else if (!tokenmatch(&ptr,"tmpdata_prefix")){
+      ptr+=ab_string_read(ptr,0,&p2,infile);
+      dict_add(m->dict,"Abinit_tmpdata_prefix",p2);
+    }
     else if (!tokenmatch(&ptr,"pseudos")){
-      ptr+=ab_string_read(ptr,0,&p2);
+      ptr+=ab_string_read(ptr,0,&p2,infile);
       dict_add(m->dict,"Abinit_pseudos",p2);
     }
     else if (!tokenmatch(&ptr,"acell")){
@@ -344,7 +355,7 @@ void abinit_in_read(FILE* in, struct unit_cell *c, struct contents *m,
     }
 
     if (!tokenmatch(&ptr,"include")){
-      ptr+=ab_string_read(ptr,0,&p2);
+      ptr+=ab_string_read(ptr,0,&p2,infile);
       include_file(&files,dir,p2);
       if (debug>1) fprintf(stderr,"Now reading %s\n",ptr);
       free(p2);
@@ -425,7 +436,7 @@ void abinit_in_read(FILE* in, struct unit_cell *c, struct contents *m,
 
   /* basis */
   if (!(c->basis=malloc(9*sizeof(double))))
-    error_exit("Malloc error for basis");
+    error_exit("malloc error for basis");
 
   if (rprim)
     for(i=0;i<3;i++)
@@ -555,7 +566,7 @@ void abinit_in_read(FILE* in, struct unit_cell *c, struct contents *m,
     if (!symrel) error_exit("nsym>1 but symrel not found");
     s->n=*nsym;
     s->ops=malloc(s->n*sizeof(struct sym_op));
-    if (!s->ops) error_exit("Malloc error for symmetry ops");
+    if (!s->ops) error_exit("malloc error for symmetry ops");
     for(i=0;i<s->n;i++){
       for(j=0;j<3;j++)
 	for(jj=0;jj<3;jj++)
@@ -564,8 +575,11 @@ void abinit_in_read(FILE* in, struct unit_cell *c, struct contents *m,
       if (tnons){
 	if ((tnons[3*i]!=0)||(tnons[3*i+1]!=0)||(tnons[3*i+2]!=0)){
 	  s->ops[i].tr=malloc(3*sizeof(double));
+	  if (!s->ops[i].tr) error_exit("malloc error for sym disp");
 	  for(j=0;j<3;j++)
-	    s->ops[i].tr[j]=tnons[3*i+j];
+	    s->ops[i].tr[j]=tnons[3*i]*c->basis[0][j]+
+	                    tnons[3*i+1]*c->basis[1][j]+
+                            tnons[3*i+2]*c->basis[2][j];
 	}
       }
     }
@@ -580,6 +594,7 @@ void abinit_in_read(FILE* in, struct unit_cell *c, struct contents *m,
   if ((kptopt)&&(*kptopt==0)){
     if (!nkpt){
       nkpt=malloc(sizeof(int));
+      if (!nkpt) error_exit("malloc error");
       *nkpt=1;
     }
   }
@@ -813,8 +828,8 @@ static int ab_int_read(char *line, int off, int *data, int n,
   return off;
 }
 
-static int ab_string_read(char *line, int off, char **str){
-  char *p1,*p2,*s;
+static int ab_string_read(char *line, int off, char **str, FILE *infile){
+  char *p1,*p2,*s,*s2;
 
   p1=line+off;
   while(isspace(*p1)) p1++;
@@ -823,11 +838,26 @@ static int ab_string_read(char *line, int off, char **str){
   p2=strchr(p1,'"');
   if (!p2) error_exit("Failed to find closing quote for string");
   s=malloc((p2-p1)+1);
-  if (!s) error_exit("Malloc error in string_read");
+  if (!s) error_exit("malloc error in string_read");
   memcpy(s,p1,p2-p1);
   s[p2-p1]=0;
   *str=s;
-  return(p2+1-line);
+  p2++;
+  while(isspace(*p2)) p2++;
+  if ((*p2=='/')&&(*(p2+1)=='/')){
+    p2+=2;
+    while(isspace(*p2)) p2++;
+    if (*p2==0){
+      ab_readline(line,&p2,infile);
+      while(isspace(*p2)) p2++;
+    }
+    if (*p2!='"') error_exit("Failed to find initial quote in 2nd string");
+    ab_string_read(line,p2-line,&s2,infile);
+    s=realloc(s,strlen(s)+strlen(s2)+1);
+    if (!s) error_exit("realloc failure in ab_string_read");
+    strcat(s,s2);
+  }
+  return(p2-line);
 }
 
 static int ab_readline(char *buffer, char **p, FILE* infile){
@@ -859,17 +889,31 @@ static int ab_readline(char *buffer, char **p, FILE* infile){
 
 void abinit_eig_read(FILE* infile, struct unit_cell *c, struct contents *m,
 		    struct kpts *k, struct symmetry *s, struct es *e){
-  double scale,dtmp,coord[3];
-  int itmp,i,j,isp,dummy,*gamma,fft[3],fileform;
-  char buffer[LINE_SIZE+1],*ptr,*ptr2,*newfile;
+  double scale,dtmp,dtmp2,coord[3];
+  int itmp,i,j,isp,dummy,*gamma,fft[3],fileform,lineno,no,nspins,nk,siesta;
+  char buffer[SLINE_SIZE+1],*ptr,*ptr2,*newfile;
   FILE *f;
   struct kpts old_k;
   
   /* read header */
 
   scale=0;
+  lineno=0;
+  siesta=0;
   while(1){
     if (!fgets(buffer,LINE_SIZE,infile)) error_exit("Unexpected EOF");
+    lineno++;
+    if ((lineno==1)&&(sscanf(buffer,"%lf %lf",&dtmp,&dtmp2)==1)){
+      /* First line is single number. Perhaps we have a Siesta EIG file? */
+      if (!fgets(buffer,LINE_SIZE,infile)) error_exit("Unexpected EOF");
+      if (sscanf(buffer,"%d %d %d %lf",&no,&nspins,&nk,&dtmp2)==3){
+	e->e_fermi=malloc(sizeof(double));
+	if (!e->e_fermi) error_exit("malloc error");
+	*(e->e_fermi)=dtmp;
+	siesta=1;
+	break;
+      }
+    }
     ptr=strstr(buffer,"Fermi");
     if ((ptr)&&((ptr-buffer)<6)){
       scale=0;
@@ -910,7 +954,7 @@ void abinit_eig_read(FILE* infile, struct unit_cell *c, struct contents *m,
       if (sscanf(ptr2+1,"%d",&itmp)==1){
 	k->n=itmp;
 	k->kpts=malloc(itmp*sizeof(struct atom));
-	if (!k->kpts) error_exit("Malloc error for kpoints");
+	if (!k->kpts) error_exit("malloc error for kpoints");
 	}
       else error_exit("Failed to read number of kpts");
 
@@ -923,6 +967,54 @@ void abinit_eig_read(FILE* infile, struct unit_cell *c, struct contents *m,
     }
   }
 
+  if (siesta){
+    fprintf(stderr,"Siesta EIG file detected\n");
+    if (nspins!=1) error_exit("cannot read Siesta EIG file for nspins!=1");
+    e->nbands=no;
+    if (k->n==0){
+      /* Need to read a kpoints file */
+      newfile=strrsubs(dict_get(m->dict,"in_file"),"EIG","KP");
+      f=fopen(newfile,"r");
+      if (f){
+	fprintf(stderr,"Additionally reading %s\n",newfile);
+	siesta_kp_read(f,k);
+	fclose(f);
+      }
+      else{
+	fprintf(stderr,"Need kpoints, but failed to find .KP file\n");
+	exit(1);
+      }
+    }
+    if (k->n!=nk){
+      fprintf(stderr,"Confused: are there %d or %d kpoints?\n",k->n,nk);
+      exit(1);
+    }
+    e->eval=malloc(nk*no*sizeof(double));
+    if (!e->eval) error_exit("malloc error for eigenvalues");
+    for(i=0;i<nk;i++){
+      if (!fgets(buffer,SLINE_SIZE,infile)) error_exit("Unexpected EOF");
+      lineno++;
+      if (sscanf(buffer,"%d%n",&j,&itmp)!=1) error_exit("Parse error");
+      if (j!=i+1) {
+	fprintf(stderr,"Aborting, confused: out of order kpoints "
+		"found %d expected %d line %d\n",
+		j,i+1,lineno);
+	fprintf(stderr,"%s\n",buffer);
+	exit(1);
+      }
+      ptr=buffer+itmp;
+      for(j=0;j<no;j++){
+	while (sscanf(ptr,"%lf%n",e->eval+i*e->nbands+j,&itmp)!=1){
+	  if (!fgets(buffer,SLINE_SIZE,infile)) error_exit("Unexpected EOF");
+	  lineno++;
+	  ptr=buffer;
+	}
+	ptr+=itmp;
+      }
+    }
+    return;
+  }
+  
   if (debug) fprintf(stderr,"Reading %d kpoints with %d spins\n",k->n,
 		     e->nspins);
 
@@ -940,7 +1032,7 @@ void abinit_eig_read(FILE* infile, struct unit_cell *c, struct contents *m,
 	e->nbands=dummy;
 	if (debug) fprintf(stderr,"Reading %d bands\n",e->nbands);
 	e->eval=malloc(e->nbands*e->nspins*k->n*sizeof(double));
-	if (!e->eval) error_exit("Malloc error for eigenvalues");
+	if (!e->eval) error_exit("malloc error for eigenvalues");
       }
       if (dummy!=e->nbands) error_exit("Varying number of bands");
       if (isp==0){

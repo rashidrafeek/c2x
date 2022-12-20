@@ -65,6 +65,12 @@ include specified bands as densities (psi*conjg(psi)).
 .B \-c
 include charge density (units electrons per cubic Angstrom).
 .TP
+.B \-\-calc
+evaluate next arg with arithmetic parser and exit.
+.TP
+.B \-\-constants
+report internal conversion constants and exit.
+.TP
 .B \-C
 find "compact" (near-cubic) set of cell vectors.
 .TP
@@ -93,7 +99,7 @@ given must still be that of a .cell or .check file, as a .cst_esp file
 contains no axes.
 .TP
 .B \-e=tol
-set symmetry tolerance to given number of Angstroms
+set symmetry tolerance to given number of Angstroms.
 .TP
 .B \-E[=[-][mu]]
 calculate electrostatic potential, assuming that an electron density has been
@@ -103,8 +109,14 @@ a further localised smoothing of the atomic potential occurs, unless the first
 character after the = is -.
 .TP
 .B \-\-formats
-list supported formats
+list supported formats.
 .TP
+.B \-\-frame=N
+extract single frame from series of time steps. Frames are numbered from zero,
+and negative numbers represent offsets from the end of the sequence, so
+--frame=-1 will extract the final frame.
+.B \-\-gap
+print band gap in eV.
 .B \-H
 shift atoms by half a grid cell. For use with xplor data format, see below.
 .TP
@@ -165,6 +177,20 @@ rl (literal "r", followed by a length, suffixed by "B" if Bohr) is the radius,
 and nn the number of points. The axis of the cylinder must be the c axis, and
 alpha and beta must be 90 degrees. Data are averaged over c and theta.
 .TP
+.B \-q
+calculate post hoc energy correction for charged isolated system. Implies
+-c.
+.TP
+.B \-q[abc]
+calculate post hoc energy correction for charged 2D system. The axis given
+(a, b or c) is the aperiodic one. Implies -c.
+.TP
+.B \-Q
+sort the atoms on output in descending atomic order
+.TP
+.B \-Q2
+sort the atoms on output in ascending atomic order
+.TP
 .B \-R
 don't attempt to rescale densities, but output them raw. Charge density
 becomes electrons per unit cell if reading from Castep, for instance.
@@ -178,6 +204,9 @@ conversion factor too.
 .TP
 .B \-s
 include spin density.
+.TP
+.B \-\-sym_list
+list symmetry elements found in input, without calling SPGlib.
 .TP
 .B \-S[=range]
 include specified spins or spinors for bands (default range is -, and
@@ -256,13 +285,56 @@ and 2nd. This transformation is required if the input is cartesian and
 left handed, and an abc output is requested. Specifying this flag twice
 will cause the 1st and 3rd axes to be exchanged.
 
+.SH COMBINING OPERATIONS
+
+.LP
+The following options expect multiple input files to be given, and
+perform the specified operation.
+
+.TP
+.B \-\-add
+Add datasets element-wise.
+.TP
+.B \-\-diff
+Subtract datasets element-wise.
+.TP
+.B \-\-mask
+Multiply datasets element-wise. Although it is assumed that one dataset
+will be a mask of ones and zeros, it need not be so.
+.TP
+.B \-\-merge
+Merge datasets. The expected use is merging an atoms-only format with a
+density-only format to create an output containing both atoms and density.
+.TP
+.B \-\-mult
+Alternative for --mask.
+.TP
+.B \-\-sub
+Alternative for --diff.
+.TP
+.B \-\-sum
+Alternative for --add.
+
+.LP
+When merging, if files contain conflicting data, the one on the right
+usually has precidence.
+
+.LP
+When performing operations on grids, the grids must be the same size.
+The use of -i may assist. In all cases, the cells must be the same.
+
 .SH FORMATS
 
 .LP
-The following output formats are recognised.
+The following output formats are recognised. (See the output of the
+\fB\-\-formats\fR option for the complete list. Most are also recognised
+for input provided that their filenames have the expected suffix.)
 
 .TP
 .B \-\-abinit
+Abinit .abi file (for Abinit version 9 and beyond).
+.TP
+.B \-\-abinit8
 Abinit .in file. The output is insufficient to be a valid input file to
 Abinit, but can easily be made so.
 .TP
@@ -271,7 +343,7 @@ CASTEP .bands file, no sorting of bands.
 .TP
 .B \-\-bxsf
 XCrysDen / FermiSurfer file for plotting Fermi surfaces. A symmetry-reduced
-kpoint set will be expanded.
+kpoint set will be expanded. (Not accepted as input.)
 .TP
 .B
 \-\-ccp4
@@ -310,6 +382,9 @@ Data Explorer. Data set only.
 .B \-\-denfmt
 CASTEP formatted density
 .TP
+.B \-\-elk
+Elk elk.in format.
+.TP
 .B \-\-fdf
 Siesta. If a density has been read, a corresponding .RHO file
 will be written.
@@ -322,6 +397,9 @@ The same, sorted by |g|
 .TP
 .B \-\-gnu
 Gnuplot command file for 1D data.
+.TP
+.B \-\-npy
+Numpy array, single dataset, as doubles with -15, else single precision.
 .TP
 .B \-\-null
 Null output. Throw away all output, but still write some useful information
@@ -441,7 +519,10 @@ forces, and any number of data sets are recorded.
 
 .LP
 When reading a .geom file and writing a format containing a single
-frame, the last frame is written.
+frame, the last frame is written, unless the --frame option is given.
+
+.LP
+When reporting symmetry operations, all co-ordinates are fractional.
 
 .LP
 Note that the pdb format offers a very low precision for storing co-ordinates,
@@ -533,8 +614,8 @@ c2x --cell -x=1x1x4 -Xc=30 in.cell out.cell
 
 .SH VIEWERS
 
-This code was written with the following viewers in mind. For densities,
-xcrysden, VESTA and jmol, for structures gdis.
+The following viewers have been used during the development of c2x: Avogadro,
+FermiSurfer, gabedit, Jmol, pymol, VESTA, VMD and XCrysDen.
 
 .SH BUGS
 
@@ -547,7 +628,7 @@ Please report others to MJR.
 If you wish to cite, please do so as "C2x: a tool for visualisation
 and input preparation for Castep and other electronic structure
 codes", MJ Rutter, Computer Physics Communications, vol 225 pages
-174-179 (2018).
+174-179 (2018). http://dx.doi.org/10.1016/j.cpc.2017.12.008
 
 Details of spglib can be found at https://atztogo.github.io/spglib/
 

@@ -1,8 +1,8 @@
-/* Write an dx file, single density only
+/* Write an dx file, single density only. Updated 2020 to make VMD-compatible
  */
 
 
-/* Copyright (c) 2007 MJ Rutter 
+/* Copyright (c) 2007, 2020 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -28,7 +28,23 @@ void dx_write(FILE* outfile,struct unit_cell *c, struct grid *g){
   double *dptr1,*dptr2;
 
   fprintf(outfile,"# %s\n\n",g->name);
-  fprintf(outfile,"object 1 class array items %d data follows\n",
+
+  fprintf(outfile,"object 1 class gridpositions counts %d %d %d\n",
+                   g->size[0],g->size[1],g->size[2]);
+  if (!g->origin_abs)
+    fprintf(outfile," origin 0.0 0.0 0.0\n");
+  else
+    fprintf(outfile," origin %f %f %f\n",
+	    g->origin_abs[0],g->origin_abs[1],g->origin_abs[2]);
+  for(i=0;i<3;i++)
+   fprintf(outfile," delta %f %f %f\n",c->basis[i][0]/g->size[i],
+                                       c->basis[i][1]/g->size[i],
+                                       c->basis[i][2]/g->size[i]);
+
+  fprintf(outfile,"object 2 class gridconnections counts %d %d %d\n",
+                  g->size[0],g->size[1],g->size[2]);
+
+  fprintf(outfile,"object 3 class array items %d data follows\n",
                   g->size[0]*g->size[1]*g->size[2]);
 
   dptr2=g->data;
@@ -36,28 +52,10 @@ void dx_write(FILE* outfile,struct unit_cell *c, struct grid *g){
     for(j=0;j<g->size[1];j++){
       dptr1=dptr2+((k*g->size[1])+j)*g->size[2];
       for(i=0;i<g->size[2];i++)
-        fprintf(outfile,"%f\n",*(dptr1+i));
+        fprintf(outfile,"%g\n",*(dptr1+i));
     }
   }
 
-  fprintf(outfile," attribute \"dep\" string \"positions\"\n\n");
-
-  fprintf(outfile,"object 2 class gridpositions counts %d %d %d\n",
-                   g->size[0],g->size[1],g->size[2]);
-  fprintf(outfile," origin 0.0 0.0 0.0\n");
-  for(i=0;i<3;i++)
-   fprintf(outfile," delta %f %f %f\n",c->basis[i][0]/g->size[i],
-                                       c->basis[i][1]/g->size[i],
-                                       c->basis[i][2]/g->size[i]);
-
-  fprintf(outfile,"\nobject 3 class gridconnections counts %d %d %d\n",
-                  g->size[0],g->size[1],g->size[2]);
-  fprintf(outfile," attribute \"element type\" string \"cubes\"\n"
-                  " attribute \"ref\" string \"positions\"\n\n");
-
   fprintf(outfile,"object \"%s\" class field\n",g->name);
-  fprintf(outfile," component \"data\" 1\n"
-                  " component \"positions\" 2\n"
-                  " component \"connections\" 3\n");
 
 }

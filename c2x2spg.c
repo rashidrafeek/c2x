@@ -541,6 +541,9 @@ int cspg_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
 		spg_tr[i][2]);
       }
       /* Translations are "easy" */
+      /* Sometimes SPGlib returns a translation vector component of 1 */
+      for(j=0;j<3;j++)
+	if (aeq(fabs(spg_tr[i][j]),1.0)) spg_tr[i][j]=0;
       if ((spg_tr[i][0]!=0)||(spg_tr[i][1]!=0)||(spg_tr[i][2]!=0)){
 	s[i].tr=malloc(3*sizeof(double));
 	if(!s[i].tr) error_exit("Malloc error for tr in sym_frac2abs");

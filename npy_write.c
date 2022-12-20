@@ -28,8 +28,9 @@ void npy_write(FILE* outfile, struct grid *g){
   hdr=malloc(MAX_HDR_LEN);
   for(i=0;i<MAX_HDR_LEN;i++) hdr[i]=' ';
 
-  i=snprintf(hdr,MAX_HDR_LEN,"{'descr': '<f%d', 'fortran_order': False,"
-	     " 'shape': (%d, %d, %d) }",(flags&HIPREC)?8:4,
+  i=snprintf(hdr,MAX_HDR_LEN,"{'descr': '%sf%d', 'fortran_order': False,"
+	     " 'shape': (%d, %d, %d) }",(self_little_endian())?"<":">",
+	     (flags&HIPREC)?8:4,
 	     g->size[0],g->size[1],g->size[2]);
 
   /* Remove terminating null */

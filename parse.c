@@ -155,6 +155,7 @@ int parse(char* in){
   if (debug>2) fprintf(stderr,"Parsing '%s'\n",in);
 
   while (isspace(*p1)) p1++; /* consume whitespace */
+  if ((*p1=='!')||(*p1=='#')) return 1; /* all we have is a comment */
  
   while(*p1){ /* Find end of token */
     implicit_mul=0;

@@ -15,7 +15,8 @@ OBJS=check2xsf.o check_read.o xsf_write.o molecule_fix.o cube_write.o \
      bands_write.o geom_write.o xv_read.o rho_read.o tube.o ccp4_write.o \
      xc.o band_process.o gcoeff_write.o wavecar_write.o bxsf_write.o \
      bands_read.o xyz_read.o gcoeff_read.o elk_write.o elk_read.o \
-     geom_read.o npy_write.o
+     geom_read.o npy_read.o npy_write.o file_read.o data_combine.o \
+     dx_read.o
 
 
 # Recommended: -DSPGLIB
@@ -34,7 +35,7 @@ LIBS=-lsymspg
 #LDFLAGS=
 #LIBS=
 
-# Linux / x86_64 / gcc
+# Linux or MacOS / x86_64 / gcc
 CFLAGS=-Wall -Wno-unused-result -O -g $(DEFS)
 
 # Linux / IA32 / gcc
@@ -44,7 +45,7 @@ CFLAGS=-Wall -Wno-unused-result -O -g $(DEFS)
 # Solaris
 #CFLAGS=-O -xarch=native64
 
-CC=cc
+CC=gcc
 
 c2x: c2xsf.h $(OBJS)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) -o  c2x $(OBJS) -lm $(LIBS)
@@ -52,5 +53,5 @@ c2x: c2xsf.h $(OBJS)
 check2xsf.o: c2xsf.h
 
 clean:
-	rm c2x $(OBJS)
+	-rm c2x $(OBJS)
 

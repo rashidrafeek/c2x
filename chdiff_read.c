@@ -43,6 +43,7 @@ static void reverse4(void *data){
    *((int*)data)=out;
 }
 
+#if 0
 static void reverse8n(double *data, int n){
 /* reverse endian n words of 8 byte data */
    int i;
@@ -67,6 +68,7 @@ static void reverse8n(double *data, int n){
      *(data+i)=out;
    }
 }
+#endif
 
 void chdiff_read(FILE* infile, struct grid *gptr){
   int endian,tmp,i,j,k;
@@ -95,11 +97,7 @@ void chdiff_read(FILE* infile, struct grid *gptr){
   fseek(infile,4,SEEK_CUR);
 
   /* Set up grid to receive data */
-
-  gptr->next=malloc(sizeof(struct grid));
-  if (!gptr->next) error_exit("Malloc error for struct grid");
-  gptr->next->next=NULL;
-  gptr->next->data=NULL;
+  gptr=grid_new(gptr);
   gptr->name="Density_diff";
   for(i=0;i<3;i++) gptr->size[i]=fft[i];
   gptr->data=malloc(8*fft[0]*fft[1]*fft[2]);

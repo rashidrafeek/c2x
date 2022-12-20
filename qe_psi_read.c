@@ -170,7 +170,7 @@ void qe_psi_read(char *dir, char *prefix, struct unit_cell *c,
       fread(&tmp,4,1,infile);
 
       wtmp=malloc(igwx*2*npol*sizeof(double));
-      if (!pwgrid) error_exit("Malloc error for wtmp");
+      if (!wtmp) error_exit("Malloc error for wtmp");
 
       if (debug>1)
 	fprintf(stderr,"FFT grid passed: %dx%dx%d\n",fft[0],fft[1],fft[2]);

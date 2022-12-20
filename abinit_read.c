@@ -151,8 +151,10 @@ void abinit_header_read(FILE* infile, struct unit_cell *c,
   tmp=kp->n+npsp+nsym+9*nsym;
   fseek(infile,4*tmp,SEEK_CUR);
   atypes=malloc(4*natoms);
+  if (!atypes) error_exit("Malloc error for atypes");
   fread(atypes,natoms*4,1,infile);
   atnos=malloc(8*ntypes);
+  if (!atnos) error_exit("Malloc error for atnos");
   /* Now kpoints */
   kp->kpts=malloc(kp->n*sizeof(struct atom));
   if (!kp->kpts) error_exit("Malloc error for kpts");
@@ -268,11 +270,7 @@ void abinit_charge_read(FILE* infile, struct unit_cell *c,
     return;
   }
 
-  if (gptr->next) gptr=gptr->next;
-  gptr->next=malloc(sizeof(struct grid));
-  if (!gptr->next) error_exit("Malloc error for struct grid");
-  gptr->next->next=NULL;
-  gptr->next->data=NULL;
+  gptr=grid_new(gptr);
 
   for(i=0;i<3;i++) gptr->size[i]=fft[i];
   if(!(gptr->data=malloc(gptr->size[0]*gptr->size[1]*
@@ -355,11 +353,7 @@ void abinit_charge_read(FILE* infile, struct unit_cell *c,
 
   chgden=gptr->data;
   if (flags&CHDEN){
-    if (gptr->next) gptr=gptr->next;
-    gptr->next=malloc(sizeof(struct grid));
-    if (!gptr->next) error_exit("Malloc error for struct grid");
-    gptr->next->next=NULL;
-    gptr->next->data=NULL;
+    gptr=grid_new(gptr);
     for(i=0;i<3;i++) gptr->size[i]=fft[i];
     if(!(gptr->data=malloc(gptr->size[0]*gptr->size[1]*
                            gptr->size[2]*sizeof(double))))
@@ -424,7 +418,7 @@ void abinit_psi_read(FILE* infile, struct unit_cell *c,
   elect->occ=malloc(elect->nbands*elect->nbspins*kp->n*sizeof(double));
   if (!elect->occ) error_exit("Malloc error for occupancies");
   elect->eval=malloc(elect->nbands*elect->nbspins*kp->n*sizeof(double));
-  if (!elect->occ) error_exit("Malloc error for eigenvalues");
+  if (!elect->eval) error_exit("Malloc error for eigenvalues");
   for(i=0;i<elect->nbands*elect->nbspins*kp->n;i++){
     elect->eval[i]=0;
     elect->occ[i]=0;

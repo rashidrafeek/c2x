@@ -1,6 +1,6 @@
-/* Reader for a Siesta .XV file */
+/* Reader for a Siesta .XV and .KP files */
 
-/* Copyright (c) 2019 MJ Rutter 
+/* Copyright (c) 2019-2021 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -29,10 +29,12 @@
 
 #define LINE_SIZE 200
 
+double siesta_pot_charge(char *prefix, char *label); /* From fdf_read.c */
+
 void xv_read(FILE* infile, struct unit_cell *c, struct contents *m){
   int i,j,species;
   double dummy,*species_to_charge,x;
-  char buffer[LINE_SIZE+1];
+  char buffer[LINE_SIZE+1],*prefix;
 
   species_to_charge=(double*)dict_get(m->dict,"Siesta_species_to_charge");
   
@@ -92,6 +94,7 @@ void xv_read(FILE* infile, struct unit_cell *c, struct contents *m){
 
   real2rec(c);
   addfrac(m->atoms,m->n,c->recip);
+  addspec(m);
 
  /* Don't set m->velocities if all v's are zero */
   x=0;
@@ -99,6 +102,48 @@ void xv_read(FILE* infile, struct unit_cell *c, struct contents *m){
     x+=m->atoms[i].v[0]*m->atoms[i].v[0]+
       m->atoms[i].v[1]*m->atoms[i].v[1]+m->atoms[i].v[2]*m->atoms[i].v[2];
   if (x>0) m->velocities=1;
- 
 
+  if ((!species_to_charge)&&((flags&CHDEN)||(flags&OCCUPANCIES))){
+    prefix=dict_get(m->dict,"in_dir");
+    for(i=0;i<m->nspec;i++){
+      x=siesta_pot_charge(prefix,atno2sym(m->spec[i].atno));
+      for(j=0;j<m->n;j++)
+	if (m->atoms[j].atno==m->spec[i].atno) m->atoms[j].chg=x;
+    }
+  }
+
+}
+
+void siesta_kp_read(FILE* infile, struct kpts *k){
+  int i,j;
+  char buffer[LINE_SIZE+1];
+  
+  if (!fgets(buffer,LINE_SIZE,infile)) error_exit("Unexpected EOF");
+  if (sscanf(buffer,"%d",&(k->n))!=1)
+    error_exit("parse error on first line of KP file");
+
+  if (debug) fprintf(stderr,"Reading %d kpoints from Siesta KP file\n",
+		     k->n);
+  
+  k->kpts=malloc(k->n*sizeof(struct atom));
+  if (!k->kpts) error_exit("malloc error for kpoints");
+  init_atoms(k->kpts,k->n);
+  
+  for(i=0;i<k->n;i++){
+    if (!fgets(buffer,LINE_SIZE,infile)){
+      fprintf(stderr,"Unexpected EOF after %d lines\n",i+1);
+      exit(1);
+    }
+    if (sscanf(buffer,"%d %lf %lf %lf %lf",&j,k->kpts[i].frac,
+	       k->kpts[i].frac+1,k->kpts[i].frac+2,&(k->kpts[i].wt))!=5){
+      fprintf(stderr,"Error parsing line %d\n",i+1);
+      exit(1);
+    }
+    if (j!=i+1){
+      fprintf(stderr,"Confused by kpt ordering. Expected %d, found %d\n",
+	      i+1,j);
+      exit(1);
+    }
+  }
+  
 }

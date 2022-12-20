@@ -5,7 +5,7 @@
  */
 
 
-/* Copyright (c) 2007 -- 2020 MJ Rutter 
+/* Copyright (c) 2007 -- 2022 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -88,72 +88,20 @@ void qe_write(FILE* outfile, struct unit_cell *c, struct contents *m,
                   struct kpts *k, struct es *e);
 void elk_write(FILE* outfile, struct unit_cell *c, struct contents *m,
                   struct kpts *k, struct es *e);
-void elk_read(FILE* outfile, struct unit_cell *c, struct contents *m,
-                  struct kpts *k, struct es *e);
-void elk3d_read(FILE* infile, struct unit_cell *c, struct contents *m,
-		struct kpts *k, struct grid *gptr, struct es *e);
+void npy_write(FILE* outfile, struct grid *g);
+
+void file_read(char *file1, FILE* infile, struct unit_cell *c,
+	       struct contents *m, struct kpts *k, struct symmetry *s,
+	       struct grid *g, struct es *elect, struct time_series *ts,
+	       int *i_grid);
 void cell_read(FILE* infile, struct unit_cell *c, struct contents *m,
                struct kpts *k, struct symmetry *s);
-void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
-                struct kpts *k, struct symmetry *s, struct grid *g,
-                struct es *elect, int *i_grid);
-void chdiff_read(FILE* infile, struct grid *g);
-void esp_read(FILE* infile, struct contents *m, struct grid *g,
-	      struct es *elect);
-void pdb_read(FILE* infile, struct unit_cell *c, struct contents *m);
-void shelx_read(FILE* infile, struct unit_cell *c, struct contents *m);
-void cif_read(FILE* infile, struct unit_cell *c, struct contents *m,
-              struct symmetry *s);
-void cube_read(FILE* infile, struct unit_cell *c, struct contents *m,
-               struct grid *gptr);
-void xsf_read(FILE* infile, struct unit_cell *c, struct contents *m,
-	      struct grid *gptr);
-void xyz_read(FILE* infile, struct unit_cell *c, struct contents *m);
-void vasp_read(FILE* infile, char *filename,
-		struct unit_cell *c, struct contents *m, struct kpts *k,
-                struct grid *gptr, struct es *elect);
-void vasp_psi_read(FILE* infile, char * filename, struct unit_cell *c,
-		struct contents *m, struct kpts *k, struct grid *gptr,
-		struct es *elect, int *i_grid);
-void vasp_eigenval_read(FILE *infile, struct unit_cell *c, struct contents *m,
-			struct kpts *k, struct es *e);
-void denfmt_read(FILE* infile, struct unit_cell *c, struct contents *m,
-		 struct grid *gptr, struct es *elect, int rescale);
-void fort34_read(FILE* infile, struct unit_cell *c, struct contents *m,
-              struct symmetry *s);
-void crystal_read(FILE* infile, struct unit_cell *c, struct contents *m,
-                  struct symmetry *s);
-void abinit_charge_read(FILE* infile, struct unit_cell *c, struct contents *m,
-                 struct kpts *kp, struct grid *gptr, struct es *elect);
-void abinit_in_read(FILE* infile, struct unit_cell *c, struct contents *m,
-                 struct kpts *k, struct symmetry *s, struct es *e);
-void abinit_eig_read(FILE* infile, struct unit_cell *c, struct contents *m,
-		     struct kpts *k, struct symmetry *s, struct es *e);
-void abinit_psi_read(FILE* infile, struct unit_cell *c,
-                     struct contents *m, struct kpts *kp, struct grid *gptr,
-                     struct es *elect, int *i_grid);
-void qe_rho_read(FILE* infile, struct unit_cell *c, struct contents *m,
-                struct kpts *k, struct symmetry *s, struct grid *g,
-                struct es *elect, int *i_grid);
-void qe_xml_read(FILE* infile, char *filename, struct unit_cell *c,
-		 struct contents *m,
-                 struct kpts *k, struct symmetry *s, struct grid *g,
-                 struct es *elect, struct time_series *ts, int *i_grid);
-void rho_read(FILE* infile, struct unit_cell *c,
-              struct contents *m, struct grid *gptr, struct es *elect);
-void bands_read(FILE* infile, struct unit_cell *c, struct contents *m,
-		struct kpts *k, struct symmetry *s,struct es *e);
-void gcoeff_read(FILE *infile, struct unit_cell *c, struct contents *m,
-                 struct kpts *k, struct grid *g, struct es *e,
-		 int *i_grid);
-void npy_write(FILE* outfile, struct grid *g);
 
 void molecule_fix(int m_abc[3], double m_rel[3],struct unit_cell *c,
 		  struct contents *m, struct grid *g);
 void rotation(struct unit_cell *c, struct contents *m, double new_basis[3][3]);
 void primitive(struct unit_cell *c, struct contents *m, double basis[3][3]);
 void shorten(double basis[3][3]);
-void interpolate3d(struct grid *old_grid, struct grid *new_grid);
 double interpolate0d(struct grid *gptr,double x[3]);
 void fstar(struct kpts *ks, struct unit_cell *c, struct symmetry *rs);
 void dipole(struct unit_cell *c, struct contents *m,
@@ -168,8 +116,6 @@ void sym_kpts(struct kpts *k_in, struct kpts *k_out, struct symmetry *s,
 void vacuum_adjust(struct unit_cell *c, struct contents *m, double new_abc[3]);
 void bands_write(FILE* outfile, struct unit_cell *c,
                  struct kpts *k, struct es *e);
-void geom_read(FILE *infile, struct unit_cell *c, struct contents *m,
-	       struct time_series *ts);
 void geom_write(FILE *outfile, struct unit_cell *c, struct contents *m,
 		struct es *elect, struct time_series *ts);
 void bxsf_write(FILE* outfile, struct unit_cell *c, struct contents *m,
@@ -178,6 +124,16 @@ void bxsf_write(FILE* outfile, struct unit_cell *c, struct contents *m,
 void tube(struct unit_cell *c, struct contents *m, int rpt[3], double spacing);
 void print_gap(struct es *elect, struct kpts *kpt, struct contents *m);
 double lda(double dens);
+void data_combine(int op, struct unit_cell *c,
+		  struct contents *m, struct kpts *k, struct symmetry *s,
+		  struct grid *g, struct es *elect, struct time_series *ts,
+		  int *i_grid,struct unit_cell *c2,
+		  struct contents *m2, struct kpts *k2, struct symmetry *s2,
+		  struct grid *g2, struct es *elect2, struct time_series *ts2);
+
+void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
+                struct kpts *k, struct symmetry *s, struct grid *g,
+                struct es *elect, int *i_grid);
 
 /* Global variables for system description */
 
@@ -210,18 +166,18 @@ void version(){
 
 int main(int argc, char **argv)
 {
-  int i,j,k,opt=1,expand,rotate,half_shift=0,no_mp=0,prim=0,compact=0;
+  int i,j,k,n,opt=1,expand,rotate,half_shift=0,no_mp=0,prim=0,compact=0;
   int molecule=0,reduce=0,vexpand=0,lflags=0,pr_occ=0,pr_gap=0,xc=0;
-  int sort_style=0,calc_ef=0;
+  int sort_style=0,calc_ef=0,firstfile_arg=0,op=0,replace_rho=0;
   int no_sym=0;
   int circ[3];
   int spg_op;
-  int gen_mp=0, failure=0,calc_esp=0,sym_k=0;
+  int gen_mp=0, failure=0,calc_esp=0,sym_k=0,sym_list=0;
   int keep_velocities=0;
   int format,preserve_c,mask;
-  int *i_grid;
+  int *i_grid,*i_frame;
   int i_expand[3];
-  char *optp,*file1=NULL,*file2=NULL,*line_spec=NULL,*pt_spec=NULL;
+  char *optp,*file1=NULL,*outname=NULL,*line_spec=NULL,*pt_spec=NULL;
   char *cdfile,*cptr;
   FILE *infile,*outfile;
   double abc[6],new_cell[3][3],new_cell_rel[3][3],*new_mp,zpt[3],g_cut;
@@ -229,80 +185,42 @@ int main(int argc, char **argv)
   double tolmin=1e-4,ionic_charge,musq,tube_spacing,*m_rel,chg;
   int *m_abc;
   struct grid *gptr;
-  struct unit_cell cell,nc;
-  struct contents motif;
-  struct symmetry sym;
-  struct kpts kp;
-  struct grid grid1;
-  struct es elect;
-  struct time_series series;
+  struct unit_cell cell,cell2,nc;
+  struct contents motif,motif2;
+  struct symmetry sym,sym2;
+  struct kpts kp,kp2;
+  struct grid grid1,grid2;
+  struct es elect,elect2;
+  struct time_series series,series2;
 
 /* Initialise all pointers to NULL, etc. */
 
-  elect.band_range="-";
-  elect.kpt_range="1";
-  elect.spin_range="-";
-  elect.nspins=1;
-  elect.nbspins=1;
-  elect.nspinors=1;
-  elect.spin_method=NULL;
-  elect.cut_off=0;
-  elect.etol=0;
-  elect.dip_corr=NULL;
-  elect.dip_corr_dir=NULL;
-  elect.dip_ctr=NULL;
-  elect.charge=NULL;
-  elect.energy=NULL;
-  elect.e_fermi=NULL;
-  elect.nbands=0;
-  elect.occ=NULL;
-  elect.eval=NULL;
-  elect.nel=elect.nup_minus_down=0;
-  elect.max_nplwv=0;
+  init_elect(&elect);
+  init_elect(&elect2);
   
-  motif.atoms=NULL;
-  motif.n=motif.nspec=motif.forces=motif.velocities=0;
-  motif.title=NULL;
-  motif.species_misc=NULL;
-  motif.block_species=NULL;
-  motif.spec=NULL;
-  motif.comment=malloc(sizeof(struct cmt));
-  if (!motif.comment) error_exit("malloc error for struct cmt");
-  motif.comment->txt=NULL;
-  motif.comment->next=NULL;
-  motif.dict=malloc(sizeof(struct dct));
-  if (!motif.dict) error_exit("malloc error for struct dict");
-  motif.dict->key=NULL;
-  motif.dict->next=NULL;
-  cell.basis=NULL;
-  cell.stress=NULL;
-  cell.vol=0;
-  sym.tol=NULL;
-  sym.ops=NULL;
-  sym.n=0;
-  m_abc=i_grid=NULL;
+  init_motif(&motif);
+  init_motif(&motif2);
+  
+  init_cell(&cell);
+  cell2=cell;
+
+  init_sym(&sym);
+  sym2=sym;
+
+  init_kpts(&kp);
+  kp2=kp;
+  
+  m_abc=i_grid=i_frame=NULL;
   m_rel=NULL;
-  kp.n=0;
-  kp.kpts=NULL;
-  kp.mp=NULL;
-  kp.spacing=NULL;
   new_mp=NULL;
   sym.gen=NULL;
-  for(i=0;i<3;i++){
-    grid1.size[i]=0;
-    for(j=0;j<3;j++) cell.recip[i][j]=0.0;
-  }
-  grid1.next=NULL;
-  grid1.data=NULL;
-  grid1.name=NULL;
+
+  init_grid(&grid1);
+  grid2=grid1;
+
   flags=0;
 
-  series.nsteps=0;
-  series.cells=NULL;
-  series.m=NULL;
-  series.energies=NULL;
-  series.enthalpies=NULL;
-  series.nc=series.nm=series.nen=series.nenth=0;
+  init_tseries(&series);
 
   rescale=1;
   
@@ -319,7 +237,7 @@ int main(int argc, char **argv)
   if ((strlen(argv[0])>=7)&&
       (!strcmp("cellsym",&argv[0][strlen(argv[0])-7]))) format=CELL;
   
-  while (opt<argc){
+  while ((opt<argc)&&(!file1)){
     switch(*optp){
     case 0:
       opt++;
@@ -370,6 +288,7 @@ int main(int argc, char **argv)
         else if (!strcmp(optp,"--denfmt")) format=DENFMT;
         else if (!strcmp(optp,"--den_fmt")) format=DENFMT;
         else if (!strcmp(optp,"--abinit")) format=ABINIT;
+	else if (!strcmp(optp,"--abinit8")) {format=ABINIT; flags|=ALT_OUT;}
         else if (!strcmp(optp,"--npy")) format=NPY;
         else if (!strcmp(optp,"--qe")) format=QE;
         else if (!strcmp(optp,"--qef")) {format=QE; flags|=FRAC;}
@@ -437,6 +356,23 @@ int main(int argc, char **argv)
           flags|=OCCUPANCIES;
 	  calc_ef=1;
 	}
+	else if ((!strcmp(optp,"--sym_list"))||(!strcmp(optp,"--symlist"))) {
+           sym_list=1;
+ 	}
+        else if (!strncmp(optp,"--frame=",8)) {
+	  i_frame=malloc(sizeof(int));
+	  if (!i_frame) error_exit("Malloc error for int!");
+	  if (sscanf(optp+8,"%d",i_frame)!=1)
+	    error_exit("Failed to parse --frame= argument");
+	}
+	else if (!strcmp(optp,"--merge")) op|=C2X_MERGE;
+	else if (!strcmp(optp,"--add")) op=(op&~C2X_EXC_MASK)+C2X_ADD;
+	else if (!strcmp(optp,"--sum")) op=(op&~C2X_EXC_MASK)+C2X_ADD;
+	else if (!strcmp(optp,"--diff")) op=(op&~C2X_EXC_MASK)+C2X_DIFF;
+	else if (!strcmp(optp,"--sub")) op=(op&~C2X_EXC_MASK)+C2X_DIFF;
+	else if (!strcmp(optp,"--mask")) op=(op&~C2X_EXC_MASK)+C2X_MASK;
+	else if (!strcmp(optp,"--mult")) op=(op&~C2X_EXC_MASK)+C2X_MASK;
+	else if (!strcmp(optp,"--replace_rho")) replace_rho=1;
 	else {
           fprintf(stderr,"Invalid option %s.\n%s -h for usage.\n",
                    optp,argv[0]);
@@ -488,6 +424,7 @@ int main(int argc, char **argv)
           break;
         case 'D':
           elect.dip_ctr=malloc(3*sizeof(double));
+	  if (!elect.dip_ctr) error_exit("malloc error for dip_ctr");
           if(((*(optp+1)>='a')&&(*(optp+1)<='c'))||(*(optp+1)=='m')){
             elect.dip_corr_dir=malloc(1);
             if (!elect.dip_corr_dir) error_exit("Malloc error for char!");
@@ -547,7 +484,8 @@ int main(int argc, char **argv)
           if(*(optp+1)=='='){
             i_grid=malloc(3*sizeof(int));
             if (!i_grid) error_exit("malloc error for three ints!");
-            if (sscanf(optp+2,"%d,%d,%d",i_grid,i_grid+1,i_grid+2)!=3)
+            if ((sscanf(optp+2,"%d,%d,%d",i_grid,i_grid+1,i_grid+2)!=3)&&
+		(sscanf(optp+2,"%dx%dx%d",i_grid,i_grid+1,i_grid+2)!=3))
               error_exit("malformed option -i=");
             while(*((++optp)+1));
           }
@@ -627,6 +565,8 @@ int main(int argc, char **argv)
           else prim++;
           break;
         case 'q':
+	  /* All these corrections need a density read */
+          flags|=CHDEN;
 	  dict_strcat(motif.dict,"charge_correction","");
 	  elect.dip_corr_dir=malloc(1);
 	  if (!elect.dip_corr_dir) error_exit("Malloc error for char!");
@@ -826,19 +766,20 @@ int main(int argc, char **argv)
        optp=argv[opt];
        break;
      default:
-       if (!file1) file1=argv[opt];
-       else if (!file2) file2=argv[opt];
-       else{
-         fprintf(stderr,"Unexpected argument %s\n%s -h for usage.\n",
-                 argv[opt],argv[0]);
-         exit(1);
-       }
-       opt++;
-       optp=argv[opt];
+       file1=argv[opt];
+       firstfile_arg=opt;
        break;
      }
   }
 
+  dict_add(motif.dict,"i_frame",i_frame);
+  
+  if (!file1) error_exit("no input file specified.");
+
+  if ((op==0)&&(opt<argc-1)) outname=argv[argc-1];
+
+  if ((op!=0)&&(format!=CNULL)&&(opt<argc-2)) outname=argv[argc-1];
+  
   flags|=((preserve_c%3)<<PC_SHIFT);
   if ((calc_esp)&&(flags&RAW)){
      flags&=(~RAW);
@@ -846,219 +787,93 @@ int main(int argc, char **argv)
        fprintf(stderr,"-R ignored in combination with -E\n");
   }
 
-  if (!file1) error_exit("no input file specified.");
-
-  if ((!file2)&&(format==0)&&(spg_op&(CSPG_INT|CSPG_SCH|CSPG_PNT|CSPG_LST)))
+  if ((!outname)&&(format==0)&&(spg_op&(CSPG_INT|CSPG_SCH|CSPG_PNT|CSPG_LST)))
     format=CNULL;
 
-  if ((!file2)&&(isatty(fileno(stdout)))&&(format!=CNULL)&&(format!=FORT15))
-    error_exit("refusing to output to a terminal");
+  n=argc-firstfile_arg;
+  if (outname) n--; /* We have an output file */
+  if ((n>1)&&(op==0)) /* If confused, exit before truncating output file */
+    error_exit("confused: multiple input files, but no combining operation");
 
-  infile=fopen(file1,"rb");
-  if(!infile){
-    fprintf(stderr,"Error, unable to open %s for reading.\n",file1);
-    exit(1);
-  }
-  cptr=malloc(strlen(file1)+1);
-  if (!cptr) error_exit("Malloc error for filename");
-  strcpy(cptr,file1);
-  dict_add(motif.dict,"in_file",cptr);
-  if (strchr(file1,'/')){
-    i=strrchr(file1,'/')-file1;
-    i=i+1;
-    cptr=malloc(i+1);
-    if (!cptr) error_exit("Malloc error for dirname");
-    strncpy(cptr,file1,i);
-    cptr[i]=0;
-    dict_add(motif.dict,"in_dir",cptr);
-  }
-
-  if (file2){
-    outfile=fopen(file2,"wb");
+  if ((outname)&&(strcmp(outname,"-"))){
+    if (replace_rho)
+      outfile=fopen(outname,"r+b");
+    else
+      outfile=fopen(outname,"wb");
     if(!outfile){
-      fprintf(stderr,"Error, unable to open %s for writing.\n",file2);
+      fprintf(stderr,"Error, unable to open %s for writing.\n",outname);
       exit(1);
     }
   }
   else
     outfile=stdout;
+
   dict_add(motif.dict,"out_file_handle",outfile);
 
-  i=strlen(file1);
-  if((i>4)&&(!strcmp(file1+i-4,".pdb")))
-    pdb_read(infile,&cell,&motif);
-  else if ((i==7)&&(!strcmp(file1,"fort.34")))
-    fort34_read(infile,&cell,&motif,&sym);
-  else if ((i==18)&&(!strcmp(file1,"charge-density.dat")))
-    qe_rho_read(infile,&cell,&motif,&kp,&sym,&grid1,&elect,i_grid);
-  else if ((i>=19)&&(!strcmp(file1+i-19,"/charge-density.dat")))
-    qe_rho_read(infile,&cell,&motif,&kp,&sym,&grid1,&elect,i_grid);
-  else if ((i==6)&&(!strcmp(file1+i-6,"elk.in")))
-    elk_read(infile,&cell,&motif,&kp,&elect);
-  else if ((i>=7)&&(!strcmp(file1+i-7,"/elk.in")))
-    elk_read(infile,&cell,&motif,&kp,&elect);
-  else if ((i==12)&&(!strcmp(file1+i-12,"GEOMETRY.OUT")))
-    elk_read(infile,&cell,&motif,&kp,&elect);
-  else if ((i>=13)&&(!strcmp(file1+i-13,"/GEOMETRY.OUT")))
-    elk_read(infile,&cell,&motif,&kp,&elect);
-  else if ((i>6)&&(!strcmp(file1+i-6,"3D.OUT")))
-    elk3d_read(infile,&cell,&motif,&kp,&grid1,&elect);
-  else if ((i>4)&&(!strcmp(file1+i-4,".xml")))
-    qe_xml_read(infile,file1,&cell,&motif,&kp,&sym,&grid1,&elect,
-		&series,i_grid);
-  else if ((i>2)&&(!strcmp(file1+i-2,"12")))
-    crystal_read(infile,&cell,&motif,&sym);
-  else if ((i>4)&&(!strcmp(file1+i-4,".res")))
-    shelx_read(infile,&cell,&motif);
-  else if ((i>4)&&(!strcmp(file1+i-4,".cif")))
-    cif_read(infile,&cell,&motif,&sym);
-  else if ((i>6)&&(!strcmp(file1+i-6,".mmcif")))
-    cif_read(infile,&cell,&motif,&sym);
-  else if ((i>5)&&(!strcmp(file1+i-5,".pdbx")))
-    cif_read(infile,&cell,&motif,&sym);
-  else if ((i>4)&&(!strcmp(file1+i-4,".dat"))){
-    dict_strcat(motif.dict,"cell_is_onetep","");
-    cell_read(infile,&cell,&motif,&kp,&sym);
-  }
-  else if ((i>4)&&(!strcmp(file1+i-4,".cub")))
-    cube_read(infile,&cell,&motif,&grid1);
-  else if ((i>5)&&(!strcmp(file1+i-5,".cube")))
-    cube_read(infile,&cell,&motif,&grid1);
-  else if ((i>5)&&(!strcmp(file1+i-5,"_CUBE")))
-    cube_read(infile,&cell,&motif,&grid1);
-  else if ((i>4)&&(!strcmp(file1+i-4,".xyz")))
-    xyz_read(infile, &cell, &motif);
-  else if ((i>4)&&(!strcmp(file1+i-4,".xsf")))
-    xsf_read(infile,&cell,&motif,&grid1);
-  else if ((i>=7)&&(!strcmp(file1+i-7,"CONTCAR")))
-    vasp_read(infile,file1,&cell,&motif,&kp,&grid1,&elect);
-  else if ((i>=6)&&(!strcmp(file1+i-6,"LOCPOT")))
-    vasp_read(infile,file1,&cell,&motif,&kp,&grid1,&elect);
-  else if ((i>=6)&&(!strcmp(file1+i-6,"POSCAR")))
-    vasp_read(infile,file1,&cell,&motif,&kp,&grid1,&elect);
-  else if ((i>=6)&&(!strcmp(file1+i-6,"CHGCAR")))
-    vasp_read(infile,file1,&cell,&motif,&kp,&grid1,&elect);
-  else if ((i>=3)&&(!strcmp(file1+i-3,"CHG")))
-    vasp_read(infile,file1,&cell,&motif,&kp,&grid1,&elect);
-  else if ((i>=7)&&(!strcmp(file1+i-7,"WAVECAR")))
-    vasp_psi_read(infile,file1,&cell,&motif,&kp,&grid1,&elect,i_grid);
-  else if ((i>=6)&&(!strcasecmp(file1+i-6,"GCOEFF")))
-    gcoeff_read(infile,&cell,&motif,&kp,&grid1,&elect,i_grid);
-  else if ((i>=10)&&(!strcmp(file1+i-10,"GCOEFF.txt")))
-    gcoeff_read(infile,&cell,&motif,&kp,&grid1,&elect,i_grid);
-  else if ((i>=8)&&(!strcmp(file1+i-8,"EIGENVAL")))
-    vasp_eigenval_read(infile, &cell, &motif, &kp, &elect);
-  else if ((i>=3)&&(!strcmp(file1+i-3,"DEN")))
-    abinit_charge_read(infile,&cell,&motif,&kp,&grid1,&elect);
-  else if ((i>=3)&&(!strcmp(file1+i-3,"POT")))
-    abinit_charge_read(infile,&cell,&motif,&kp,&grid1,&elect);
-  else if ((i>=5)&&(!strcmp(file1+i-5,"VCLMB")))
-    abinit_charge_read(infile,&cell,&motif,&kp,&grid1,&elect);
-  else if ((i>=3)&&(!strcmp(file1+i-3,"WFK")))
-    abinit_psi_read(infile,&cell,&motif,&kp,&grid1,&elect,i_grid);
-  else if ((i>=3)&&(!strcmp(file1+i-3,"DDB")))
-    abinit_in_read(infile,&cell,&motif,&kp,&sym,&elect);
-  else if ((i>=3)&&(!strcmp(file1+i-3,".in")))
-    abinit_in_read(infile,&cell,&motif,&kp,&sym,&elect);
-  else if ((i>=4)&&(!strcmp(file1+i-4,".abi")))
-    abinit_in_read(infile,&cell,&motif,&kp,&sym,&elect);
-  else if ((i>=3)&&(!strcmp(file1+i-3,"EIG")))
-    abinit_eig_read(infile,&cell,&motif,&kp,&sym,&elect);
-  else if ((i>=7)&&(!strcmp(file1+i-7,"den_fmt")))
-    denfmt_read(infile,&cell,&motif,&grid1,&elect,1);
-  else if ((i>=7)&&(!strcmp(file1+i-7,"pot_fmt")))
-    denfmt_read(infile,&cell,&motif,&grid1,&elect,2);
-  else if ((i>=7)&&(!strcmp(file1+i-7,"elf_fmt")))
-    denfmt_read(infile,&cell,&motif,&grid1,&elect,0);
-  else if ((i>=7)&&(!strcmp(file1+i-7,"cst_esp")))
-    esp_read(infile,&motif,&grid1,&elect);
-  else if ((i>=4)&&(!strcmp(file1+i-4,".elf"))){
-    flags|=RAW;
-    dict_add(motif.dict,"grid_name","ELF");
-    esp_read(infile,&motif,&grid1,&elect);
-  }
-  else if ((i>=5)&&(!strcmp(file1+i-5,"bands")))
-    bands_read(infile,&cell,&motif,&kp,&sym,&elect);
-  else if ((i>=5)&&(!strcmp(file1+i-5,".geom")))
-    geom_read(infile,&cell,&motif,&series);
-  else if ((i>=4)&&(!strcmp(file1+i-4,".fdf")))
-    fdf_read(infile,&cell,&motif,&kp,&elect);
-  else if ((i>=3)&&(!strcasecmp(file1+i-3,".xv")))
-    xv_read(infile,&cell,&motif);
-  else if ((i>=4)&&(!strcasecmp(file1+i-4,".rho")))
-    rho_read(infile,&cell,&motif,&grid1,&elect);
-  else if ((i>=6)&&(!strcasecmp(file1+i-6,".rhoxc")))
-    rho_read(infile,&cell,&motif,&grid1,&elect);
-  else if ((i>=5)&&(!strcasecmp(file1+i-5,".toch")))
-    rho_read(infile,&cell,&motif,&grid1,&elect);
-  else if ((i>=3)&&(!strcasecmp(file1+i-3,".vh")))
-    rho_read(infile,&cell,&motif,&grid1,&elect);
-  else if ((i>=3)&&(!strcasecmp(file1+i-3,".vt")))
-    rho_read(infile,&cell,&motif,&grid1,&elect);
-  /* If not a Castep ending, check for a VASP beginning */
-  else if ((!(((i>5)&&(!strcmp(file1+i-5,".cell")))||
-              ((i>6)&&(!strcmp(file1+i-6,".check")))||
-              ((i>4)&&(!strcmp(file1+i-4,".dat")))||
-              ((i>11)&&(!strcmp(file1+i-11,".castep_bin")))||
-              ((i>7)&&(!strcmp(file1+i-7,".chdiff")))))&&
-           ((!strncmp(file1,"CONTCAR",7))||(!strncmp(file1,"POSCAR",6))||
-            (!strncmp(file1,"CHGCAR",6))||(!strncmp(file1,"LOCPOT",6))||
-	    (!strncmp(file1,"CHG",3))))
-    vasp_read(infile,file1,&cell,&motif,&kp,&grid1,&elect);
-  else{
-    i=fgetc(infile);
-    rewind(infile);
-    if ((i==0)||(i==30)||(i==10)) /* possible first byte of .check or */
-                                  /* .castep_bin */
-      check_read(infile,&cell,&motif,&kp,&sym,&grid1,&elect,i_grid);
+  if ((outfile==stdout)&&(isatty(fileno(stdout)))&&
+      (format!=CNULL)&&(format!=FORT15))
+    error_exit("refusing to output to a terminal");
+
+  /* n set to argc-firstfile_arg-(outname!=NULL) a few lines earlier */
+  for(j=0;j<n;j++){
+    if (j!=0) init_motif(&motif2);
+    file1=argv[firstfile_arg+j];
+    infile=fopen(file1,"rb");
+    if(!infile){
+      fprintf(stderr,"Error, unable to open %s for reading.\n",file1);
+      exit(1);
+    }
+    cptr=malloc(strlen(file1)+1);
+    if (!cptr) error_exit("Malloc error for filename");
+    strcpy(cptr,file1);
+    if (j==0)
+      dict_add(motif.dict,"in_file",cptr);
     else
-      cell_read(infile,&cell,&motif,&kp,&sym);
-  }
-  fclose(infile);
-
-  if (flags&CHDIFF) { /* We want to read a .chdiff file too */
-    cdfile=malloc(strlen(file1)+8);
-    if (!cdfile) error_exit("Malloc error for chdiff filename");
-    strcpy(cdfile,file1);
-    cptr=cdfile+strlen(cdfile);
-    while((cptr>cdfile)&&(*cptr!='.')) cptr--;
-    if (*cptr!='.') error_exit("Error constructing chdiff filename");
-    strcpy(cptr+1,"chdiff");
-    infile=fopen(cdfile,"rb");
-    if(!infile){
-      fprintf(stderr,"Error, unable to open %s for reading.\n",cdfile);
-      exit(1);
+      dict_add(motif2.dict,"in_file",cptr);
+    if (strchr(file1,'/')){
+      i=strrchr(file1,'/')-file1;
+      i=i+1;
+      cptr=malloc(i+1);
+      if (!cptr) error_exit("Malloc error for dirname");
+      strncpy(cptr,file1,i);
+      cptr[i]=0;
+      if (j==0)
+	dict_add(motif.dict,"in_dir",cptr);
+      else
+	dict_add(motif2.dict,"in_dir",cptr);
     }
-    chdiff_read(infile,&grid1);
-    fclose(infile);
-    free(cdfile);
-  }
-
-  if (flags&CST_ESP) { /* We want to read a .cst_esp file too */
-    cdfile=malloc(strlen(file1)+9);
-    if (!cdfile) error_exit("Malloc error for cst_esp filename");
-    strcpy(cdfile,file1);
-    cptr=cdfile+strlen(cdfile);
-    while((cptr>cdfile)&&(*cptr!='.')) cptr--;
-    if (*cptr!='.') error_exit("Error constructing cst_esp filename");
-    strcpy(cptr+1,"cst_esp");
-    infile=fopen(cdfile,"rb");
-    if(!infile){
-      fprintf(stderr,"Error, unable to open %s for reading.\n",cdfile);
-      exit(1);
+    if (j==0)
+      file_read(file1,infile,&cell,&motif,&kp,&sym,&grid1,&elect,&series,
+		i_grid);
+    else{
+      init_cell(&cell2);
+      init_kpts(&kp2);
+      init_sym(&sym2);
+      init_grid(&grid2);
+      init_elect(&elect2);
+      init_tseries(&series2);
+      
+      file_read(file1,infile,&cell2,&motif2,&kp2,&sym2,&grid2,&elect2,
+		&series2,i_grid);
+      if ((j==1)&&(op&C2X_MERGE)){
+	data_combine(C2X_MERGE,&cell,&motif,&kp,&sym,&grid1,&elect,&series,
+		     i_grid,&cell2,&motif2,&kp2,&sym2,&grid2,&elect2,&series2);
+	if ((op&(~C2X_MERGE))) op=op&(~C2X_MERGE);
+      }
+      else
+	data_combine(op,&cell,&motif,&kp,&sym,&grid1,&elect,&series,i_grid,
+		     &cell2,&motif2,&kp2,&sym2,&grid2,&elect2,&series2);
     }
-    esp_read(infile,&motif,&grid1,&elect);
-    fclose(infile);
-    free(cdfile);
   }
-
+  
+  
   /* Should we also try to read a .cell file? */
   i=strlen(file1);
-  if (((i>=7)&&(!strcmp(file1+i-7,"den_fmt")))||
-      ((i>=7)&&(!strcmp(file1+i-7,"pot_fmt")))||
-      ((i>=7)&&(!strcmp(file1+i-7,"elf_fmt")))||
-      ((i>=7)&&(!strcmp(file1+i-7,"cst_esp")))||
-      ((i>=4)&&(!strcmp(file1+i-4,".elf")))){
+  if (((op&C2X_MERGE)==0)&&(((i>=7)&&(!strcmp(file1+i-7,"den_fmt")))||
+			    ((i>=7)&&(!strcmp(file1+i-7,"pot_fmt")))||
+			    ((i>=7)&&(!strcmp(file1+i-7,"elf_fmt")))||
+			    ((i>=7)&&(!strcmp(file1+i-7,"cst_esp")))||
+			    ((i>=4)&&(!strcmp(file1+i-4,".elf"))))){
     cdfile=malloc(i+5);
     if (!cdfile) error_exit("Malloc error for .cell filename");
     strcpy(cdfile,file1);
@@ -1073,13 +888,12 @@ int main(int argc, char **argv)
       fclose(infile);
     }
   }
-  
+
   /* Check that we have most of what we need */
 
   if (!cell.basis){
-    fprintf(stderr,
-            "Error: no basis set found. Was format correctly detected?\n");
-    exit(1);
+    if ((format!=NPY)&&(format!=CNULL)&&(!replace_rho))
+      error_exit("no basis set found. Was format correctly detected?\n");
   }
   
   if (cell.vol<0) cell.vol=fabs(cell.vol);
@@ -1090,6 +904,7 @@ int main(int argc, char **argv)
   if (!motif.atoms){
     if ((format!=DENFMT)&&(format!=CUBE)&&(format!=DX)&&
         (format!=FBIN)&&(format!=BXSF)&&(format!=CASTEP_BANDS)&&
+	(format!=NPY)&&
 	(format!=CNULL)&&(format!=XSF))
       error_exit("no atoms found!");
     else
@@ -1143,10 +958,14 @@ int main(int argc, char **argv)
       fprintf(stderr,"        offset %lf %lf %lf\n",kp.mp->disp[0],
               kp.mp->disp[1],kp.mp->disp[2]);
     }
-
+    if (sym.n) fprintf(stderr,"%d symmetry operations read\n",sym.n);
   }
 
-  if ((molecule)&&(i_grid)&&(!grid1.data)){
+  if (sym_list&&sym.n){
+    for(i=0;i<sym.n;i++) ident_sym(&sym.ops[i],&cell,stderr);
+  }
+  
+  if ((molecule)&&(m_abc)&&(i_grid)&&(!grid1.data)){
     m_rel=malloc(3*sizeof(double));
     if (!m_rel) error_exit("malloc error for three doubles!");
     for(i=0;i<3;i++) m_rel[i]=((double)m_abc[i])/i_grid[i];
@@ -1451,11 +1270,7 @@ int main(int argc, char **argv)
   if (no_sym){
     sym.n=0;
     if (sym.ops) free(sym.ops);
-    if (format==XSF){
-      for(i=0;i<motif.n;i++)
-        for(j=0;j<3;j++)
-          motif.atoms[i].force[j]=0;
-    }
+    if (format==XSF) motif.forces=0;
   }
   if (no_sym==2){
     kp.n=0;
@@ -1499,6 +1314,12 @@ int main(int argc, char **argv)
     exit(0);
   }
 
+  if (replace_rho){
+    flags|=(REPLACE_RHO+CHDEN);
+    check_read(outfile,&cell,&motif,&kp,&sym,&grid1,&elect,NULL);
+    exit(0);
+  }
+  
   switch(format){
     case XSF:
       xsf_write(outfile,&cell,&motif,molecule,&grid1);
@@ -1543,7 +1364,7 @@ int main(int argc, char **argv)
       cml_write(outfile,&cell,&motif);
       break;
     case FDF:
-      fdf_write(outfile,file2,&cell,&motif,&kp,&grid1,&elect);
+      fdf_write(outfile,outname,&cell,&motif,&kp,&grid1,&elect);
       break;
     case FDF_BP:
       fdf_write_bp(outfile,&kp,&motif);
@@ -1588,7 +1409,7 @@ int main(int argc, char **argv)
       geom_write(outfile,&cell,&motif,&elect,&series);
       break;
     case XV:
-      xv_write(outfile,file2,&cell,&motif,&grid1);
+      xv_write(outfile,outname,&cell,&motif,&grid1);
       break;
     case CCP4:
       ccp4_write(outfile,&cell,&grid1);
@@ -1633,6 +1454,7 @@ void help(void){
          "-E[=[-][mu]] calculate electrostatic potential. Default mu=%g\n"
          "-f           find first failure star of k-point mesh\n"
          "--formats    list supported file formats and exit\n"
+	 "--frame=X    extract frame X (initial frame is 0) from timeseries\n"
 	 "--gap        print band gap\n"
          "-H           shift atoms by half a grid cell\n",tol,C2X_MU);
   printf("-i           output imaginary part of band\n"
@@ -1666,7 +1488,9 @@ void help(void){
 	 "-P=C:rl:npts ditto as centre, radius, points for cylindrical"
 	 " symmetry with c\n"
 	 "               cylindrical axis. E.g. (0.5,0.5,0.5):r10B:100\n"
-         "-q           naive energy correction for charged cells\n"
+         "-q           post hoc energy correction for charged cells (0D)\n"
+         "-q[abc]      post hoc energy correction for charged cells, 2D\n"
+	 "               non-periodic axis as specified\n"
          "-Q[n]        quicksort atoms in descending atomic order "
          "(n=1 or absent)\n"
          "                                ascending atomic order  (n=2)\n"
@@ -1678,6 +1502,7 @@ void help(void){
          "to include\n"
          "               c2x's usual rescaling\n"
          "-s           include spin densities\n"
+	 "--sym_list   list symmetry operations read without calling spglib\n"
          "-S=range     include given spins/spinors (0 or 1) for bands\n");
   printf("-t=(x1,y1,z1)(x2,y2,z2)[(x3,y3,z3)]\n"
          "             rotate coords so 1st vector becomes 2nd, using third\n"
@@ -1687,6 +1512,7 @@ void help(void){
          "-u           write .cell files and 1D axes in Bohr (atomic Units)\n"
          "             scale densities on writing .cube files from A^-3 to "
          "Bohr^-3\n"
+	 "             write forces in .xsf files in Ha/A, not eV/A\n"
          "-U           scale densities on reading .cube files from "
          "Bohr^-3 to A^-3\n"
          "-v           be verbose (may be repeated)\n"
@@ -1717,8 +1543,14 @@ void help(void){
   printf("range specifies band and kpoint numbers as \"a,b-c,d\" starting"
 	 " from 1\n"
          "-b and -B are mutually exclusive, as are -x and -t.\n\n");
+  printf("OPERATION is used with multiple input files and can be one of:\n"
+	 "  add or sum    sum corresponding datasets in input files\n"
+	 "  sub or diff   difference corresponding datasets in two input"
+	 " files\n"
+	 "  mask or mult  multiply corresponding datasets in two input files\n"
+	 "  merge    merge data into single output\n\n");
 #ifdef SPGLIB
-  printf("OPERATION is used to call spglib and is one of:\n"
+  printf("OPERATION is also used to call spglib and is one of:\n"
          "   primitive         call spg_find_primitive()\n"
          "   primitive_nr      call spg_standardize_cell(to_primitive=1, "
          "no_idealize=1)\n"
@@ -1738,7 +1570,7 @@ void help(void){
 #endif
   printf("Valid values of FORMAT are listed by the --formats argument, as are"
 	 "\nrecognised input formats.\n\n");
-  printf("Version " C2XSF_VER ", (c) MJ Rutter 2007 - 2020"
+  printf("Version " C2XSF_VER ", (c) MJ Rutter 2007 - 2022"
          " licenced under the GPL v3.\n\n");
   printf("If useful to a published paper, please consider citing using the\n"
          "references shown with the --refs argument.\n\n");
@@ -1757,7 +1589,8 @@ void help(void){
 
 void formats(void){
   printf("Recognised output formats are:\n\n"
-	 "            abinit    Abinit .in\n"
+	 "            abinit    Abinit .in / .abi\n"
+	 "            abinit8   Abinit version 8 .in\n"
 	 "            bands     unsorted CASTEP .bands file\n"
 	 "            bxsf      unsorted XCrysDen bands file\n"
 	 "            ccp4      CCP4 (grid data only, no atoms)\n"
@@ -1816,6 +1649,8 @@ void formats(void){
             "cube format,\n"
 	 "            ending .dat are assumed to be in Onetep .dat format\n"
          "            ending .den_fmt are assumed to be in Castep format\n"
+	 "            ending .EIG are assumed to be Abinit or Siesta"
+	 " eigenvalues\n"
 	 "            ending .elf or .elf_fmt are assumed to be in Castep ELF"
 	 " format,\n"
 	 "            ending .fdf are assumed to be in Siesta format,\n"
@@ -1824,6 +1659,7 @@ void formats(void){
 	 "            ending .geom are assumed to be Castep .geom format,\n"
 	 "            ending .in are assumed to be in either Abinit or\n"
          "              Quantum Espresso format (save for elk.in),\n"
+	 "            ending .kp or .KP are assumed to be in Siesta kpoints,\n"
          "            ending .pdb are assumed to be in pdb format,\n"
          "            ending .pdbx are assumed to be in pdbx (mmCIF) format,\n"
          "            ending .pot_fmt are assumed to be in Castep format\n"
@@ -1840,9 +1676,9 @@ void formats(void){
 	 "            ending DEN, POT, VCLMB or WFK are assumed to be in\n"
 	 "              Abinit binary format,\n");
   printf("            ending 3D.OUT are assumed to be in Elk 3D plot format\n");
-  printf("            ending or beginning CHG, CHGCAR, POSCAR, CONTCAR, LOCPOT "
-         "or WAVECAR\n"
-         "              are assumed to be in VASP 5.x format,\n"
+  printf("            ending or beginning CHG, CHGCAR, POSCAR, CONTCAR, LOCPOT,"
+         " EIGENVAL\n"
+         "              or WAVECAR are assumed to be in VASP 5.x format,\n"
 	 "            ending 12 are assumed to be in Crystal format,\n"
 	 "            called fort.34 are assumed to be in Crystal binary "
 	 "format.\n"
@@ -1850,7 +1686,7 @@ void formats(void){
 	 " Elk format\n\n"
          "Otherwise "
          "automatic detection of .cell or .check input. Compatible with\n"
-         ".check files from CASTEP 3.0 to 20.1 (and perhaps beyond).\n\n");
+         ".check files from CASTEP 3.0 to 20.11 (and perhaps beyond).\n\n");
   printf("\nFurther documentation at https://www.c2x.org.uk/\n");
   exit(0);
 }
@@ -1883,6 +1719,9 @@ void refs(void){
   printf("Cubes:     https://doi.org/10.1103/PhysRevB.51.4014 and\n"
          "           https://doi.org/10.1103/PhysRevB.60.15476\n");
   printf("Tetragons: https://doi.org/10.1088/1361-648X/ab20e1\n\n");
+  printf("\nThe post hoc charge correction schemes are described by:\n\n");
+  printf("0D:        https://link.aps.org/doi/10.1103/PhysRevB.51.4014\n");
+  printf("2D:        https://doi.org/10.1088/2516-1075/abeda2\n");
   exit(0);
 }
 

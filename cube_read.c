@@ -57,11 +57,7 @@ void cube_read(FILE* infile, struct unit_cell *c, struct contents *m,
   if (!(c->basis=malloc(72)))
     error_exit("Malloc error in cube_read for c->basis");
 
-  if (gptr->next) gptr=gptr->next;
-  gptr->next=malloc(sizeof(struct grid));
-  if (!gptr->next) error_exit("Malloc error for struct grid");
-  gptr->next->next=NULL;
-  gptr->next->data=NULL;
+  gptr=grid_new(gptr);
   
   for(i=0;i<3;i++){
     fgets(buffer,LINE_SIZE,infile);

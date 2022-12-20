@@ -6,7 +6,7 @@
  */
 
 
-/* Copyright (c) 2007-2020 MJ Rutter 
+/* Copyright (c) 2007-2021 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -92,6 +92,8 @@ void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
   files->next=files->last=NULL;
   files->name=NULL;
   files->line=0;
+  files->ret=NULL;
+  files->count=0;
 
   is_onetep=0;
   if (dict_get(m->dict,"cell_is_onetep")) is_onetep=1;
@@ -161,6 +163,40 @@ void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
         }
       }
     }
+
+    if ((!strncasecmp(ptr,"bs_kpoint_mp_grid",17))||
+        (!strncasecmp(ptr,"bs_kpoints_mp_grid",18))||
+        (!strncasecmp(ptr,"bs_kpoint_mp_offset",19))||
+        (!strncasecmp(ptr,"bs_kpoints_mp_offset",20))){
+      /* Set ptr2 to char after string matched */
+      ptr2=ptr+17;
+      if ((ptr[9]=='s')||(ptr[6]=='S')) ptr2++;
+      if ((*ptr2=='e')||(*ptr2=='E')) ptr2+=2;
+      /* Increment ptr2 over spaces, = and : */
+      while ((*ptr2)&&((*ptr2==' ')||(*ptr2==':')||(*ptr2=='='))) ptr2++;
+      if (!kp->bs_mp){
+        kp->bs_mp=malloc(sizeof(struct mp_grid));
+        if (!kp->bs_mp) error_exit("Malloc error for struct mp_grid!");
+        for(i=0;i<3;i++) kp->bs_mp->grid[i]=0;
+        for(i=0;i<3;i++) kp->bs_mp->disp[i]=0;
+      }
+      if((!strncasecmp(ptr,"bs_kpoint_mp_grid",17))||
+         (!strncasecmp(ptr,"bs_kpoints_mp_grid",18))){
+        if (sscanf(ptr2,"%d %d %d",kp->bs_mp->grid,
+                   kp->bs_mp->grid+1,kp->bs_mp->grid+2)!=3){
+          fprintf(stderr,"Error parsing:\n%s\n",buffer);
+          exit(1);
+        }
+      }else{
+        if (multi_scan(ptr2,kp->bs_mp->disp,3,NULL)!=3){
+          fprintf(stderr,"Error parsing:\n%s\n",buffer);
+          exit(1);
+        }
+      }
+    }
+
+
+
     if ((!strncasecmp(ptr,"kpoint_mp_spacing",17))||
         (!strncasecmp(ptr,"kpoints_mp_spacing",18))){
       ptr2=ptr+17;
@@ -173,6 +209,32 @@ void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
         free(dptr);
       }
       else kp->spacing=dptr;
+    }
+    if ((!strncasecmp(ptr,"bs_kpoint_mp_spacing",20))||
+        (!strncasecmp(ptr,"bs_kpoints_mp_spacing",21))){
+      ptr2=ptr+20;
+      if ((ptr[9]=='s')||(ptr[9]=='S')) ptr2++;
+      /* Increment ptr2 over spaces, = and : */
+      while ((*ptr2)&&((*ptr2==' ')||(*ptr2==':')||(*ptr2=='='))) ptr2++;
+      dptr=malloc(sizeof(double));
+      if (sscanf(ptr2,"%lf",dptr)!=1){
+        fprintf(stderr,"Warning: error parsing bs_kpoint_mp_spacing\n");
+        free(dptr);
+      }
+      else kp->bs_spacing=dptr;
+    }
+    if ((!strncasecmp(ptr,"bs_kpoint_path_spacing",22))||
+        (!strncasecmp(ptr,"bs_kpoints_path_spacing",23))){
+      ptr2=ptr+17;
+      if ((ptr[9]=='s')||(ptr[9]=='S')) ptr2++;
+      /* Increment ptr2 over spaces, = and : */
+      while ((*ptr2)&&((*ptr2==' ')||(*ptr2==':')||(*ptr2=='='))) ptr2++;
+      dptr=malloc(sizeof(double));
+      if (sscanf(ptr2,"%lf",dptr)!=1){
+        fprintf(stderr,"Warning: error parsing bs_kpoint_path_spacing\n");
+        free(dptr);
+      }
+      else kp->path_spacing=dptr;
     }
       
 
@@ -365,13 +427,15 @@ void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
           error_exit("%endblock ionic_velocities expected but not found");
         m->velocities=1;
       }
-    }else if(!strcasecmp(ptr,"kpoints_list")){
+    }else if((!strcasecmp(ptr,"kpoint_list"))||
+	     (!strcasecmp(ptr,"kpoints_list"))){
       i=0;
       while(1){
         cellreadline(buffer,LINE_SIZE,dir,&files);
         if (!strncasecmp(buffer,"%endblock",9)) break;
         kp->kpts=realloc(kp->kpts,(i+1)*sizeof(struct atom));
         if (!kp->kpts) error_exit("realloc error for kpts");
+	init_atoms(kp->kpts+i,1);
         if (multi_scan(buffer,kp->kpts[i].frac,3,&j)!=3){
           PARSE_ERROR;
           exit(1);
@@ -383,6 +447,40 @@ void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
         i++;
       }
       kp->n=i;
+    }else if((!strcasecmp(ptr,"bs_kpoint_list"))||
+	     (!strcasecmp(ptr,"bs_kpoints_list"))){
+      i=0;
+      while(1){
+        cellreadline(buffer,LINE_SIZE,dir,&files);
+        if (!strncasecmp(buffer,"%endblock",9)) break;
+        kp->bs_kpts=realloc(kp->bs_kpts,(i+1)*sizeof(struct atom));
+        if (!kp->bs_kpts) error_exit("realloc error for kpts");
+	init_atoms(kp->bs_kpts+i,1);
+        if (multi_scan(buffer,kp->bs_kpts[i].frac,3,&j)!=3){
+          PARSE_ERROR;
+          exit(1);
+        }
+	/* Weights are optional here */
+        single_scan(buffer+j,&(kp->bs_kpts[i].wt),NULL);
+        i++;
+      }
+      kp->bs_n=i;
+    }else if((!strcasecmp(ptr,"bs_kpoint_path"))||
+	     (!strcasecmp(ptr,"bs_kpoints_path"))){
+      i=0;
+      while(1){
+        cellreadline(buffer,LINE_SIZE,dir,&files);
+        if (!strncasecmp(buffer,"%endblock",9)) break;
+        kp->path=realloc(kp->path,(i+1)*sizeof(struct atom));
+        if (!kp->path) error_exit("realloc error for kpts");
+	init_atoms(kp->path+i,1);
+        if (multi_scan(buffer,kp->path[i].frac,3,&j)!=3){
+          PARSE_ERROR;
+          exit(1);
+        }
+        i++;
+      }
+      kp->path_n=i;
     }else if(!strcasecmp(ptr,"symmetry_ops")){
       sym_mat=NULL;
       sym_disp=NULL;
@@ -392,9 +490,10 @@ void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
         sym_mat=realloc(sym_mat,(nsym+1)*9*sizeof(double));
         sym_disp=realloc(sym_disp,(nsym+1)*3*sizeof(double));
 	if ((!sym_mat)||(!sym_disp)) error_exit("realloc error in cell_read");
+	/* transpose on read */
         for(i=0;i<3;i++){
-          if(sscanf(buffer,"%lf %lf %lf",sym_mat+9*nsym+3*i,
-                   sym_mat+9*nsym+3*i+1,sym_mat+9*nsym+3*i+2)!=3){
+          if(sscanf(buffer,"%lf %lf %lf",sym_mat+9*nsym+i,
+                   sym_mat+9*nsym+i+3,sym_mat+9*nsym+i+6)!=3){
             PARSE_ERROR;
             exit(1);
           }
@@ -489,6 +588,7 @@ void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
     for(i=0;i<nsym;i++){
       /* Translations are relative */
       s->ops[i].tr=malloc(3*sizeof(double));
+      if (!s->ops[i].tr) error_exit("malloc error for sym tr");
       for(j=0;j<3;j++) s->ops[i].tr[j]=sym_disp[3*i]*c->basis[0][j]+
                          sym_disp[3*i+1]*c->basis[1][j]+
                          sym_disp[3*i+2]*c->basis[2][j];
@@ -509,6 +609,7 @@ void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
   }
 
   free(labels);
+  free(files);
 
 }
 

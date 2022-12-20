@@ -1,7 +1,7 @@
 /* Various utility functions for dealing with symmetry and k points */
 
 
-/* Copyright (c) 2007, 2014, 2015 MJ Rutter 
+/* Copyright (c) 2007, 2014-2021 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -85,7 +85,7 @@ void sym2ksym(struct symmetry *rs, struct symmetry *ks){
     fprintf(stderr,"Real space sym of %d ops does%s contain inversion\n",
 	    rs->n,inv?"":" not");
 
-  ks->ops=malloc((inv?2:1)*rs->n*sizeof(struct sym_op));
+  ks->ops=malloc((inv?1:2)*rs->n*sizeof(struct sym_op));
   if (!ks->ops) error_exit("Malloc error in sym2ksym");
   
   n=0;
@@ -101,7 +101,7 @@ void sym2ksym(struct symmetry *rs, struct symmetry *ks){
 	for(k=0;k<3;k++)
 	  invert.mat[j][k]=-rs->ops[i].mat[j][k];
       if (sym_in_list(&invert,ks->ops,n-1)==0){
-        memcpy(&invert,rs->ops+i,sizeof(struct sym_op));
+        memcpy(ks->ops+n,&invert,sizeof(struct sym_op));
 	ks->ops[n].tr=NULL;
         n++;
       }
@@ -554,5 +554,22 @@ void mat_a2f(double m1[3][3], double m2[3][3], double basis[3][3],
     for(j=0;j<3;j++)
       for(k=0;k<3;k++)
 	m2[i][j]+=recip[i][k]*m[k][j];
+
+}
+
+int is_identity(double m[3][3]){
+  int i,j;
+
+  for(i=0;i<3;i++){
+    for(j=0;j<3;j++){
+      if (i==j){
+	if (fabs(m[i][j]-1)>tol) return 0;
+      }
+      else{
+	if (fabs(m[i][j])>tol) return 0;
+      }
+    }
+  }
+  return 1;
 
 }

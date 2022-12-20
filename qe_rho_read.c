@@ -197,5 +197,5 @@ void qe_rho_read(FILE* infile, struct unit_cell *c, struct contents *m,
   g=g->next;
   g->data=NULL;
   g->next=NULL; 
-  
+  g->origin_abs=NULL;
 }

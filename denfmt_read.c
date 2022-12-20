@@ -87,11 +87,7 @@ void denfmt_read(FILE* infile, struct unit_cell *c, struct contents *m,
   if (debug>1) fprintf(stderr,"denfmt read grid size to be %dx%dx%d\n",
                        ngx,ngy,ngz);
 
-  if (gptr->next) gptr=gptr->next;
-  gptr->next=malloc(sizeof(struct grid));
-  if (!gptr->next) error_exit("Malloc error for struct grid");
-  gptr->next->next=NULL;
-  gptr->next->data=NULL;
+  gptr=grid_new(gptr);
   gptr->size[0]=ngx;
   gptr->size[1]=ngy;
   gptr->size[2]=ngz;
@@ -171,10 +167,7 @@ void denfmt_read(FILE* infile, struct unit_cell *c, struct contents *m,
     
       if (inrange(1,spin_range)){
 	gptr2=gptr->next;
-	gptr2->next=malloc(sizeof(struct grid));
-	if (!gptr2->next) error_exit("Malloc error for struct grid");
-	gptr2->next->next=NULL;
-	gptr2->next->data=NULL;
+	gptr2=grid_new(gptr2);
 	gptr2->size[0]=ngx;
 	gptr2->size[1]=ngy;
 	gptr2->size[2]=ngz;

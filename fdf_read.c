@@ -10,7 +10,25 @@
  * in its keywords.
  */
 
-/* Copyright (c) 2018-2020 MJ Rutter 
+
+/* Note too Siesta's strange reading of include files
+ *
+ *  include foo.dat  -- entirely conventional, insert foo.dat here
+ *
+ * label < foo.dat -- parse foo.dat as fdf file, update only label,
+ * which may be a block...
+ *
+ * %block label < foo.dat
+ *
+ * parses as
+ *
+ * %block label
+ * [contents of foo.dat]
+ * [implicit %endblock label]
+ *
+ */
+
+/* Copyright (c) 2018-2021 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -44,7 +62,11 @@ static int fdfreadlength(char *buff, double *x);
 static int fdfreadenergy(char *buff, double *x);
 static int fdfstrcasecmp(char **s1_in, char *s2);
 static int fdftokenmatch(char **s1_in, char *s2);
-static double siesta_pot_charge(char *prefix, char *label);
+static int fdfscanfile(char *filename, char *dirname, char *buffer,
+                       char *token, struct infiles **infile);
+static void fdf_unwind(struct infiles **infile);
+double siesta_pot_charge(char *prefix, char *label); /* Used by xv_read.c */
+void dequote(char **str);
 
 static char *ptr;
 
@@ -82,7 +104,10 @@ void fdf_read(FILE* in, struct unit_cell *c, struct contents *m,
   files->f=in;
   files->next=files->last=NULL;
   files->name=NULL;
+  files->include=0;
   files->line=0;
+  files->ret=NULL;
+  files->count=0;
   
   m->n=0;
   nspec=0;
@@ -190,10 +215,11 @@ void fdf_read(FILE* in, struct unit_cell *c, struct contents *m,
     if (strncasecmp(ptr,"%block",6)) continue;
     ptr+=6;
 /* Eat leading spaces */
-    while(*ptr==' ') ptr++;
+    while(isspace(*ptr)) ptr++;
 /* Kill trailing spaces and things after # */
     ptr2=ptr;
-    while((*ptr2)&&(*ptr2!=' ')&&(*ptr2!='#')) ptr2++;
+    while((*ptr2)&&(*ptr2!=' ')&&(*ptr2!='#')&&(*ptr2!='!')&&(*ptr2!=';'))
+      ptr2++;
     *ptr2=0; /* Either it was a null, or it should be one... */
 
     if (debug>2) fprintf(stderr,"Found a %s block\n",ptr);
@@ -201,6 +227,7 @@ void fdf_read(FILE* in, struct unit_cell *c, struct contents *m,
     if (!fdfstrcasecmp(&ptr,"latticevectors")){
       fdfreadline(buffer,LINE_SIZE,dir,&files);
       vec=malloc(9*sizeof(double));
+      if (!vec) error_exit("malloc error for vectors");
       for(i=0;i<3;i++){
         if (sscanf(buffer,"%lf %lf %lf",vec+3*i,vec+3*i+1,vec+3*i+2)!=3)
           error_exit("Error reading lattice vectors");
@@ -210,6 +237,7 @@ void fdf_read(FILE* in, struct unit_cell *c, struct contents *m,
     }else if (!fdfstrcasecmp(&ptr,"latticeparameters")){
       fdfreadline(buffer,LINE_SIZE,dir,&files);
       abc=malloc(6*sizeof(double));
+      if (!abc) error_exit("malloc error for abc");
       if (sscanf(buffer,"%lf %lf %lf %lf %lf %lf",
                  abc,abc+1,abc+2,abc+3,abc+4,abc+5)!=6)
           error_exit("Error reading lattice parameters");
@@ -220,6 +248,7 @@ void fdf_read(FILE* in, struct unit_cell *c, struct contents *m,
         error_exit("AtomicCoordinatesAndAtomicSpecies preceeds NumberOfAtoms");
       atomspecies=malloc(m->n*sizeof(int));
       atomcoords=malloc(3*m->n*sizeof(double));
+      if ((!atomspecies)||(!atomcoords)) error_exit("malloc error for atoms");
       for(i=0;i<m->n;i++){
         fdfreadline(buffer,LINE_SIZE,dir,&files);
         if (sscanf(buffer,"%lf %lf %lf %d",
@@ -234,6 +263,8 @@ void fdf_read(FILE* in, struct unit_cell *c, struct contents *m,
         error_exit("ChemicalSpeciesLabel preceeds NumberOfSpecies");
       species_to_atno=malloc((nspec+1)*sizeof(int));
       species_to_charge=malloc((nspec+1)*sizeof(double));
+      if ((!species_to_atno)||(!species_to_charge))
+	error_exit("malloc error for species");
       for(i=0;i<nspec;i++){
         fdfreadline(buffer,LINE_SIZE,dir,&files);
         if (sscanf(buffer,"%d %d%n",&j,&k,&n)!=2)
@@ -422,11 +453,12 @@ void fdf_read(FILE* in, struct unit_cell *c, struct contents *m,
     e->etol=(*dmetol)/m->n;
     free(dmetol);
   }
+
 }
 
 int fdfreadline(char *buffer, int len, char *dir, struct infiles **filesp){
-  int off,success2,inc;
-  char *ptr,*success,*p2;
+  int i,off,success2,inc;
+  char *ptr,*success,*p2,token[LINE_SIZE];
   
   while((success=fgets(buffer,len,(*filesp)->f))){ /* fgets() always
                                                     null terminates,
@@ -440,9 +472,9 @@ int fdfreadline(char *buffer, int len, char *dir, struct infiles **filesp){
 
 /* Eat leading spaces */
     ptr=buffer;
-    while(*ptr==' ') ptr++;
+    while(isspace(*ptr)) ptr++;
 /* Skip comments and blank lines */
-    if ((*ptr=='#')||(*ptr==0)) continue;
+    if ((*ptr=='#')||(*ptr=='!')||(*ptr==';')||(*ptr==0)) continue;
     break;
   }
 
@@ -465,10 +497,19 @@ int fdfreadline(char *buffer, int len, char *dir, struct infiles **filesp){
     if (!success2) return(0);
   }
 
+  /* Shift buffer to remove leading whitespace */
   off=ptr-buffer;
   if (off){
     while(*ptr) {*(ptr-off)=*ptr;ptr++;}
     *(ptr-off)=0;
+  }
+
+  ptr=buffer;
+  
+  /* return read %endblock line, but reset files to old value */
+  if (((*filesp)->include==2)&&(!strncasecmp(ptr,"%endblock",9))){
+    fdf_unwind(filesp);
+    return 1;
   }
 
   if (!tokenmatch(&ptr,"%include")){
@@ -492,13 +533,22 @@ int fdfreadline(char *buffer, int len, char *dir, struct infiles **filesp){
 
   /* do we now have a < ? */
   if (*p2=='<'){
+    for(i=0;!(isspace(buffer[i]));i++)
+      token[i]=buffer[i];
+    token[i]=0;
     ptr=p2+1;
     while (*ptr==' ') ptr++;
     p2=ptr;
     while ((*p2)&&(*p2!=' ')) p2++;
     *p2=0;
-    include_file(filesp,dir,ptr);
-    return fdfreadline(buffer,LINE_SIZE,dir,filesp);
+
+    i=fdfscanfile(ptr,dir,buffer,token,filesp);
+    if (!i){
+      fprintf(stderr,"Warning: %s not found in < included file %s\n",
+	      token,ptr);
+      return fdfreadline(buffer,LINE_SIZE,dir,filesp);
+    }
+    else return 1;
   }
     
   
@@ -525,9 +575,13 @@ int fdfreadline(char *buffer, int len, char *dir, struct infiles **filesp){
 
 void include_file(struct infiles **file, char *dir, char *ptr){
   struct infiles *fs;
-  char *name;
+  char *name,*infile;
 
   name=NULL;
+  infile=ptr;
+  dequote(&infile);
+  ptr=infile;
+  
   fs=*file;
   fs->next=malloc(sizeof(struct infiles));
   if (!fs->next) error_exit("Malloc error for files_next in cell_read");
@@ -535,6 +589,10 @@ void include_file(struct infiles **file, char *dir, char *ptr){
   fs->next->next=NULL;
   fs=fs->next;
   fs->f=NULL;
+  fs->count=(*file)->count+1;
+  if (fs->count>30)
+    error_exit("maximum include depth of 30 exceeded -- infinite recursion?");
+  
   if (dir){
     name=malloc(strlen(dir)+strlen(ptr)+1);
     if (!name) error_exit("malloc error for filename");
@@ -553,6 +611,7 @@ void include_file(struct infiles **file, char *dir, char *ptr){
     fprintf(stderr,"Error: failed to open include file ");
     if (name) fprintf(stderr,"%s or",name);
     fprintf(stderr,"%s\n",ptr);
+    
   }
   if (debug)
     fprintf(stderr,"Opened included file %s\n",fs->name);
@@ -560,6 +619,10 @@ void include_file(struct infiles **file, char *dir, char *ptr){
   fs->line=0;
   fs->include=1;  /* This gets set to zero if a block include which
                      * needs an %endblock added */   
+  if ((*file)->include)
+  fs->include=(*file)->include;
+  fs->count=(*file)->count+1;
+  fs->ret=(*file)->ret;
   *file=fs;
 }
 
@@ -677,6 +740,8 @@ static int fdfstrcasecmp(char **s1_in, char *s2){
   while((*s1)&&(*s2)){
     if ((*s1=='_')||(*s1=='-')||(*s1=='.'))
       s1++;
+    else if ((*s2=='_')||(*s2=='-')||(*s2=='.'))
+      s2++;
     else if (toupper(*s1)==toupper(*s2)){
       s1++;
       s2++;
@@ -711,23 +776,35 @@ static int fdftokenmatch(char **s1_in, char *s2){
   return 1;
 }
 
-static double siesta_pot_charge(char *prefix, char *label){
+/* Read charge from .psf file */
+double siesta_pot_charge(char *prefix, char *label){
   char *name;
   int i,idummy;
   double dummy,charge;
   FILE *pseudo;
   char buffer[LINE_SIZE+1];
 
-  name=malloc(strlen(prefix)+strlen(label)+5);
+  if (prefix)
+    name=malloc(strlen(prefix)+strlen(label)+10);
+  else
+    name=malloc(strlen(label)+10);
+
   name[0]=0;
-    
-  strcpy(name,prefix);
+  if (prefix) strcpy(name,prefix);
   strcat(name,label);
   strcat(name,".psf");
 
   pseudo=fopen(name,"rb");
 
   if (!pseudo) {
+    name[0]=0;
+    if (prefix) strcpy(name,prefix);
+    strcat(name,label);
+    strcat(name,".out.psf");
+    pseudo=fopen(name,"rb");
+  }
+
+  if (!pseudo){
     fprintf(stderr,"Failed to open %s\n",name);
     free(name);
     return 0;
@@ -743,12 +820,100 @@ static double siesta_pot_charge(char *prefix, char *label){
     fprintf(stderr,"Failed to read charge from %s\n",name);
     charge=0;
   }
-
+  else if (debug)
+    fprintf(stderr,"Label %s charge %lf read from %s\n",
+	    label,charge,name);
+    
   fclose(pseudo);
   free(name);
 
-  if (debug>1) fprintf(stderr,"Label %s charge %lf\n",label,charge);
-  
   return charge;
+}
+
+/* scan file(s) for a given token in response to "<" syntax */
+
+static int fdfscanfile(char *filename, char *dirname, char *buffer,
+                       char *token, struct infiles **infile){
+  char *ptr;
+  int found,block;
+  struct infiles *files;
+
+  if (debug>2)
+    fprintf(stderr,"fdfscanfile for %s in %s called\n",
+	    token,filename);
+
+  block=found=0;
+
+  files=*infile;
+  include_file(infile,dirname,filename);
+  (*infile)->ret=files;
+  if ((*infile)->f==NULL){
+    free((*infile)->name);
+    free(*infile);
+    *infile=files;
+    return 0;
+  }
   
+  while(fdfreadline(buffer,LINE_SIZE,dirname,infile)){
+    ptr=buffer;
+    block=0;
+    if (!strncasecmp(ptr,"%block",6)){
+      block=1;
+      ptr+=6;
+      while(isspace(*ptr)) ptr++;
+    }
+    if (!fdftokenmatch(&ptr,token)){
+      found=1;
+      break;
+    }
+  }
+
+  if (debug>1)
+    fprintf(stderr,"fdfscanfile for %s in %s returns %d block=%d %s\n",
+	    token,(*infile)->last->name,found,block,buffer);
+
+  if (block&&found){
+    (*infile)->include=2;
+  }
+  else{
+    fdf_unwind(infile);
+  }
+    
+  return found;
+}
+
+/* Deal with potentially multiple back-outs caused by Siesta's "<" syntax */
+static void fdf_unwind(struct infiles **infile){
+  struct infiles *target;
+
+  target=(*infile)->ret;
+
+  if (!target) error_exit("asked to unwind to null in fdf_unwind");
+  
+  while(*infile!=target){
+    fclose((*infile)->f);
+    free((*infile)->name);
+    *infile=(*infile)->last;
+    free((*infile)->next);
+  }
+}
+
+void dequote(char **str){
+  char *p;
+
+  p=*str;
+  
+  if (((*p)=='"')&&(index(p+1,'"'))){
+    p++;
+    *(index(p,'"'))=0;
+    *str=p;
+    return;
+  }
+
+  if (((*p)=='\'')&&(index(p+1,'\''))){
+    p++;
+    *(index(p,'\''))=0;
+    *str=p;
+    return;
+  }
 }

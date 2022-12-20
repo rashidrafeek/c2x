@@ -10,20 +10,24 @@
 
 void abinit_write(FILE* outfile, struct unit_cell *c, struct contents *m,
                   struct kpts *k, struct symmetry *s, struct es *e){
-  double abc[6],acell[3],akpt_disp[3],tot_spin;
-  int i,j,hit,nspec,nspin;
+  double abc[6],acell[3],akpt_disp[3],tot_spin,mf[3][3],x;
+  int i,j,jj,hit,nspec,nspin;
   char *fmt;
   
   if (m->title) fprintf(outfile,"# %s\n",m->title);
 
-  if (dict_get(m->dict,"Abinit_pp_dirpath"))
-    fprintf(outfile,"pp_dirpath = \"%s\"\n",
-	    (char*)dict_get(m->dict,"Abinit_pp_dirpath"));
-  
-  if (dict_get(m->dict,"Abinit_pseudos"))
-    fprintf(outfile,"pseudos = \"%s\"\n",
-	    (char*)dict_get(m->dict,"Abinit_pseudos"));
-  
+  if (!(flags&ALT_OUT)){
+    if (dict_get(m->dict,"Abinit_output_file"))
+      fprintf(outfile,"output_file = \"%s\"\n",
+	      (char*)dict_get(m->dict,"Abinit_output_file"));
+    if (dict_get(m->dict,"Abinit_pp_dirpath"))
+      fprintf(outfile,"pp_dirpath = \"%s\"\n",
+	      (char*)dict_get(m->dict,"Abinit_pp_dirpath"));
+    if (dict_get(m->dict,"Abinit_tmpdata_prefix"))
+      fprintf(outfile,"tmpdata_prefix = \"%s\"\n",
+	      (char*)dict_get(m->dict,"Abinit_tmpdata_prefix"));
+  }
+    
   /* The cell */
   
   cart2abc(c,NULL,abc,NULL,0);
@@ -88,6 +92,18 @@ void abinit_write(FILE* outfile, struct unit_cell *c, struct contents *m,
     if ((i%16)==15) fprintf(outfile,"\n     ");
   }
   fprintf(outfile,"\n");
+  if (!(flags&ALT_OUT)){
+    fprintf(outfile,"pseudos \"");
+    if (dict_get(m->dict,"Abinit_pseudos"))
+      fprintf(outfile,"%s",(char*)dict_get(m->dict,"Abinit_pseudos"));
+    else{
+      for(i=0;i<nspec;i++){
+	if (i) fprintf(outfile,", ");
+	fprintf(outfile,"%s.psp8",atno2sym(m->spec[i].atno));
+      }
+    }
+    fprintf(outfile,"\"\n\n");
+  }
   fprintf(outfile,"xred\n");
   if (flags&HIPREC)
     fmt="  %.15g";
@@ -189,5 +205,36 @@ void abinit_write(FILE* outfile, struct unit_cell *c, struct contents *m,
 
   if ((e->charge)&&(*e->charge!=0))
     fprintf(outfile,"charge %f\n",*e->charge);
+
+  /* Symmetry */
+
+  if (s&&(s->n>1)){
+    fprintf(outfile,"nsym %d\n",s->n);
+    fprintf(outfile,"symrel\n");
+    for(i=0;i<s->n;i++){
+      mat_a2f(s->ops[i].mat,mf,c->basis,c->recip);
+      fprintf(outfile,"      ");
+      for(j=0;j<3;j++)
+	fprintf(outfile," % d % d % d",(int)(floor(mf[0][j]+0.5)),
+		(int)(floor(mf[1][j]+0.5)),(int)(floor(mf[2][j]+0.5)));
+      fprintf(outfile,"\n");
+    }
+    fprintf(outfile,"tnons\n");
+    for(i=0;i<s->n;i++){
+      if(s->ops[i].tr){
+	fprintf(outfile,"     ");
+	for(j=0;j<3;j++){
+	  x=0;
+	  for(jj=0;jj<3;jj++)
+	    x+=s->ops[i].tr[jj]*c->recip[j][jj];
+	  if ((x<0)&&(x>-1e-6)) x=0;
+	  fprintf(outfile," % .8f",x);
+	}
+      fprintf(outfile,"\n");
+      }
+      else fprintf(outfile,"       0.00000000  0.00000000  0.00000000\n");
+    }
+  }
+  
   
 }

@@ -38,6 +38,8 @@ void wavecar_write(double *psi, int *pwgrid, int nplwv_in, int fft[3],
 
   if (!outfile) error_exit("No output file in wavecar_write");
 
+  if (isppol==-1) error_exit("Cannot write wavecar with spinor");
+  
   one=1;
   g2cut=0;
   sizeofcomplex=8;
@@ -230,7 +232,7 @@ void wavecar_write(double *psi, int *pwgrid, int nplwv_in, int fft[3],
   }
     
   /* If this is the last call, which we don't know, need to get the filesize
-   * correct. ftruncate() does not suffice.
+   * correct, rounding up to multiple of reclen. ftruncate() does not suffice.
    */
   if (sizeofcomplex*nplwv<reclen){
     fseek(outfile,fposn+reclen-1,SEEK_SET);

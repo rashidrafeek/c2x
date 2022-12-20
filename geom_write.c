@@ -1,4 +1,22 @@
+/* Write a CASTEP .geom file */
+
 /* Units are always atomic units (Ha, Bohr) */
+
+/* Copyright (c) 2019-2021 MJ Rutter 
+ * 
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation, either version 3
+ * of the Licence, or (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see http://www.gnu.org/licenses/
+ */ 
 
 #include<stdio.h>
 #include<string.h>
@@ -18,7 +36,7 @@ void geom_write(FILE* outfile, struct unit_cell *c, struct contents *m_in,
     ts=malloc(sizeof(struct time_series));
     if (!ts) error_exit("malloc error in geom_write");
     free_ts=1;
-    ts->nsteps=ts->nc=ts->nm=ts->nen=0;
+    init_tseries(ts);
   }
 
   if (ts->nsteps==0){
@@ -34,8 +52,10 @@ void geom_write(FILE* outfile, struct unit_cell *c, struct contents *m_in,
   }
   
   fprintf(outfile," BEGIN header\n");
-  fprintf(outfile," produced by c2x\n");
-  fprintf(outfile," END header\n");
+  fprintf(outfile," produced by c2x");
+  if (dict_get(m_in->dict,"in_file"))
+    fprintf(outfile," from %s",(char*)dict_get(m_in->dict,"in_file"));
+  fprintf(outfile,"\n END header\n");
   fprintf(outfile," \n");
 
   for(ii=0;ii<ts->nsteps;ii++){
@@ -115,7 +135,10 @@ void geom_write(FILE* outfile, struct unit_cell *c, struct contents *m_in,
         }
       }
     }
-    fprintf(outfile,"\n"); 
+    fprintf(outfile,"\n");
+    free(ninspec);
+    free(spatno);
+    free(natomsp);
   }
 
   if (free_ts) free(ts);

@@ -53,7 +53,6 @@ void es_pot(struct unit_cell *c, struct contents *m,
 
   if (g->data){
     cgrid=malloc(2*sizeof(double)*grid_size);
-
     if (!cgrid) error_exit("Malloc error in es_pot() for cgrid");
 
     for(i=0;i<grid_size;i++){
