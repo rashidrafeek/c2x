@@ -1,0 +1,91 @@
+This version of c2x is intended to be built with spglib
+( https://github.com/atztogo/spglib/releases ).
+It has been tested with spglib 1.9.9.
+
+The build of c2x itself is controlled by its Makefile. This can be edited,
+and then one simply types "make" and the result should be an
+executable in the current directory.
+
+There are three options for spglib
+
+1/ Compile without it. Not really recommended, as c2x will lose
+some functionality. For this simply do not define SPGLIB in the
+makefile (i.e. comment out references to "-DSPGLIB").
+
+2/ Use a pre-installed system spglib. For this it should not be
+necessary to set CPPFLAGS and LDFLAGS, for presumably the relevant
+header files and library files will be found automatically.
+
+3/ Download and compile your own version of SPGLIB. This is how
+c2x is developed. In this case one needs to build a static
+version of the spglib library. For some versions of spglib this can
+be achieved with
+
+./configure --disable-shared ; make
+
+Further notes on compiling spglib can be found at the end of this
+file.
+
+The only two files from spglib that c2x needs to build are
+spglib.h and libsymspg.a. One approach is to copy them from the spglib
+build tree to the c2x build tree (they are probably found as
+src/spglib.h and src/.libs/libsymspg.a after a building spglib, and
+then set
+
+CPPFLAGS=-I.
+LDFLAGS=-L.
+
+otherwise replace the above two dots with the path to the directory
+containing the include file and the library respectively.
+
+
+C2x itself should build straightforwardly with an ANSI C compiler.
+
+If one wishes to validate one's build of c2x, a basic test suite is
+available at www.c2x.org.uk.
+
+MJR 1/2017
+
+
+Further notes on compiling spglib
+=================================
+
+With aclocal / autotools
+------------------------
+
+The following recipe worked with spglib 1.9.9
+
+curl -o spglib.zip https://codeload.github.com/atztogo/spglib/zip/master
+unzip spglib.zip 
+cd spglib-master
+aclocal
+autoheader
+libtoolize
+touch INSTALL NEWS README AUTHORS
+automake -acf
+autoconf
+./configure --disable-shared
+make
+
+Then
+
+cp src/spglib.h src/.libs/libsymspg.a [c2x build directory]
+
+allows one to build with the makefile as supplied.
+
+Without aclocal / autotools
+---------------------------
+
+If you lack aclocal / autoheader / etc., which is likely to be the case
+if you are using MacOS, then the following recipe might also work.
+Again, it has been tested with spglib 1.9.9
+
+curl -o spglib.zip https://codeload.github.com/atztogo/spglib/zip/master
+unzip spglib.zip 
+cd spglib-master/src
+cp [c2x build directory]/Makefile.spglib Makefile
+make
+cp spglib.h libsymspg.a [c2x build directory]
+
+
+

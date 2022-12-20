@@ -1,0 +1,2 @@
+#!/bin/sh
+awk '/#define *C2XSF_VER/{v=$3;gsub("\"","",v);print v; exit;}' < c2xsf.h

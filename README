@@ -1,0 +1,32 @@
+C2x
+---
+
+This program should convert CASTEP's .check, .castep_bin, orbitals and
+.cell to various other formats, particularly so that they can be
+visualised with Jmol (http://www.jmol.org), XCrysDen
+(http://www.xcrysden.org), gnuplot and other programs. It can extract
+change and spin densities, wavefunctions, symmetry operations, and
+much else besides. It also interfaces with VASP. Examples of c2x's use
+can be found at http://www.c2x.org.uk/ and further documentation is in
+the included man page (c2x.1).
+
+The code can also manipulate .cell and .pdb files, building supercells
+or performing shifts.
+
+Assuming it has been linked with the spglib library, it can also 
+provide the symmetry analysis functions of spglib.
+
+This version does not support the arithmetic expressions in .cell files
+introduced with Castep 18.1 -- it is intended to add this functionality to
+a future version.
+
+The code is released under version 3 of the GPL, a copy of which
+should be in the accompanying "LICENCE" file. There is no warranty or
+statement that the code is fit for anything. The author is unware that
+any person or organisation other than himself has any claim on any IPR
+in the code.
+
+The code should build easily if one sets CFLAGS and CC in the Makefile
+correctly. Further instructions are in the INSTALL file.
+
+MJR 8/2007, 1/2012, 12/2017

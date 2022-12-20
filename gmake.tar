@@ -1,0 +1,10 @@
+# Use wildcards to avoid having to update source list
+
+NAME:=c2x_$(shell ./echo_ver )
+
+tar:
+	mkdir $(NAME)
+	cp *.c *.h c2x.1 Makefile README TODO INSTALL \
+ ChangeLog echo_ver LICENCE FAQ gmake.tar $(NAME)/
+	tar -cvzf $(NAME).tgz $(NAME)
+	rm -r $(NAME)

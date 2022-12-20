@@ -1,0 +1,15 @@
+# A Makefile for spglib 1.9.9 for those lacking autoconf tools.
+# MJR 2/2017
+
+OBJ = arithmetic.o cell.o debug.o delaunay.o hall_symbol.o kgrid.o \
+    kpoint.o mathfunc.o niggli.o pointgroup.o primitive.o \
+    refinement.o site_symmetry.o sitesym_database.o spacegroup.o \
+    spg_database.o spglib.o spin.o symmetry.o
+
+
+libsymspg.a: $(OBJ)
+	-[ -f libsymspg.a ] && rm libsymspg.a
+	ar -cr libsymspg.a $(OBJ)
+
+clean:
+	rm libsymspg.a $(OBJ)

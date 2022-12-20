@@ -1,0 +1,394 @@
+.TH c2x 1
+.SH NAME
+c2x - converts various crystal formats including density grid data
+
+.SH SYNOPSIS
+.B c2x
+[-OPTIONS] [--FORMAT] [--OPERATION] infile [outfile]
+
+.SH DESCRIPTION
+
+.B c2x
+converts primarily a CASTEP .check file to various output formats,
+additionally extracting densities (charge, spin, band or psi) and forces. It
+can also read CASTEP .cell files and PDB files, Onetep .dat files,
+and several VASP input  and output files. It is a sort of Babel with
+support for gridded data and .check files, and the abilty to transform
+cells.
+
+.LP
+It may have been compiled to give access to symmetry functions from spglib
+too.
+
+.LP
+An input file whose name ends '.pdb' is assumed to be in pdb format,
+ending in '.cif' is assumed to be in cif format, ending in '.res' is
+assumed to be in shelx97, ending '.cub' or '.cube' is assumed to be 
+in cube format, and ending in '.xsf' is assumed to be in xsf
+format. Input files ending  CHG, CHGCAR, POSCAR or CONTCAR are assumed
+to be in VASP 5.x format. Otherwise, if the first byte is either zero,
+10 or 30 it is
+assumed to be a .check file, else it is assumed to be a .cell file. It
+can also read .orbitals files (which are identical to .check files in
+format), and .castep_bin files (which lack wavefunctions). Furthermore,
+it can read .chdiff files and .cst_esp files. In these cases it needs
+a .cell or a .check file as well in order to obtain unit cell information.
+
+.SH OPTIONS
+
+.LP
+.TP
+.B \-a
+rotate as though outputing in abc format, i.e. place a along x axis, b
+in xy plane, and abc form a right hand set. Useful if one wants a dx file
+consistent with a pdb file. See also
+.BR \-3 .
+.TP
+.B \-A
+accumulate (sum) bands requested by
+.B \-b=
+or
+.BR \-B= .
+.TP
+.B \-b[=range]
+include specified bands as psi (real).
+.TP
+.B \-B[=range]
+include specified bands as densities (psi*conjg(psi)).
+.TP
+.B \-c
+include charge density (units electrons per cubic Angstrom).
+.TP
+.B \-C
+find "compact" (near-cubic) set of cell vectors.
+.TP
+.B \-d
+read also a corresponding .chdiff file, and output its contents. The filename
+given must still be that of a .cell or .check file, as a .chdiff file
+contains no axes.
+.TP
+.B \-e
+read also a corresponding .cst_esp file, and output its contents. The filename
+given must still be that of a .cell or .check file, as a .cst_esp file
+contains no axes.
+.TP
+.B \-e=tol
+set symmetry tolerance to given number of Angstroms
+.TP
+.B \-H
+shift atoms by half a grid cell. For use with xplor data format, see below.
+.TP
+.B \-i=nx,ny,nz
+Fourier interpolate onto specified grid size. New grid may be coarser or finer
+than original. Any dimension given as zero is replaced by old grid size. If
+reading wavefunction, any grid truncation is done after transforming back to
+real space and converting to density etc.
+.TP
+.B \-k[=range]
+include given kpoints for bands (default range is 1).
+.TP
+.B \-l
+if k-points are to be included in a .cell file, explicitly list them rather
+than using the MP generation parameters.
+.TP
+.B \-L
+output in abc format assuming that abc describes a left-handed set of axes.
+Do not use this unless you understand why you should not!
+.TP
+.B \-m[=a,b,c]
+assume input is molecule, not crystal. Try to avoid outputing a cell,
+shift if some co-ordinates are negative, or if a,b,c given shift by
+those numbers of FFT grid cells.
+.TP
+.B \-O
+print band occupancies and evalues to stderr.
+.TP
+.B \-P
+find primitive cell.
+.TP
+.B \-P=p1:p2:nn
+output data as line of nn points from p1 to p2. Express p's as either
+fractional co-ordinates in the form (x,y,z), or an atom position as, e.g.,
+Si3 for silicon atom number 3, or simply Si for the first Si atom.
+.TP
+.B \-R
+don't attempt to rescale densities, but output them raw. Charge density
+becomes electrons per unit cell.
+.TP
+.B \-s
+include spin density.
+.TP
+.B \-S[=range]
+include specified spins or spinors for bands (default range is -, and
+the spins are numbered 0 and 1).
+.TP
+.B \-t=(x1,y1,z1)(x2,y2,z2)[(x3,y3,z3)]
+rotate co-ordinate system so that the first vector becomes the second. First
+vector given in relative co-ordinates. If third axis given, it is used as
+the rotation axis. Else the rotation axis will be perpendicular to the
+two axes given.
+.TP
+.B \-T=(x1,y1,z1)(x2,y2,z2)[(x3,y3,z3)]
+rotate co-ordinate system so that the first vector becomes the second. All
+vectors given in absolute co-ordinates. If third axis given, it is used as
+the rotation axis. Else the rotation axis will be perpendicular to the
+two axes given.
+.TP
+.B \-u
+use atomic units (Bohrs) when writing .cell files and 1D data.
+.TP
+.B \-v
+be verbose. Far too much output can be generated if specified more than twice.
+.TP
+.B \-w
+weight bands by occupancies, or sqrt(occ) if not calculating density.
+.B \-W
+weight bands by occupancies and k-point weight, or sqrt thereof if not
+calculating density.
+.TP
+.B \-x=(x1,x2,x3)(y1,y2,y3)(z1,z2,z3)
+expand unit cell to new cell specified in terms of the old cell axes.
+.TP
+.B \-X=(x1,x2,x3)(y1,y2,y3)(z1,z2,z3)
+expand unit cell to new cell specified in absolute co-ordinates.
+.TP
+.B \-z=p1
+print to stdout data at given point, and set output type to null. For
+specification of p1, see -P= option.
+.TP
+.B \-1
+assume input .cell file follows Onetep conventions (such as default units
+being Bohr).
+.TP
+.B \-3
+when moving from a left hand set of axes to a right hand set, rather than
+exchanging the 2nd and 3rd axes, preserve the 3rd and exchange the 1st
+and 2nd. This transformation is required if the input is cartesian and
+left handed, and an abc output is requested. Specifying this flag twice
+will cause the 1st and 3rd axes to be exchanged.
+
+.SH FORMATS
+
+.LP
+The following output formats are recognised.
+
+.TP
+.B \-\-cell
+CASTEP .cell, cartesian cell, fractional co-ordinates. The output contains
+just the lattice and positions blocks, so is not a valid input to CASTEP, but
+can easily be made so.
+.TP
+.B \-\-cell_abc
+CASTEP .cell, abc cell, fractional co-ordinates.
+.TP
+.B \-\-cell_abs
+CASTEP .cell, cartesian cell, absolute co-ordinates.
+.TP
+.B \-\-cell_abc_abs
+CASTEP .cell, abc cell, absolute co-ordinates.
+.TP
+.B \-\-chgcar
+VASP 5.x chgcar output.
+.TP
+.B \-\-cif
+a very basic and rigid format which may be compatible with some CIF-reading
+software.
+.TP
+.B \-\-cml
+Chemical Markup Language.
+.TP
+.B \-\-cube
+Gaussian cube. Atoms and at most one data set.
+.TP
+.B \-\-dx
+Data Explorer. Data set only.
+.TP
+.B \-\-denfmt
+CASTEP formatted density
+.TP
+.B \-\-fdf
+Siesta. Current support is very partial. If you want a density, you must
+name the output file on the command line, the filename must end ".fdf",
+and the density will appear in a corresponding ".RHO" file.
+.TP
+.B \-\-gnu
+Gnuplot command file for 1D data.
+.TP
+.B \-\-null
+Null output. Throw away all output, but still write some useful information
+the input to stderr.
+.TP
+.B \-\-one
+Onetep .dat, very similar to .cell. Also one_abc, one_abs, and one_abc_abs.
+.TP
+.B \-\-pdb
+PDB
+.TP
+.B \-\-pdbn
+PDB, but label the atoms with element symbol and number within that species,
+e.g. C8, H24, Ca2, rather than just with element symbol. The whole string
+can contain no more than four characters, so * is used for the numeric part
+if it would not otherwise fit.
+.TP
+.B \-\-py
+a python dictionary, compatible with the Atoms data structure from ASE.
+.TP
+.B \-\-pya
+a python ASE Atoms data structure.
+.TP
+.B \-\-shelx
+a subset of the SHELX97 format.
+.TP
+.B \-\-vasp
+VASP 5.x output (poscar or chg).
+.TP
+.B \-\-xplor
+Xplor format. Data set only. The grid used in this format is offset by half
+a grid cell compared to Castep, and as interpolating is inexact, this program
+does not in this case. Also the grid axes are described in terms of a, b, c,
+alpha, beta, gamma, so information about orientation in space is lost. To
+produce a compatible pdb file of atomic co-ordinates, specify
+.I \-Hc
+when creating the pdb file.
+.TP
+.B \-\-xsf
+XCrysDen format. Default. The only format in which multiple data sets are
+supported.
+.TP
+.B \-\-xyz
+XYZ format. Atoms only, no unit cell.
+
+.LP
+Where a range is required, it can be specified as a single integer, two
+integers separated by a hyphen (all integers in the given range), or a
+comma-separated list of any of these elements. Only for the xsf output format
+is a range including more than a single integer meaningful.
+
+.SH OPERATION
+
+.LP
+If c2x has been compiled with spglib, the following spglib
+operations are available.
+
+.TP
+.B \-\-int
+call spg_get_dataset() and report international symbol
+.TP
+.B \-\-list
+call spg_get_dataset() and list symmetry ops
+.TP
+.B \-\-point
+call spg_get_dataset() followed by spg_get_pointgroup()
+.TP
+.B \-\-primitive
+call spg_find_primitive()
+.TP
+.B \-\-refine
+call spg_refine_cell()
+.TP
+.B \-\-schoen
+call spg_get_schoenflies()
+.TP
+.B \-\-symmetry
+call spg_get_dataset() and keep symmetry ops
+
+.SH NOTES
+
+.LP
+For cell and pdb formats, just the unit cell and atomic positions are read or
+written. For the dx and xplor formats, just a single data set is written. For
+the VASP format atomic positions and a data set are written, but information
+regarding atomic species cannot be recorded. For the Gaussian cube format
+atomic positions and at most one data set are recorded, and for the XCrysDen
+format the unit cell, atomic positions, forces, and any number of data sets are
+recorded.
+
+.LP
+Note that the pdb format offers a very low precision for storing co-ordinates,
+and, because it stores the unit cell in abc format, and the atoms in absolute
+coordinates, a rotation is likely to be required to place
+.B a
+on the cartesian
+.B x
+axis, etc. If so, it will be done automatically. The same is true for the abc
+varients of the cell format and for the Xplor file format. This rotation can be
+specified explicitly for other formats. Additionally the axes must form
+a right-handed set. If this is not the case, two axes will be interchanged.
+By default,
+.B b
+and
+.B c
+are exchanged, but the flag
+.B \-3
+will cause
+.B a
+and
+.B b
+to be exchanged instead.
+
+.LP
+The cif reader reads little more than c2x's cif output. It is very
+basic, and will fail to read correctly a large number of valid cif files.
+There is currently no intention to produce a proper cif reader.
+
+.LP
+When outputting psi it is assumed that it is possible to make psi real
+by unwinding any phase produced by the k-point, and then multiplying
+all points by the same arbitrary complex constant. If this is not so,
+the band was probably nonsense anyway. The final choice of a factor of
+-1 is arbitrary. This scheme produces nonsense if one attempts to
+plot a degenerate band.
+
+.LP
+When doing the conversions resulting from -x, a new grid will be
+chosen of similar density to the old, and the data interpolated onto
+the new using trilinear interpolation. Extrapolating psis (rather than
+densities) is meaningless except at gamma, for the phase due to the k
+point is not considered.
+
+.LP
+Densities by default are in Angstroms**-3, and psis in Angstroms**-1.5.
+
+.SH EXAMPLES
+
+.LP
+To extract the charge density in xsf format
+.IP
+c2x -c input.check output.xsf
+
+.LP
+To extract the first four bands as psi at the second k-point in xsf format
+.IP
+c2x -b=1-4 -k=2 input.check output.xsf
+
+.LP
+To convert a check file to a pdb file
+.IP
+c2x --pdb input.check output.pdb
+
+.LP
+To convert a cell to something containing two repeat units in the a
+and b directions, and one in the c direction
+.IP
+c2x --cell -x='(2,0,0)(0,2,0)(0,0,1)' in.cell out.cell
+
+.LP
+Assuming the above cell was a 3.5A cube, the same in absolute co-ordinates
+.IP
+c2x --cell -x='(7,0,0)(0,7,0)(0,0,3.5)' in.cell out.cell
+
+
+.SH VIEWERS
+
+This code was written with the following viewers in mind. For densities,
+xcrysden, VESTA and jmol, for structures gdis.
+
+.SH BUGS
+
+None know.
+
+Please report others to MJR.
+
+.SH SEE ALSO
+
+babel(1).

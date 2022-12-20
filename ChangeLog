@@ -1,0 +1,66 @@
+2.05b
+-----
+
+Added --refs option.
+Added that Castep 18.1 .check files are correctly read.
+Source released on www.c2x.org.uk website
+
+2.05a
+-----
+
+Improvements to .cell reading: species_gamma block preserved, and
+ ":" and "=" accepted in more places
+symmetry_tol defaults to angstroms, not incorrectly to Bohr as before
+
+2.05
+----
+
+Minor changes to VASP output --chgcar introduced.
+
+2.05p4
+------
+
+Atoms with different Onetep labels differ for SPGLIB, supercell and
+  primitive-finding operations
+Labels which are identical to atomic symbols purged
+VASP reading supports VASP names as prefixes as well as suffixes
+Treatment of VASP POSCAR scalefactors improved
+
+2.05p3
+------
+
+Better Onetep support, including includefile and parsing of species block
+Onetep supported as separate output format
+Add very basic den_fmt reader
+
+2.05p2
+------
+
+Read initial spins from check file
+VASP output supports co-linear spins
+Add Castep den_fmt writer
+
+2.05p1
+-----
+
+Reads structure and charge density from VASP CHGCAR or CHG file
+Reads structure from VASP POSCAR or CONTCAR file
+VASP output updated to version 5 of VASP
+
+2.0a1
+-----
+
+XSF reader accepts DATAGRID_3D as well as BEGIN_DATAGRID_3D
+
+2.0a
+----
+
+Add comments to XSF and gnuplot format
+Fix ordering of k-points from parallel calculation
+Tidy some output and add -O option
+
+2.0
+---
+
+Initial GPL3 release of version 2
+
