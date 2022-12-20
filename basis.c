@@ -72,9 +72,8 @@ void real2rec(struct unit_cell *c){
   c->vol=v;
 }
 
-/* Update global fractional atomic co-ordinates to reflect global
- * absolute atomic co-ordinates. Assumes global reciprocal basis
- * is correct. Does NOT reduce co-ords to be less than 1 --
+/* Update fractional atomic co-ordinates to reflect absolute
+ * atomic co-ordinates. Does NOT reduce co-ords to be less than 1 --
  * sym_vec relies on this.
  */
 void addfrac(struct atom *a,int na, double rec[3][3]){
@@ -90,7 +89,7 @@ void addfrac(struct atom *a,int na, double rec[3][3]){
   }
 }
 
-/* Update global absolute atomic co-ordinates to reflect global
+/* Update absolute atomic co-ordinates to reflect 
  * fractional atomic co-ordinates
  */
 void addabs(struct atom *a,int na, double b[3][3]){

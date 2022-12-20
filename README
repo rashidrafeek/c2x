@@ -16,10 +16,6 @@ or performing shifts.
 Assuming it has been linked with the spglib library, it can also 
 provide the symmetry analysis functions of spglib.
 
-This version does not support the arithmetic expressions in .cell files
-introduced with Castep 18.1 -- it is intended to add this functionality to
-a future version.
-
 The code is released under version 3 of the GPL, a copy of which
 should be in the accompanying "LICENCE" file. There is no warranty or
 statement that the code is fit for anything. The author is unware that

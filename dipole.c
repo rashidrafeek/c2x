@@ -27,6 +27,8 @@ void dipole(struct unit_cell *c, struct contents *m,
       disp=fmod(m->atoms[i].frac[j]-dipole_ctr[j]+0.5,1.0);
       if (disp<0) disp+=1;
       disp-=0.5;
+      /* ignore ions split between +/- 0.5 */
+      if ((aeq(disp,0.5))||(aeq(disp,-0.5))) disp=0;
       d[j]+=m->atoms[i].chg*disp;
     }
   }
@@ -167,9 +169,17 @@ void dipole(struct unit_cell *c, struct contents *m,
   mag=sqrt(mag);
   fprintf(stderr,")  magnitude %f\n",mag);
 
+  if (debug){
+    fprintf(stderr,"Extra dipole field in V/A: (");
+    for(i=0;i<3;i++) fprintf(stderr,"%f%s",
+                             (i_dipole[i]+e_dipole_g[i])/(EPS0*c->vol),
+                             (i==2)?"":",");
+    fprintf(stderr,")\n");
+  }
+
   if ((dipole_slab_dir>=1)&&(dipole_slab_dir<=3)){
     mag=i_dipole[dipole_slab_dir-1]+e_dipole_g[dipole_slab_dir-1];
-    E=0.5*180.9527*mag*mag/c->vol;  /* 180.952701 is 1/eps_0 in e/eV/A */
+    E=0.5*mag*mag/(EPS0*c->vol);
     fprintf(stderr,"Calculated dipole energy correction (%c axis): %f eV\n",
             'w'+dipole_slab_dir,E);
   }

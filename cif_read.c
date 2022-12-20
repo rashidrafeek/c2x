@@ -193,8 +193,8 @@ static char* cif_loop(FILE *infile, struct unit_cell *c, struct contents *m,
     if (scmp(buff,"_atom_site_type_symbol")||
 	scmp(buff,"_atom_site.type_symbol"))
       fsym=i;
-    else if (scmp(buff,"_atom_site_type_label")||
-	scmp(buff,"_atom_site.type_label"))
+    else if (scmp(buff,"_atom_site_label")||
+	scmp(buff,"_atom_site.label"))
       flab=i;
     else if (scmp(buff,"_atom_site_fract_x")||
              scmp(buff,"_atom_site.fract_x"))

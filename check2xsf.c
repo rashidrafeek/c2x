@@ -35,6 +35,8 @@
 #include "c2xsf.h"
 #undef C2X_MAIN
 
+#define C2X_MU 4.2
+
 void help(void);
 void refs(void);
 
@@ -122,6 +124,8 @@ int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
             int op, double tolmin);
 void dipole(struct unit_cell *c, struct contents *m,
             struct grid *g, double *dipole_ctr);
+void es_pot(struct unit_cell *c, struct contents *m,
+            struct grid *g, double musq);
 
 /* Global variables for system description */
 
@@ -148,14 +152,14 @@ int main(int argc, char **argv)
   int sort_style=0;
   int no_sym=0;
   int spg_op;
-  int gen_mp=0, failure=0;
+  int gen_mp=0, failure=0,calc_esp=0;
   int format,preserve_c;
   int *i_grid;
   char *optp,*file1=NULL,*file2=NULL,*line_spec=NULL,*pt_spec=NULL;
   char *cdfile,*cptr;
   FILE *infile,*outfile;
   double abc[6],new_cell[3][3],new_cell_rel[3][3],*new_mp,zpt[3],g_cut;
-  double tolmin=1e-4,ionic_charge;
+  double tolmin=1e-4,ionic_charge,musq;
   double *dipole_ctr;
   int *m_abc;
   struct grid *gptr;
@@ -345,6 +349,23 @@ int main(int argc, char **argv)
             while(*((++optp)+1));
           }
           else flags|=CST_ESP;
+          break;
+        case 'E':
+          calc_esp=1;
+          flags|=CHDEN;
+          musq=0;
+          j=0;
+          if(*(optp+1)=='='){
+            if(*(optp+2)=='-'){
+              j=1;
+              optp++;
+            }
+            sscanf(optp+2,"%lf",&musq);
+            while(*((++optp)+1));
+          }
+          if (musq==0) musq=C2X_MU; /* Reasonable default? */
+          musq=musq*musq;
+          if (j) musq*=-1;
           break;
         case 'f':
           failure=1;
@@ -741,7 +762,7 @@ int main(int argc, char **argv)
   }
 
   if ((dipole_ctr)&&(grid1.data)) dipole(&cell,&motif,&grid1,dipole_ctr);
-    
+
   if (debug>2){
     fprintf(stderr,"Ionic positions, fractional\n");
     for(i=0;i<motif.n;i++){
@@ -800,10 +821,28 @@ int main(int argc, char **argv)
       }
       fprintf(stderr,"  min=%g  max=%g  sum=%g  int=%g\n",min,max,
 	      sum,sum*cell.vol/(gptr->size[0]*gptr->size[1]*gptr->size[2]));
+      fprintf(stderr,
+	      "  (integral is e per cell for charge and spin densities)\n");
     }
 
     if (i_grid){
       struct grid ng;
+
+      /* If interpolation is to coarser grid, need to calc es pot first,
+         but if it is to a finer grid, need to interpolate first. */
+      if ((calc_esp)&&(gptr==&grid1)){
+        for(i=0;i<3;i++) ng.size[i]=max(i_grid[i],gptr->size[i]);
+        if ((ng.size[0]!=gptr->size[0])||
+            (ng.size[1]!=gptr->size[1])||
+            (ng.size[2]!=gptr->size[2])){
+          interpolate3d(gptr,&ng);
+          free(gptr->data);
+          gptr->data=ng.data;
+          for(i=0;i<3;i++) gptr->size[i]=ng.size[i];
+        }
+        es_pot(&cell,&motif,&grid1,musq);
+        calc_esp=0;
+      }
 
       for(i=0;i<3;i++) ng.size[i]=i_grid[i];
 
@@ -832,6 +871,8 @@ int main(int argc, char **argv)
     gptr=gptr->next;
   }
 
+  if ((calc_esp)&&(grid1.data)) es_pot(&cell,&motif,&grid1,musq);
+    
   if (pt_spec){
     lscan(&pt_spec,&motif,zpt);
     gptr=&grid1;
@@ -1036,8 +1077,9 @@ void help(void){
          "               the .cell or .check file given\n"
          "-e=eps       set tolerance for supercell operations. Default=%g\n"
          "-e=min-max   set tolerance range for spglib operations\n"
+         "-E[=[-][mu]] calculate electrostatic potential. Default mu=%g\n"
          "-f           find first failure star of k-point mesh\n"
-         "-H           shift atoms by half a grid cell\n",tol);
+         "-H           shift atoms by half a grid cell\n",tol,C2X_MU);
   printf("-i           output imaginary part of band\n"
          "-i=n1,n2,n3  Fourier interpolate 3D grids to specified grid\n"
          "-I[=range]   report inversion symmetries of given bands\n"
@@ -1152,8 +1194,8 @@ void help(void){
 	 "format.\n\n"
          "Otherwise "
          "automatic detection of .cell or .check input. Compatible with\n"
-         ".check files from CASTEP 3.0 to 18.1 (and perhaps beyond).\n\n"
-         "Version " C2XSF_VER ", (c) MJ Rutter 2007 - 2018"
+         ".check files from CASTEP 3.0 to 19.1 (and perhaps beyond).\n\n"
+         "Version " C2XSF_VER ", (c) MJ Rutter 2007 - 2019"
          " licenced under the GPL v3.\n\n");
   printf("If useful to a published paper, please consider citing using the\n"
          "references shown with the --refs argument.\n\n");

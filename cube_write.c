@@ -57,12 +57,12 @@ void cube_write(FILE* outfile, struct unit_cell *c, struct contents *m,
 
   if (flags&HIPREC){
     fmt1="%d %.15f %.15f %.15f\n";
-    fmt2="%d 0.0 %.15f %.15f %.15f\n";
+    fmt2="%d %.4f %.15f %.15f %.15f\n";
     fmt3="%.15f\n";
   }
   else{
     fmt1="%d %f %f %f\n";
-    fmt2="%d 0.0 %f %f %f\n";
+    fmt2="%d %.3f %f %f %f\n";
     fmt3="%f\n";
   }
       
@@ -77,7 +77,7 @@ void cube_write(FILE* outfile, struct unit_cell *c, struct contents *m,
     x=m->atoms[i].abs[0]/BOHR;
     y=m->atoms[i].abs[1]/BOHR;
     z=m->atoms[i].abs[2]/BOHR;
-    fprintf(outfile,fmt2,m->atoms[i].atno,x,y,z);
+    fprintf(outfile,fmt2,m->atoms[i].atno,m->atoms[i].chg,x,y,z);
   }
 
   dptr2=g->data;

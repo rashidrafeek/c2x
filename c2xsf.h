@@ -1,4 +1,4 @@
-#define C2XSF_VER "2.16a"
+#define C2XSF_VER "2.20a"
 
 /* Global variables for system description */
 
@@ -12,6 +12,13 @@
 #define H_eV 27.21138342902473  /* Right or wrong, it's Castep's value
                                  * physics.nist.gov gives 27.2113845(23)
                                  */
+
+/* epsilon_0 is 8.8541878e-12 Fm^-1 or C V^-1 m-1
+ * We want A not m, and e not C, so
+ * 8.8541878e-12/1.6021892e-19/1e10
+ * Strangely the answer is generally expressed as its reciprocal */
+
+#define EPS0 (1/180.952701)
 
 
 #ifndef M_PI

@@ -249,6 +249,12 @@ int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
   }
   addabs(m->atoms,m->n,c->basis);
 
+  /* SPG is capable of returning fractional co-ordinates of 1,
+   * whereas we like zeros */
+
+  reduce_cell_tol(m->atoms,m->n,c->basis);
+  sort_atoms(m,1);
+
   /* SPG has sym-ops in fractional co-ords, Castep in cartesians */
   if ((op&(CSPG_SYM|CSPG_PNT))&&(s->n)) {
     s->ops=sym_frac2abs(spg->rotations,spg->translations,c,s->n);

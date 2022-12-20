@@ -1,9 +1,12 @@
 /* Read a CASTEP .esp file
  *
  * Cope with either endianness
+ *
+ * Note that Castep always uses units of -Hartrees for this file
+ * (at least up to Castep 18.1)
  */
 
-/* Copyright (c) 2008 MJ Rutter 
+/* Copyright (c) 2008-2018 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -71,7 +74,7 @@ static void reverse8n(double *data, int n){
 void esp_read(FILE* infile, struct grid *gptr, struct es *elect){
   int endian,tmp,i,j,k,nspins,ns,c;
   int fft[3];
-  double *column,*dptr1,*dptr2,csum;
+  double *column,*dptr1,*dptr2,csum,scale;
 
   endian=0; /* Keep compiler quiet */
   csum=0;
@@ -167,6 +170,12 @@ void esp_read(FILE* infile, struct grid *gptr, struct es *elect){
                   "sum of absolute values of imaginary parts of potential"
                   " is %g\n",
                   ns,csum);
+      }
+      /* Castep stores the potential in -Hartrees */
+      if (!(flags&RAW)){
+        scale=-H_eV;
+        for(i=0;i<fft[0]*fft[1]*fft[2];i++) gptr->data[i]*=scale;
+        if (debug>1) fprintf(stderr,"Potential rescaled by %f\n",scale);
       }
     }
     else fseek(infile,fft[0]*fft[1]*(16*fft[2]+16),SEEK_CUR);

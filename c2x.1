@@ -81,6 +81,13 @@ contains no axes.
 .B \-e=tol
 set symmetry tolerance to given number of Angstroms
 .TP
+.B \-E[=[-][mu]]
+calculate electrostatic potential, assuming that an electron density has been
+read (implies -c). Ions are treated as Gaussian blobs of charge of
+extent exp(-mu^2r^2). If the ionic charge differs from the atomic number,
+a further localised smoothing of the atomic potential occurs, unless the first
+character after the = is -.
+.TP
 .B \-H
 shift atoms by half a grid cell. For use with xplor data format, see below.
 .TP
@@ -119,7 +126,9 @@ find primitive cell.
 .B \-P=p1:p2:nn
 output data as line of nn points from p1 to p2. Express p's as either
 fractional co-ordinates in the form (x,y,z), or an atom position as, e.g.,
-Si3 for silicon atom number 3, or simply Si for the first Si atom.
+Si3 for silicon atom number 3, or simply Si for the first Si atom. Using
+a 0 (zero) for a p is equivalent to (0,0,0), and the three cell axes
+"(0,0,0):(1,0,0):ngx+1" (etc.) can be specified as a, b and c.
 .TP
 .B \-R
 don't attempt to rescale densities, but output them raw. Charge density

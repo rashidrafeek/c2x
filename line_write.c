@@ -1,6 +1,6 @@
 /* Write a 1D file. */
 
-/* Copyright (c) 2014 MJ Rutter 
+/* Copyright (c) 2014-2018 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -20,6 +20,7 @@
 #include<stdlib.h>
 #include<ctype.h>
 #include<math.h>
+#include<string.h>
 
 #include "c2xsf.h"
 
@@ -55,6 +56,10 @@ void lscan(char **p, struct contents *m, double x[3]){
       exit(1);
     }
     ptr++;
+  }
+  else if ((*ptr=='0')&&((*(ptr+1)==':')||(*(ptr+1)==0))){
+    ptr++;
+    x[0]=x[1]=x[2]=0;
   }
   else{
     for(i=0;i<4;i++){
@@ -116,18 +121,39 @@ void line_write(FILE* outfile, struct unit_cell *c,
 
   ptr=line_spec;
 
-  lscan(&ptr,m,start);
+  if (!strcmp(line_spec,"a")){
+    start[0]=start[1]=start[2]=0;
+    end[0]=1;
+    end[1]=end[2]=0;
+    n=gptr->size[0]+1;
+  }
+  else if (!strcmp(line_spec,"b")){
+    start[0]=start[1]=start[2]=0;
+    end[1]=1;
+    end[0]=end[2]=0;
+    n=gptr->size[1]+1;
+  }
+  else if (!strcmp(line_spec,"c")){
+    start[0]=start[1]=start[2]=0;
+    end[2]=1;
+    end[0]=end[1]=0;
+    n=gptr->size[2]+1;
+  }
+  else{
+  
+    lscan(&ptr,m,start);
 
-  if (*ptr!=':') error_exit("Failed to find first colon in line_spec");
-  ptr++;
+    if (*ptr!=':') error_exit("Failed to find first colon in line_spec");
+    ptr++;
 
-  lscan(&ptr,m,end);
+    lscan(&ptr,m,end);
 
-  if (*ptr!=':') error_exit("Failed to find second colon in line_spec");
-  ptr++;
+    if (*ptr!=':') error_exit("Failed to find second colon in line_spec");
+    ptr++;
 
-  if(sscanf(ptr,"%d",&n)!=1)
-    error_exit("Invalid number of points in line_spec");
+    if(sscanf(ptr,"%d",&n)!=1)
+      error_exit("Invalid number of points in line_spec");
+  }
   
   if (debug)
     fprintf(stderr,"Requested line (%f,%f,%f) to (%f,%f,%f) with %d points.\n",

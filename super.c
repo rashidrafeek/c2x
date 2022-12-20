@@ -360,6 +360,8 @@ void grid_interp(struct unit_cell *c, struct grid *grid, int old_fft[3],
         /* and to int and fractional parts */
           pt[l][0]=pfrac[l];
           ifrac[l][1]=pfrac[l]-pt[l][0];
+	  if (pt[l][0]==old_fft[l]) pt[l][0]=0;
+	  if (pt[l][0]>old_fft[l]) error_exit("Impossible in grid_interp");
         /* and the other side of the grid "cube" */
           pt[l][1]=(pt[l][0]+1)%old_fft[l];
           ifrac[l][0]=1-ifrac[l][1];
@@ -373,6 +375,12 @@ void grid_interp(struct unit_cell *c, struct grid *grid, int old_fft[3],
               x+=ifrac[0][ii]*ifrac[1][jj]*ifrac[2][kk]*
                    OX(pt[0][ii],pt[1][jj],pt[2][kk]);
         gnew[((i*grid->size[1])+j)*grid->size[2]+k]=x;
+	if (fabs(x)>99) {
+	  fprintf(stderr,"%lf\n",x);
+	  for(ii=0;ii<3;ii++) fprintf(stderr,"ifrac[0][%d]=%lf\n",ii,ifrac[0][i]);
+	  for(ii=0;ii<3;ii++)
+	    fprintf(stderr,"pt[i][0]=%5d  pt[i][1]=%5d\n",pt[ii][0],pt[ii][1]);  
+	}
         sum+=x;
       }
     }

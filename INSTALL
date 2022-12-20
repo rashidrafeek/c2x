@@ -53,7 +53,7 @@ Further notes on compiling spglib
 With aclocal / autotools
 ------------------------
 
-The following recipe worked with spglib 1.9.9 and 1.10.3.
+The following recipe worked with spglib 1.9.9, 1.10.3 and 1.11.2.
 
 curl -o spglib.zip https://codeload.github.com/atztogo/spglib/zip/master
 unzip spglib.zip 

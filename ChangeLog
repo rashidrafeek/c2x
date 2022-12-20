@@ -1,3 +1,23 @@
+2.20a
+-----
+
+Correct _atom_site type_label to  _atom_site label in cif reader
+If spglib returns a fractional co-ord of 1, reduce to 0
+Sort atoms after calling spglib transforms
+Fix some comments in basis.c
+Fix bug in data grid transformation when transforming cell size/shape
+Add units of charge/spin integral to output
+
+2.20
+----
+
+Include pseudocharges in .cube files.
+-E option for generating electrostatic potentials from charge density.
+Scale .cst_esp files from Hartrees to volts.
+Ignore ions +/-0.5 from dipole centre when calculating dipole moments.
+In a linespec, 0 (zero) a shorthand for (0,0,0).
+As a linespec, "a" a shorthand for (0,0,0):(1,0,0):ngx+1, and also "b" and "c"
+
 2.16a
 -----
 
