@@ -480,7 +480,7 @@ int cellreadline(char *buffer, int len){
       *title=malloc(p2-ptr+1);
       if(!*title) error_exit("Malloc error in cell_read()");
       strncpy(*title,ptr,p2-ptr);
-      *title[p2-ptr]=0;
+      (*title)[p2-ptr]=0;
       continue;
     }
 /* Skip comments and blank lines */

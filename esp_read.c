@@ -172,8 +172,9 @@ void esp_read(FILE* infile, struct grid *gptr, struct es *elect){
                   ns,csum);
       }
       /* Castep stores the potential in -Hartrees */
+      /* From 2.32 we show all potentials in -V */
       if (!(flags&RAW)){
-        scale=-H_eV;
+        scale=H_eV;
         for(i=0;i<fft[0]*fft[1]*fft[2];i++) gptr->data[i]*=scale;
         if (debug>1) fprintf(stderr,"Potential rescaled by %f\n",scale);
       }

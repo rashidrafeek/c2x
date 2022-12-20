@@ -133,7 +133,10 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
   char sym[4],*ptr,*p2,*p3;
   char *aspec;
   int atoms_are_abs,off[3];
-  char *qe_control_str[]={"verbosity","restart_mode","disk_io",""};
+  /* List intensive quantities which can be preserved */
+  char *qe_control_lst[]={"disk_io","iprint","restart_mode",
+                          "tprnfor","tstress","verbosity",""};
+  char *qe_system_lst[]={"ecutfock","ecutrho","occupations","smearing",""};
   
   ntyp=0;
   ibrav=-1;
@@ -242,22 +245,25 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
       }
       else{
         hit=0;
-        for(i=0;qe_control_str[i][0];i++){
-          if(!tokenmatch(&ptr,qe_control_str[i])){
+        for(i=0;qe_control_lst[i][0];i++){
+          if(!tokenmatch(&ptr,qe_control_lst[i])){
             hit=1;
             while ((*ptr)&&(isspace(*ptr))) ptr++;
-            if (*ptr=='=') ptr++;
-            if (qe_string_read(&ptr,&p3)){
-              dict_strcat(m->dict,"QE_control_list","  ");
-              dict_strcat(m->dict,"QE_control_list",qe_control_str[i]);
-              dict_strcat(m->dict,"QE_control_list"," = '");
-              dict_strcat(m->dict,"QE_control_list",p3);
-              dict_strcat(m->dict,"QE_control_list","',\n");
-              free(p3);
+            dict_strcat(m->dict,"QE_control_list","  ");
+            dict_strcat(m->dict,"QE_control_list",qe_control_lst[i]);
+            if (*ptr=='='){
+              ptr++;
+              dict_strcat(m->dict,"QE_control_list"," = ");
+              while ((*ptr)&&(isspace(*ptr))) ptr++;
+              dict_strcat(m->dict,"QE_control_list",ptr);
             }
-            else
-              fprintf(stderr,"Warning: error parsing %s\n",qe_control_str[i]);
-            break;
+            /* Have we ended with a comma? */
+            p2=dict_get(m->dict,"QE_control_list");
+            p2+=strlen(p2)-1;
+            while(isspace(*p2)) p2--;
+            if (*p2!=',') dict_strcat(m->dict,"QE_control_list",",");
+            dict_strcat(m->dict,"QE_control_list","\n");
+            while(*ptr) ptr++;
           }
         }
         if (!hit)
@@ -301,14 +307,28 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
       }
     }
     else if (namelist==QESYSTEM){
-      if(!tokenmatch(&ptr,"occupations")){
-	while ((*ptr)&&(isspace(*ptr))) ptr++;
-        if (*ptr=='=') ptr++;
-	if (qe_string_read(&ptr,&p3))
-	  dict_add(m->dict,"QE_occupations",p3);
-	else fprintf(stderr,"Warning: error parsing QE_occupations\n");
+      for(i=0;qe_system_lst[i][0];i++){
+        if(!tokenmatch(&ptr,qe_system_lst[i])){/* Just tidy indentation */
+          while ((*ptr)&&(isspace(*ptr))) ptr++;
+          dict_strcat(m->dict,"QE_system_list","  ");
+          dict_strcat(m->dict,"QE_system_list",qe_system_lst[i]);
+          if (*ptr=='='){
+            ptr++;
+            dict_strcat(m->dict,"QE_system_list"," = ");
+            while ((*ptr)&&(isspace(*ptr))) ptr++;
+            dict_strcat(m->dict,"QE_system_list",ptr);
+          }
+          /* Have we ended with a comma? */
+          p2=dict_get(m->dict,"QE_system_list");
+          p2+=strlen(p2)-1;
+          while(isspace(*p2)) p2--;
+          if (*p2!=',') dict_strcat(m->dict,"QE_system_list",",");
+          dict_strcat(m->dict,"QE_system_list","\n");
+          while(*ptr) ptr++;
+          continue;
+        }
       }
-      else  if(!tokenmatch(&ptr,"degauss")){
+      if(!tokenmatch(&ptr,"degauss")){
 	while ((*ptr)&&(isspace(*ptr))) ptr++;
         if (*ptr=='=') ptr++;
 	p3=malloc(sizeof(double));

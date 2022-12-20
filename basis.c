@@ -24,9 +24,12 @@
 
 #include "c2xsf.h"
 
-/* cart2abc requires this funct from basis.c */
-void grid_interp(struct grid *grid,int old_fft[3],
+/* cart2abc requires this funct from super.c */
+void grid_interp(struct unit_cell *c, struct grid *grid,int old_fft[3],
    double old_basis[3][3],double old_recip[3][3]);
+
+/* From primitive.c */
+void shorten(double vfinal[3][3]);
 
 /* Check whether set is right- or left-handed */
 int is_rhs(double b[3][3]){
@@ -210,9 +213,8 @@ void abc2cart(double *abc, struct unit_cell *c){
 
 void cart2abc(struct unit_cell *c, struct contents *m, double *abc, 
               struct grid *gptr, int fix){
-  int i,j,k,itmp,old_fft[3],preserve_c;
-  double dtmp,b[3][3];
-  double old_basis[3][3],old_recip[3][3];
+  int i,j,k,itmp,preserve_c;
+  double dtmp,b[3][3],*dptr,*dptr2,*new_grid;
 
   preserve_c=(flags&PRESERVE_C)>>PC_SHIFT;
 
@@ -249,23 +251,16 @@ void cart2abc(struct unit_cell *c, struct contents *m, double *abc,
                         "Have lh set, and exchange prohibitted...\n");
       }
       else {
-        if (debug) fprintf(stderr,"Need rh set of vectors for abc output. "
-                           "Exchanging basis vectors %d and %d.\n",
-                           (1+preserve_c)%3+1,(2+preserve_c)%3+1);
-
-        real2rec(c);
-        for(i=0;i<3;i++)
-          for(j=0;j<3;j++)
-            old_basis[i][j]=b[i][j];
-        for(i=0;i<3;i++)
-          for(j=0;j<3;j++)
-            old_recip[i][j]=c->recip[i][j];
+        fprintf(stderr,"Need rh set of vectors for abc output. "
+                       "Exchanging basis vectors %d and %d.\n",
+                       (1+preserve_c)%3+1,(2+preserve_c)%3+1);
 
         for(i=0;i<3;i++){
           dtmp=b[(1+preserve_c)%3][i];
           b[(1+preserve_c)%3][i]=b[(2+preserve_c)%3][i];
           b[(2+preserve_c)%3][i]=dtmp;
         }
+	
         real2rec(c);
         for(i=0;i<m->n;i++){
           dtmp=m->atoms[i].frac[(1+preserve_c)%3];
@@ -284,11 +279,42 @@ void cart2abc(struct unit_cell *c, struct contents *m, double *abc,
         while((gptr)&&(gptr->data)){
           if (debug>1) fprintf(stderr,"Exchanging axes for 3D grid %dx%dx%d\n",
 			     gptr->size[0],gptr->size[1],gptr->size[2]);
-          for(i=0;i<3;i++) old_fft[i]=gptr->size[i];
+
           itmp=gptr->size[(1+preserve_c)%3];
           gptr->size[(1+preserve_c)%3]=gptr->size[(2+preserve_c)%3];
           gptr->size[(2+preserve_c)%3]=itmp;
-          grid_interp(gptr,old_fft,old_basis,old_recip);
+
+          new_grid=malloc(gptr->size[0]*gptr->size[1]*gptr->size[2]*
+                          sizeof(double));
+          if (!new_grid) error_exit("Malloc error in cart2abc");
+          dptr=new_grid;
+          if (preserve_c==2){
+            for(k=0;k<gptr->size[0];k++){
+              for(j=0;j<gptr->size[1];j++){
+                dptr2=gptr->data+((j*gptr->size[0])+k)*gptr->size[2];
+                dptr=new_grid+((k*gptr->size[1])+j)*gptr->size[2];
+                for(i=0;i<gptr->size[2];i++){
+                  *(dptr++)=*(dptr2++);
+                }
+              }
+            }
+          }
+	  else if (preserve_c==0){
+            for(k=0;k<gptr->size[0];k++){
+              for(j=0;j<gptr->size[1];j++){
+                dptr2=gptr->data+k*gptr->size[1]*gptr->size[2];
+                dptr=new_grid+((k*gptr->size[1])+j)*gptr->size[2];
+                for(i=0;i<gptr->size[2];i++){
+                  *(dptr++)=*(dptr2+j+i*gptr->size[1]);
+                }
+              }
+            }
+	  }
+	  else error_exit("Unsupported value of preserve_c in grid_interp");
+
+	  free(gptr->data);
+	  gptr->data=new_grid;
+	  
           gptr=gptr->next;
         }
       }
@@ -296,7 +322,7 @@ void cart2abc(struct unit_cell *c, struct contents *m, double *abc,
 
     abc2cart(abc,c);
     real2rec(c);
-    addabs(m->atoms,m->n,b);
+    addabs(m->atoms,m->n,c->basis);
   }
 
 }
@@ -318,6 +344,17 @@ void basis2abc(double b[3][3], double abc[6]){
   }
 }
 
+/* Minimum distance between two points in periodic system */
+double dist(double a,double b){
+  double d;
+
+  d=fabs(fmod(a-b,1.0));
+  if (d>0.5) d=1-d;
+
+  return d;
+}
+
+
 /* See if atom is in a given list. Use global tolerance value in
  * comparison of fractional co-ordinates, multiplied by axis length,
  * so tolerance is effectively in Angstroms */
@@ -330,9 +367,9 @@ int atom_in_list(struct atom *b, struct atom *a, int n, double basis[3][3]){
   hit=-1;
   for(i=0;i<n;i++){
     if ((a[i].atno==b->atno)&&
-        (fabs(a[i].frac[0]-b->frac[0])<tol*abc[0])&&
-        (fabs(a[i].frac[1]-b->frac[1])<tol*abc[1])&&
-        (fabs(a[i].frac[2]-b->frac[2])<tol*abc[2])){
+        (dist(a[i].frac[0],b->frac[0])<tol*abc[0])&&
+        (dist(a[i].frac[1],b->frac[1])<tol*abc[1])&&
+        (dist(a[i].frac[2],b->frac[2])<tol*abc[2])){
       hit=i;
       break;
     }
@@ -407,4 +444,77 @@ void old_in_new(double old_basis[3][3],double new_recip[3][3]){
   }
   fprintf(stderr,"\n");
 
+}
+
+void cell_check(struct unit_cell *c, struct contents *m){
+  int i,j,k,ii,n1,n2;
+  double min_dist,dtmp,vec[3],frac[3];
+  struct unit_cell compact_cell;
+
+  n1=n2=0;
+  
+  if (fabs(c->vol)<2)
+    fprintf(stderr,"*** WARNING: surprisingly small cell volume %g\n",
+	    fabs(c->vol));
+
+  if (m->n<=1) return;
+
+
+  compact_cell.basis=malloc(9*sizeof(double));
+  if (!compact_cell.basis) error_exit("Malloc error in cell_check");
+  for(i=0;i<3;i++)
+    for(j=0;j<3;j++)
+      compact_cell.basis[i][j]=c->basis[i][j];
+
+  shorten(compact_cell.basis);
+  real2rec(&compact_cell);
+  
+  min_dist=1e30;
+  
+  for(i=0;i<m->n;i++){
+    for(j=i+1;j<m->n;j++){
+      for(k=0;k<3;k++)
+        vec[k]=m->atoms[i].abs[k]-m->atoms[j].abs[k];
+      for(ii=0;ii<3;ii++){
+        frac[ii]=0;
+        for(k=0;k<3;k++)
+          frac[ii]+=vec[k]*compact_cell.recip[ii][k];
+      }
+      for(k=0;k<3;k++){
+        frac[k]=fmod(frac[k],1.0);
+        if (frac[k]>0.5) frac[k]-=1;
+        if (frac[k]<-0.5) frac[k]+=1;
+      }
+      for(ii=0;ii<3;ii++){
+        vec[ii]=0;
+        for(k=0;k<3;k++)
+          vec[ii]+=frac[k]*compact_cell.basis[k][ii];
+      }
+      
+      dtmp=sqrt(vmod2(vec));
+      if (dtmp<min_dist) {
+	min_dist=dtmp;
+	n1=i;
+	n2=j;
+      }
+    }
+  }
+
+  if (min_dist<0.2)
+    fprintf(stderr,"*** WARNING: closest atoms separation %g A\n",min_dist);
+  else if (debug)
+    fprintf(stderr,"Closest atoms separation %g A\n",min_dist);
+  
+  if ((min_dist<0.2)||(debug>1)){
+    fprintf(stderr,"Closest atoms are (fractional coords):\n");
+    fprintf(stderr,"%3s % 11.7f % 11.7f % 11.7f\n",
+	    atno2sym(m->atoms[n1].atno),m->atoms[n1].frac[0],
+            m->atoms[n1].frac[1],m->atoms[n1].frac[2]);
+    fprintf(stderr,"%3s % 11.7f % 11.7f % 11.7f\n",
+	    atno2sym(m->atoms[n2].atno),m->atoms[n2].frac[0],
+            m->atoms[n2].frac[1],m->atoms[n2].frac[2]);
+  }
+
+  free(compact_cell.basis);
+  
 }

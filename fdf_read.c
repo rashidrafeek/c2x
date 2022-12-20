@@ -2,10 +2,7 @@
  * 
  */
 
-/* To do: add DM.InitSpin block
- *        use PARSE_ERROR
- *        test!!
- *
+/* 
  * This version does not parse quotation marks properly.
  */
 
@@ -13,7 +10,7 @@
  * in its keywords.
  */
 
-/* Copyright (c) 2018 MJ Rutter 
+/* Copyright (c) 2018-2019 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -47,6 +44,7 @@ static int fdfreadenergy(char *buff, double *x);
 static int fdfstrcasecmp(char **s1_in, char *s2);
 static int fdftokenmatch(char **s1_in, char *s2);
 static void fdfinclude(char *ptr);
+static double siesta_pot_charge(char *prefix, char *label);
 
 static char *ptr;
 
@@ -57,17 +55,38 @@ static struct infiles {
 static FILE *infile;
 
 
-void fdf_read(FILE* in, struct unit_cell *c, struct contents *m,
-              struct kpts *kp, struct es *e){
-  int i,j,k,*atomspecies;
+void fdf_read(FILE* in, char *filename, struct unit_cell *c,
+	      struct contents *m, struct kpts *kp, struct es *e){
+  int i,j,k,n,*atomspecies,mp_grid[3][3],okay;
   int nspec,*species_to_atno;
-  double scale,shift[3];
+  double scale,shift[3],mp_off[3];
   char *ptr2,*format;
   static char buffer[LINE_SIZE+1];
   double *vec,*abc,*atomcoords,*dmetol,latticeconstant,*atomspins;
+  double *species_to_charge;
+  char *siesta_misc[]={"ElectronicTemperature","MeshCutoff",
+                       "MaxSCFIterations","MinSCFIterations",
+                       "OccupationFunction","SaveDeltaRho",
+                       "SaveElectrostaticPotential",
+                       "SaveRho","SaveRhoXC",
+                       "SaveTotalCharge","SaveTotalPotential",
+                       "SlabDipoleCorrection","SolutionMethod",
+                       "WriteDM","XCauthors","XCfunctional",
+                       ""};
+  char *spaces="                              ";  /* 30 spaces */
+  char *prefix;
+
+  prefix="";
+  if (strstr(filename,"/")){
+    ptr2=filename+strlen(filename);
+    while (*ptr2!='/') ptr2--;
+    prefix=malloc(1+ptr2-filename);
+    for(i=0;filename+i<=ptr2;i++) prefix[i]=filename[i];
+    prefix[i]=0;
+  }
   
   files=malloc(sizeof(struct infiles));
-  if (!files) error_exit("Malloc error for files in cell_read");
+  if (!files) error_exit("Malloc error for files in fdf_read");
   files->f=in;
   files->next=files->last=NULL;
   files->name=NULL;
@@ -80,6 +99,7 @@ void fdf_read(FILE* in, struct unit_cell *c, struct contents *m,
   latticeconstant=0;
   format=NULL;
   species_to_atno=NULL;
+  species_to_charge=NULL;
   atomspecies=NULL;
   shift[0]=shift[1]=shift[2]=0;
   dmetol=NULL;
@@ -152,6 +172,27 @@ void fdf_read(FILE* in, struct unit_cell *c, struct contents *m,
       }
       continue;
     }
+
+    if (!fdftokenmatch(&ptr,"SystemLabel")){
+      ptr2=malloc(strlen(ptr)+1);
+      strcpy(ptr2,ptr);
+      dict_add(m->dict,"Siesta_SystemLabel",ptr2);
+    }
+
+    for(i=0;siesta_misc[i][0];i++){
+      if (!fdftokenmatch(&ptr,siesta_misc[i])){
+        dict_strcat(m->dict,"Siesta_misc",siesta_misc[i]);
+        while ((*ptr)&&isspace(*ptr)) ptr++;
+        if (strlen(ptr)){
+          if (strlen(siesta_misc[i])<28) /* 28 < length spaces array */
+            dict_strcat(m->dict,"Siesta_misc",spaces+strlen(siesta_misc[i]));
+          else
+            dict_strcat(m->dict,"Siesta_misc","  ");
+          dict_strcat(m->dict,"Siesta_misc",ptr);
+        }
+        dict_strcat(m->dict,"Siesta_misc","\n");
+      }
+    }
     
 
 /* What remains ought to be a block or a keyword.  */
@@ -201,14 +242,23 @@ void fdf_read(FILE* in, struct unit_cell *c, struct contents *m,
       if (!nspec)
         error_exit("ChemicalSpeciesLabel preceeds NumberOfSpecies");
       species_to_atno=malloc((nspec+1)*sizeof(int));
+      species_to_charge=malloc((nspec+1)*sizeof(double));
       for(i=0;i<nspec;i++){
         fdfreadline(buffer,LINE_SIZE);
-        if (sscanf(buffer,"%d %d",&j,&k)!=2)
+        if (sscanf(buffer,"%d %d%n",&j,&k,&n)!=2)
           error_exit("Error reading ChemicalSpeciesLabel");
         if ((j<1)||(j>nspec)){
           error_exit("Invalid species number in ChemicalSpeciesLabel");
         }
         species_to_atno[j]=k;
+        if (flags&CHDEN){ /* No point in attempting to find pseudo */
+          ptr=buffer+n;   /* charges unless also processing elect charge */
+          while((*ptr)&&(isspace(*ptr))) ptr++;
+          ptr2=ptr;
+          while((*ptr2)&&(!isspace(*ptr2))) ptr2++;
+          *ptr2=0;
+          species_to_charge[j]=siesta_pot_charge(prefix,ptr);
+        }
       }
       fdfreadline(buffer,LINE_SIZE);
     }
@@ -237,7 +287,43 @@ void fdf_read(FILE* in, struct unit_cell *c, struct contents *m,
         }
       }
     }
+    else if ((kp)&&(!fdfstrcasecmp(&ptr,"kgridMonkhorstPack"))){
+      for(i=0;i<3;i++){
+        fdfreadline(buffer,LINE_SIZE);
+        j=sscanf(buffer,"%d %d %d %lf",mp_grid[i],mp_grid[i]+1,mp_grid[i]+2,
+                 mp_off+i);
+        if (j!=4){
+          PARSE_ERROR;
+          break;
+        }
+      }
+      if (j!=4)
+        fprintf(stderr,"Ignoring MP block\n");
+      else{
+        okay=1;
+        /* Need grid to be diagonal */
+        for(i=0;i<3;i++)
+          for(j=0;j<3;j++)
+            if (i==j) continue;
+            else if (mp_grid[i][j]!=0) okay=0;
+        if (okay){
+          kp->mp=malloc(sizeof(struct mp_grid));
+          if (!kp->mp) error_exit("Malloc error for MP grid");
+          for(i=0;i<3;i++)
+            kp->mp->grid[i]=mp_grid[i][i];
+          for(i=0;i<3;i++){
+            if ((kp->mp->grid[i]&1)==0) mp_off[i]-=0.5;
+            mp_off[i]/=kp->mp->grid[i];
+            kp->mp->disp[i]=mp_off[i];
+          }
+        }
+        else{
+          fprintf(stderr,"c2x is unable to process non-diagonal MP grids\n");
+        }
+      }
+    }
     else{
+      fprintf(stderr,"Ignoring %s\n",ptr);
       while(fdfreadline(buffer,LINE_SIZE)){
         ptr=buffer;
         if (!strncasecmp(ptr,"%endblock",9)) break;
@@ -317,10 +403,13 @@ void fdf_read(FILE* in, struct unit_cell *c, struct contents *m,
   if (!atomspecies)
     error_exit("chemical_species_label block not found");
   
-  for(i=0;i<m->n;i++)
+  for(i=0;i<m->n;i++){
     m->atoms[i].atno=species_to_atno[atomspecies[i]];
+    m->atoms[i].chg=species_to_charge[atomspecies[i]];
+  }
   free(atomspecies);
   free(species_to_atno);
+  dict_add(m->dict,"Siesta_species_to_charge",species_to_charge);
 
   /* Add spins */
   
@@ -551,7 +640,7 @@ static int fdfreadenergy(char *buff, double *x){
 /* Compare two strings up to the length of the second.
  * If they compare equal, move the first pointer to the end of
  * the equal section.
- * Ignore the three characters -_. when comparing
+ * Ignore the three characters -_. in s1 when comparing
  */
 static int fdfstrcasecmp(char **s1_in, char *s2){
   char *s1;
@@ -592,4 +681,46 @@ static int fdftokenmatch(char **s1_in, char *s2){
     return 0;
   }
   return 1;
+}
+
+static double siesta_pot_charge(char *prefix, char *label){
+  char *name;
+  int i,idummy;
+  double dummy,charge;
+  FILE *pseudo;
+  char buffer[LINE_SIZE+1];
+
+  name=malloc(strlen(prefix)+strlen(label)+5);
+  name[0]=0;
+    
+  strcpy(name,prefix);
+  strcat(name,label);
+  strcat(name,".psf");
+
+  pseudo=fopen(name,"rb");
+
+  if (!pseudo) {
+    fprintf(stderr,"Failed to open %s\n",name);
+    free(name);
+    return 0;
+  }
+
+  for(i=0;i<4;i++)
+    fgets(buffer,LINE_SIZE,pseudo);
+
+  i=sscanf(buffer,"%d %d %d %lf %lf %lf",&idummy,&idummy,&idummy,
+	   &dummy,&dummy,&charge);
+
+  if (i!=6) {
+    fprintf(stderr,"Failed to read charge from %s\n",name);
+    charge=0;
+  }
+
+  fclose(pseudo);
+  free(name);
+
+  if (debug>1) fprintf(stderr,"Label %s charge %lf\n",label,charge);
+  
+  return charge;
+  
 }

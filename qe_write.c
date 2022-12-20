@@ -126,9 +126,6 @@ void qe_write(FILE* outfile, struct unit_cell *c, struct contents *m,
 
   if (e->nspinors==2) fprintf(outfile,"  noncolin = .true.,\n");
 
-  if (dict_get(m->dict,"QE_occupations"))
-    fprintf(outfile,"  occupations = '%s',\n",
-	    (char*)dict_get(m->dict,"QE_occupations"));
   if (dict_get(m->dict,"QE_degauss"))
     fprintf(outfile,"  degauss = %f,\n",
 	    *(double*)dict_get(m->dict,"QE_degauss"));
@@ -137,6 +134,10 @@ void qe_write(FILE* outfile, struct unit_cell *c, struct contents *m,
 	    (*(int*)dict_get(m->dict,"QE_nosym"))?".true.":".false.");
   if ((e->charge)&&(*e->charge!=0.0))
     fprintf(outfile,"  tot_charge = %f,\n",*e->charge);
+
+  if (dict_get(m->dict,"QE_system_list"))
+    fprintf(outfile,"%s",(char*)dict_get(m->dict,"QE_system_list"));
+
   
   if (e->cut_off)
     fprintf(outfile,"  ecutwfc = %f\n",2*e->cut_off/H_eV);

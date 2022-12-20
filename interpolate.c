@@ -120,6 +120,11 @@ double interpolate0d(struct grid *gptr,double x_in[3]){
   ny=gptr->size[1];
   nz=gptr->size[2];
 
+  for(i=0;i<3;i++){
+    x_in[i]=fmod(x_in[i],1.0);
+    if (x_in[i]<0) x_in[i]++;
+  }
+  
   for(i=0;i<3;i++) x[i]=x_in[i]*gptr->size[i];
 
   for(i=0;i<3;i++) {

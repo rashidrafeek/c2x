@@ -32,9 +32,9 @@ void xyz_write(FILE* outfile, struct unit_cell *c, struct contents *m){
   char *fmt;
 
   if (flags&HIPREC)
-    fmt="%3s %16f %16f %16f\n";
+    fmt="%3s %19.14f %19.14f %19.14f\n";
   else
-    fmt="%3s %8f %8f %8f\n";
+    fmt="%3s %12.8f %12.8f %12.8f\n";
 
   fprintf(outfile,"%d\n",m->n);
 

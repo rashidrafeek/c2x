@@ -61,12 +61,17 @@ int igr2hall[]={ 0,    1,  2,  3,  6,  9, 18, 21, 30, 39,
                  530};
 
 #ifdef SPGLIB
+
+static void spg_sym_print(SpglibDataset *spg,double spg_symprec, int op);
+static void spg_scan(double spg_latt[3][3], double spg_pos[][3], int *spg_type,
+		     int natoms, int op, double tolmin, double tolmax,
+		     int nsmin, int nsmax, int first);
+
 int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
             struct kpts *kp, int op, double tolmin){
   int i,j,k,natoms2;
-  int dummy[3][3];
-  int result,results,resulti,resultp,rotation;
-  double stol,dot,mod1,mod2,theta,axis[3],vtmp[3],vtmp1[3],vtmp2[3];
+  int rotation;
+  double dot,mod1,mod2,theta,axis[3],vtmp[3],vtmp1[3],vtmp2[3];
   double old_basis[3][3],old_frac[3][3],new_basis[3][3];
   double rhs[3][3],tr[3];
   struct contents *m2;
@@ -76,7 +81,6 @@ int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
   double spg_latt[3][3];
   double (*spg_pos)[3],spg_symprec;
   int *spg_type;
-  char spg_sym[22];
   SpglibDataset *spg;
 
   struct uniq {int atno; double spin; char *label;} *auid;
@@ -318,7 +322,6 @@ int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
   } /* end if (op&CSPG_SNAP) */
 
   spg=NULL;
-  result=0;
 
   /* spg_refine_cell can return four times as many atoms as is passed */
   if ((op&CSPG_REF)||(op&CSPG_STD)){
@@ -337,166 +340,111 @@ int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
     exit(1);
   }
 
-  results=resulti=resultp=-1;
   natoms2=m->n;
-  stol=tolmin;
+  spg_symprec=tol;
 
-  while(stol<=tol){
-
-    spg_symprec=stol;
-    stol*=2;
-    if ((stol>tol)&&(stol<1.99*tol)) stol=tol;
-
-    n_uniq=0;
-    for(i=0;i<m->n;i++){
-      for(j=0;j<3;j++)
-        spg_pos[i][j]=m->atoms[i].frac[j];
-      hit=0;
-      for(j=0;j<n_uniq;j++){
-        /* Atoms the same if there atomic numbers are equal,
-           their spins are equal,
-           their label pointers are equal (possibly null), or
-           their label pointers are not null but point to strings which
-             are equal to strcmp
-        */
-        if((auid[j].atno==m->atoms[i].atno)&&
-           aeq(auid[j].spin,m->atoms[i].spin)&&
-           ((auid[j].label==m->atoms[i].label)||
-            ((auid[j].label)&&(m->atoms[i].label)&&
-             (!strcmp(auid[j].label,m->atoms[i].label))))){
-          spg_type[i]=j;
-          hit=1;
-          break;
-        }
-      }
-      if (hit==0){
-        auid[n_uniq].atno=m->atoms[i].atno;
-        auid[n_uniq].spin=m->atoms[i].spin;
-        auid[n_uniq].label=m->atoms[i].label;
-        spg_type[i]=n_uniq;
-        n_uniq++;
+  n_uniq=0;
+  for(i=0;i<m->n;i++){
+    for(j=0;j<3;j++)
+      spg_pos[i][j]=m->atoms[i].frac[j];
+    hit=0;
+    for(j=0;j<n_uniq;j++){
+      /* Atoms the same if their atomic numbers are equal,
+	 their spins are equal,
+	 their label pointers are equal (possibly null), or
+	 their label pointers are not null but point to strings which
+	 are equal to strcmp
+      */
+      if((auid[j].atno==m->atoms[i].atno)&&
+	 aeq(auid[j].spin,m->atoms[i].spin)&&
+	 ((auid[j].label==m->atoms[i].label)||
+	  ((auid[j].label)&&(m->atoms[i].label)&&
+	   (!strcmp(auid[j].label,m->atoms[i].label))))){
+	spg_type[i]=j;
+	hit=1;
+	break;
       }
     }
-    if(debug>1) fprintf(stderr,"%d unique atom types in c2x2spg\n",n_uniq);
-
-
-    for(i=0;i<3;i++)
-      for(j=0;j<3;j++)
-        spg_latt[i][j]=c->basis[j][i];
-
-    if (op&CSPG_REF){
-      natoms2=spg_refine_cell(spg_latt,spg_pos,spg_type,m->n,spg_symprec);
-      if (natoms2==0){
-        fprintf(stderr,"spglib finds no refinement\n");
-        natoms2=m->n;
-        if (op==CSPG_REF) return 0;
-      }
-      else{
-        m->n=natoms2;
-        s->n=0;
-      }
+    if (hit==0){
+      auid[n_uniq].atno=m->atoms[i].atno;
+      auid[n_uniq].spin=m->atoms[i].spin;
+      auid[n_uniq].label=m->atoms[i].label;
+      spg_type[i]=n_uniq;
+      n_uniq++;
     }
+  }
+  if(debug>1) fprintf(stderr,"%d unique atom types in c2x2spg\n",n_uniq);
 
-    if (op&CSPG_STD){
-      natoms2=spg_standardize_cell(spg_latt,spg_pos,spg_type,m->n,
-                                   0,1,spg_symprec);
-      if (natoms2==0){
-        fprintf(stderr,"spglib finds no standardisation\n");
-        natoms2=m->n;
-        if (op==CSPG_STD) return 0;
-      }
-      else{
-        m->n=natoms2;
-        s->n=0;
-      }
-    }
+
+  for(i=0;i<3;i++)
+    for(j=0;j<3;j++)
+      spg_latt[i][j]=c->basis[j][i];
+
+  if ((tolmin!=tol)&&(op&(CSPG_INT+CSPG_SYM+CSPG_PNT+CSPG_SCH))){
+    spg_scan(spg_latt,spg_pos,spg_type,m->n,op,tolmin,tol,0,0,1);
+  }
     
-    if (op&CSPG_PRIM){
-      natoms2=spg_find_primitive(spg_latt,spg_pos,spg_type,m->n,spg_symprec);
-      if (natoms2==0){
-        fprintf(stderr,"spglib finds no primitive cell\n");
-        natoms2=m->n;
-        if (op==CSPG_PRIM) return 0;
-      }
-      else{
-        m->n=natoms2;
-        s->n=0;
-      }
+  if (op&CSPG_REF){
+    natoms2=spg_refine_cell(spg_latt,spg_pos,spg_type,m->n,spg_symprec);
+    if (natoms2==0){
+      fprintf(stderr,"spglib finds no refinement\n");
+      natoms2=m->n;
+      if (op==CSPG_REF) return 0;
     }
-
-    /* This one will not rotate basis vectors in Cartesian space */
-    if (op&CSPG_PRIM_NR){
-      natoms2=spg_standardize_cell(spg_latt,spg_pos,spg_type,m->n,
-                                   1,1,spg_symprec);
-      if (natoms2==0)
-	error_exit("spglib finds no primitive cell\n");
-      else{
-        m->n=natoms2;
-        s->n=0;
-      }
-    }
-    
-    if (op&CSPG_SCH){
-      result=spg_get_schoenflies(spg_sym,spg_latt,spg_pos,spg_type,m->n,
-                                 spg_symprec);
-
-      if (!result)
-        fprintf(stderr,"Attempt to find Schoenflies symmetry failed\n");
-      else if (result!=results){
-	if ((debug)||(2*tolmin<tol))
-	  fprintf(stderr,"Tol=%g ",spg_symprec);
-        fprintf(stderr,"Schoenflies symmetry is %s\n",spg_sym);
-        results=result;
-      }
-    }
-  
-    if (op&(CSPG_SYM|CSPG_PNT|CSPG_INT)){
-      spg=spg_get_dataset(spg_latt,spg_pos,spg_type,m->n,spg_symprec);
-      if ((!spg->rotations)||(!spg->translations)){
-	spg->n_operations=0;
-      }
-      if (!spg){
-        fprintf(stderr,"Attempt to find symmetry failed\n");
-        exit(1);
-      }
-      if (op&CSPG_INT){
-        result=spg->spacegroup_number;
-        if (!result)
-          fprintf(stderr,"Attempt to find international symmetry failed\n");
-        else if (result!=resulti){
-          if ((debug)||(2*tolmin<tol))
-	    fprintf(stderr,"Tol=%g ",spg_symprec);
-          fprintf(stderr,"International symmetry is %s\n",
-		  spg->international_symbol);
-          resulti=result;
-        }
-      }
-      if (op&(CSPG_SYM|CSPG_PNT)){
-        result=spg->n_operations;
-//        fprintf(stderr,"%d symmetry operations found.\n",spg->n_operations);
-//        fprintf(stderr,"spg->rotations is %s null\n",(spg->rotations)?"not":"");
-        if (result!=s->n){
-          s->n=result;
-          if ((debug)||(2*tolmin<tol))
-	    fprintf(stderr,"Tol=%g ",spg_symprec);
-	  fprintf(stderr,"%d symmetry operations found.\n",s->n);
-	}
-        if (op&CSPG_PNT){
-          result=spg_get_pointgroup(spg_sym,dummy,spg->rotations,s->n);
-          if (!result)
-            fprintf(stderr,"Attempt to find point group failed\n");
-          else if (result!=resultp){
-            fprintf(stderr,"Tol=%g Point group is %s\n",spg_symprec,spg_sym);
-            resultp=result;
-          }
-        }
-      }
+    else{
+      m->n=natoms2;
+      s->n=0;
     }
   }
 
-  
-  if (debug) fprintf(stderr,"SPGlib returns %d atoms\n",m->n);
+  if (op&CSPG_STD){
+    natoms2=spg_standardize_cell(spg_latt,spg_pos,spg_type,m->n,
+				 0,1,spg_symprec);
+    if (natoms2==0){
+      fprintf(stderr,"spglib finds no standardisation\n");
+      natoms2=m->n;
+      if (op==CSPG_STD) return 0;
+    }
+    else{
+      m->n=natoms2;
+      s->n=0;
+    }
+  }
+    
+  if (op&CSPG_PRIM){
+    natoms2=spg_find_primitive(spg_latt,spg_pos,spg_type,m->n,spg_symprec);
+    if (natoms2==0){
+      fprintf(stderr,"spglib finds no primitive cell\n");
+      natoms2=m->n;
+      if (op==CSPG_PRIM) return 0;
+    }
+    else{
+      m->n=natoms2;
+      s->n=0;
+    }
+  }
 
+  /* This one will not rotate basis vectors in Cartesian space */
+  if (op&CSPG_PRIM_NR){
+    natoms2=spg_standardize_cell(spg_latt,spg_pos,spg_type,m->n,
+				 1,1,spg_symprec);
+    if (natoms2==0)
+      error_exit("spglib finds no primitive cell\n");
+    else{
+      m->n=natoms2;
+      s->n=0;
+    }
+  }
+      
+  if (op&(CSPG_SYM|CSPG_PNT|CSPG_INT|CSPG_SCH)){
+    spg=spg_get_dataset(spg_latt,spg_pos,spg_type,m->n,spg_symprec);
+    if ((tolmin==tol)||(debug))
+      spg_sym_print(spg,spg_symprec,op);
+    s->n=spg->n_operations;
+  }
+  
+
+  
   /* Convert back to c2x-style variables */
 
   /* If we were asked for info, not a conversion, simply return */
@@ -508,13 +456,15 @@ int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
     return 0;
   }
 
+  if (debug) fprintf(stderr,"SPGlib returns %d atoms\n",m->n);
+
   
   /* First k-points */
 
   if (kp){
     for(i=0;i<3;i++)
       for(j=0;j<3;j++)
-        new_basis[j][i]=spg_latt[i][j];
+	new_basis[j][i]=spg_latt[i][j];
     super(c,m,new_basis,kp,NULL,NULL,4);
   }
   
@@ -551,175 +501,302 @@ int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
     s->ops=sym_frac2abs(spg->rotations,spg->translations,c,s->n);
     if (op&CSPG_LST)
       for(i=0;i<s->n;i++) ident_sym(&s->ops[i],c,stderr);
-    spg_free_dataset(spg);
   }
 
   free(auid);
   free(spg_type);
   free(spg_pos);
+  if (spg) spg_free_dataset(spg);
   return 0;
 
 }
 
-struct sym_op *sym_frac2abs(int spg_rot[][3][3],double spg_tr[][3],
-                            struct unit_cell *c,int nsym){
-  int i,j,k,kk;
-  struct sym_op *s;
-  double mat[3][3];
+  struct sym_op *sym_frac2abs(int spg_rot[][3][3],double spg_tr[][3],
+			      struct unit_cell *c,int nsym){
+    int i,j,k,kk;
+    struct sym_op *s;
+    double mat[3][3];
 
-  s=malloc(nsym*sizeof(struct sym_op));
-  if(!s) error_exit("Malloc error in sym_frac2abs");
+    s=malloc(nsym*sizeof(struct sym_op));
+    if(!s) error_exit("Malloc error in sym_frac2abs");
 
 
-  for(i=0;i<nsym;i++){
-    if (debug>2){
-      fprintf(stderr,"Sym op on entry:\n");
+    for(i=0;i<nsym;i++){
+      if (debug>2){
+	fprintf(stderr,"Sym op on entry:\n");
+	for(j=0;j<3;j++)
+	  fprintf(stderr,"%2d %2d %2d\n",spg_rot[i][j][0],
+		  spg_rot[i][j][1],spg_rot[i][j][2]);
+	fprintf(stderr,"%13.9f %13.9f %13.9f\n",spg_tr[i][0],spg_tr[i][1],
+		spg_tr[i][2]);
+      }
+      /* Translations are "easy" */
+      if ((spg_tr[i][0]!=0)||(spg_tr[i][1]!=0)||(spg_tr[i][2]!=0)){
+	s[i].tr=malloc(3*sizeof(double));
+	if(!s[i].tr) error_exit("Malloc error for tr in sym_frac2abs");
+	for(j=0;j<3;j++) s[i].tr[j]=spg_tr[i][0]*c->basis[0][j]+
+			   spg_tr[i][1]*c->basis[1][j]+
+			   spg_tr[i][2]*c->basis[2][j];
+      }
+      else s[i].tr=NULL;
+      /* Matrices are harder. Permute indices until answer looks right? */
       for(j=0;j<3;j++)
-        fprintf(stderr,"%2d %2d %2d\n",spg_rot[i][j][0],
-              spg_rot[i][j][1],spg_rot[i][j][2]);
-      fprintf(stderr,"%13.9f %13.9f %13.9f\n",spg_tr[i][0],spg_tr[i][1],
-              spg_tr[i][2]);
-    }
-    /* Translations are "easy" */
-    if ((spg_tr[i][0]!=0)||(spg_tr[i][1]!=0)||(spg_tr[i][2]!=0)){
-      s[i].tr=malloc(3*sizeof(double));
-      if(!s[i].tr) error_exit("Malloc error for tr in sym_frac2abs");
-      for(j=0;j<3;j++) s[i].tr[j]=spg_tr[i][0]*c->basis[0][j]+
-                         spg_tr[i][1]*c->basis[1][j]+
-                         spg_tr[i][2]*c->basis[2][j];
-    }
-    else s[i].tr=NULL;
-    /* Matrices are harder. Permute indices until answer looks right? */
-    for(j=0;j<3;j++)
-      for(k=0;k<3;k++)
-        mat[j][k]=s[i].mat[j][k]=0.0;
-    for(j=0;j<3;j++)
-      for(k=0;k<3;k++)
-        for(kk=0;kk<3;kk++)
-          mat[j][k]+=spg_rot[i][j][kk]*c->recip[kk][k];
-    for(j=0;j<3;j++)
-      for(k=0;k<3;k++)
-        for(kk=0;kk<3;kk++)
-          s[i].mat[j][k]+=c->basis[kk][j]*mat[kk][k];
-    /* We don't like matrix entries of "-0" */
-    for(j=0;j<3;j++)
-      for(k=0;k<3;k++)
-        if (fabs(s[i].mat[j][k])<1e-10) s[i].mat[j][k]=0;
+	for(k=0;k<3;k++)
+	  mat[j][k]=s[i].mat[j][k]=0.0;
+      for(j=0;j<3;j++)
+	for(k=0;k<3;k++)
+	  for(kk=0;kk<3;kk++)
+	    mat[j][k]+=spg_rot[i][j][kk]*c->recip[kk][k];
+      for(j=0;j<3;j++)
+	for(k=0;k<3;k++)
+	  for(kk=0;kk<3;kk++)
+	    s[i].mat[j][k]+=c->basis[kk][j]*mat[kk][k];
+      /* We don't like matrix entries of "-0" */
+      for(j=0;j<3;j++)
+	for(k=0;k<3;k++)
+	  if (fabs(s[i].mat[j][k])<1e-10) s[i].mat[j][k]=0;
    
-    if (debug>2){
-      fprintf(stderr,"Sym op on exit:\n");
-      for(j=0;j<3;j++)
-        fprintf(stderr,"%13.9f %13.9f %13.9f\n",s[i].mat[j][0],
-                s[i].mat[j][1],s[i].mat[j][2]);
-      if (s[i].tr)
-        fprintf(stderr,"%13.9f %13.9f %13.9f\n",s[i].tr[0],
-                s[i].tr[1],s[i].tr[2]);
-      else
-        fprintf(stderr,"0.0 0.0 0.0\n");
+      if (debug>2){
+	fprintf(stderr,"Sym op on exit:\n");
+	for(j=0;j<3;j++)
+	  fprintf(stderr,"%13.9f %13.9f %13.9f\n",s[i].mat[j][0],
+		  s[i].mat[j][1],s[i].mat[j][2]);
+	if (s[i].tr)
+	  fprintf(stderr,"%13.9f %13.9f %13.9f\n",s[i].tr[0],
+		  s[i].tr[1],s[i].tr[2]);
+	else
+	  fprintf(stderr,"0.0 0.0 0.0\n");
+      }
     }
+
+    return s;
   }
 
-  return s;
-}
+  void cspg_hall2sym(int hall, struct unit_cell *c, struct symmetry *s){
+    int rotations[192][3][3];
+    double translations[192][3];
 
-void cspg_hall2sym(int hall, struct unit_cell *c, struct symmetry *s){
-  int rotations[192][3][3];
-  double translations[192][3];
-
-  s->n=spg_get_symmetry_from_database(rotations,translations,hall);
-  s->ops=sym_frac2abs(rotations,translations,c,s->n);
-}
+    s->n=spg_get_symmetry_from_database(rotations,translations,hall);
+    s->ops=sym_frac2abs(rotations,translations,c,s->n);
+  }
 
 #else
-int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
-            int op){
-  fprintf(stderr,"Error: spglib functionality not available"
-          " in this version of c2x\n");
-  exit(1);
-}
+  int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
+	      int op){
+    fprintf(stderr,"Error: spglib functionality not available"
+	    " in this version of c2x\n");
+    exit(1);
+  }
 
-void cspg_hall2sym(int hall, struct unit_cell *c, struct symmetry *s){
-  if (hall==1) return;
-  fprintf(stderr,"Error: spglib functionality not available"
-          " so cannot expand spacegroup\n");
-  exit(1);
-}
+  void cspg_hall2sym(int hall, struct unit_cell *c, struct symmetry *s){
+    if (hall==1) return;
+    fprintf(stderr,"Error: spglib functionality not available"
+	    " so cannot expand spacegroup\n");
+    exit(1);
+  }
 
 #endif
 
-/* Does space group have two possible origins? */
-int spgr_is_double(int spgr){
-  int doubles[]={48,50,59,70,85,86,88,125,126,129,130,133,
-                 134,137,138,141,142,201,203,222,224,227,228,0};
-  int i,hit;
+  /* Does space group have two possible origins? */
+  int spgr_is_double(int spgr){
+    int doubles[]={48,50,59,70,85,86,88,125,126,129,130,133,
+		   134,137,138,141,142,201,203,222,224,227,228,0};
+    int i,hit;
 
-  hit=0;
-  i=0;
-  while(doubles[i]){
-    if (doubles[i]==spgr){
-      hit=1;
-      break;
+    hit=0;
+    i=0;
+    while(doubles[i]){
+      if (doubles[i]==spgr){
+	hit=1;
+	break;
+      }
+      i++;
     }
-    i++;
-  }
-  return hit;
-}
-
-
-void rotate(double v[3], double axis[3], double theta){
-  int i,j;
-  double basis[3][3],frac[3];
-  double tmp;
-
-  if (debug>1)
-    fprintf(stderr,"Rotating (%lf,%lf,%lf) by %lf about (%lf,%lf,%lf)\n",
-	    v[0],v[1],v[2],theta,axis[0],axis[1],axis[2]);
-  
-
-  /* First basis vector is rotation axis */
-  
-  tmp=sqrt(vmod2(axis));
-  for(i=0;i<3;i++) basis[0][i]=axis[i]/tmp;
-
-  /* Second basis vector is residual from vector to be rotated */
-
-  tmp=0;
-  for(i=0;i<3;i++) tmp+=v[i]*basis[0][i];
-
-  for(i=0;i<3;i++) basis[1][i]=v[i]-tmp*basis[0][i];
-
-  tmp=sqrt(vmod2(basis[1]));
-
-  if (tmp<1e-10) return; /* v and axis are parallel -- nothing to do */
-  for(i=0;i<3;i++) basis[1][i]/=tmp;
-
-  /* Third basis vector is cross product of other two */
-  
-  vcross(basis[0],basis[1],basis[2]);
-  tmp=sqrt(vmod2(basis[2]));  /* Unnecessary -- should be 1 anyway */
-  for(i=0;i<3;i++) basis[2][i]/=tmp;
-
-  /* New basis is orthogonal, so easy to convert v into it */
-
-  for(i=0;i<3;i++){
-    frac[i]=0;
-    for(j=0;j<3;j++)
-      frac[i]+=v[j]*basis[i][j];
+    return hit;
   }
 
-  /* Now rotate -- frac[2] will be zero at this point */
-  /* and frac[0] will be unchanged */
+
+  void rotate(double v[3], double axis[3], double theta){
+    int i,j;
+    double basis[3][3],frac[3];
+    double tmp;
+
+    if (debug>1)
+      fprintf(stderr,"Rotating (%lf,%lf,%lf) by %lf about (%lf,%lf,%lf)\n",
+	      v[0],v[1],v[2],theta,axis[0],axis[1],axis[2]);
   
-  frac[2]=frac[1]*sin(theta);
-  frac[1]=frac[1]*cos(theta);
 
-  /* And convert back to v */
+    /* First basis vector is rotation axis */
+  
+    tmp=sqrt(vmod2(axis));
+    for(i=0;i<3;i++) basis[0][i]=axis[i]/tmp;
 
-  for(i=0;i<3;i++){
-    v[i]=0;
-    for(j=0;j<3;j++)
-      v[i]+=frac[j]*basis[j][i];
+    /* Second basis vector is residual from vector to be rotated */
+
+    tmp=0;
+    for(i=0;i<3;i++) tmp+=v[i]*basis[0][i];
+
+    for(i=0;i<3;i++) basis[1][i]=v[i]-tmp*basis[0][i];
+
+    tmp=sqrt(vmod2(basis[1]));
+
+    if (tmp<1e-10) return; /* v and axis are parallel -- nothing to do */
+    for(i=0;i<3;i++) basis[1][i]/=tmp;
+
+    /* Third basis vector is cross product of other two */
+  
+    vcross(basis[0],basis[1],basis[2]);
+    tmp=sqrt(vmod2(basis[2]));  /* Unnecessary -- should be 1 anyway */
+    for(i=0;i<3;i++) basis[2][i]/=tmp;
+
+    /* New basis is orthogonal, so easy to convert v into it */
+
+    for(i=0;i<3;i++){
+      frac[i]=0;
+      for(j=0;j<3;j++)
+	frac[i]+=v[j]*basis[i][j];
+    }
+
+    /* Now rotate -- frac[2] will be zero at this point */
+    /* and frac[0] will be unchanged */
+  
+    frac[2]=frac[1]*sin(theta);
+    frac[1]=frac[1]*cos(theta);
+
+    /* And convert back to v */
+
+    for(i=0;i<3;i++){
+      v[i]=0;
+      for(j=0;j<3;j++)
+	v[i]+=frac[j]*basis[j][i];
+    }
+  
   }
 
+#ifdef SPGLIB
+  static void spg_scan(double spg_latt[3][3], double spg_pos[][3],
+		       int *spg_type, int natoms, int op, double tolmin,
+		       double tolmax, int hallmin, int hallmax, int first){
+    int i,j,nsym,nhall;
+    double tmp_latt[3][3];
+    double (*tmp_pos)[3],spg_symprec;
+    int *tmp_type;
+    SpglibDataset *spg;
+
+    if (debug>2) fprintf(stderr,"spg_scan called, tolmin=%g tolmax=%g "
+			 "hallmin=%d hallmax=%d\n",tolmin,tolmax,
+                         hallmin,hallmax);
+    
+    tmp_pos=malloc(3*natoms*sizeof(double));
+    tmp_type=malloc(natoms*sizeof(int));
+    if ((!tmp_pos)||(!tmp_type)) error_exit("Malloc error in spg_scan");
+    spg=NULL;
+
+    for(i=0;i<3;i++)
+      for(j=0;j<3;j++)
+	tmp_latt[i][j]=spg_latt[i][j];
+    memcpy(tmp_pos,spg_pos,3*natoms*sizeof(double));
+    memcpy(tmp_type,spg_type,natoms*sizeof(int));
+
+    if (first){
+      spg_symprec=tolmin;
+      spg=spg_get_dataset(tmp_latt,tmp_pos,tmp_type,natoms,spg_symprec);
+      spg_sym_print(spg,spg_symprec,op);
+      if (spg) {
+	hallmin=spg->hall_number;
+	spg_free_dataset(spg);
+      }
+      else hallmin=0;
+
+      for(i=0;i<3;i++)
+	for(j=0;j<3;j++)
+	  tmp_latt[i][j]=spg_latt[i][j];
+      memcpy(tmp_pos,spg_pos,3*natoms*sizeof(double));
+      memcpy(tmp_type,spg_type,natoms*sizeof(int));
+      spg_symprec=tolmax;
+      spg=spg_get_dataset(tmp_latt,tmp_pos,tmp_type,natoms,spg_symprec);
+      if (spg)
+	hallmax=spg->hall_number;
+      else
+	hallmax=0;
+
+      if (hallmin==hallmax){
+	free(tmp_pos);
+	free(tmp_type);
+	if (spg) spg_free_dataset(spg);
+	return;
+      }
+      else{
+	if (spg) spg_free_dataset(spg);
+      }
+    }
+    
+    spg_symprec=sqrt(tolmin*tolmax);
   
-}
+    spg=spg_get_dataset(spg_latt,spg_pos,spg_type,natoms,spg_symprec);
+    if (spg){
+      nsym=spg->n_operations;
+      nhall=spg->hall_number;
+    }
+    else{
+      nsym=0;
+      nhall=0;
+    }
+
+    if (debug>2) fprintf(stderr,"spg_get_dataset returns nsym=%d,"
+                         " int=%s and tol=%g\n",
+			 nsym,spg->international_symbol,spg_symprec);
+    
+    if ((tolmax/spg_symprec>1.0003)&&(spg_symprec/tolmin>1.0003)){ /* Refine */
+      if (nhall!=hallmin)
+	spg_scan(spg_latt, spg_pos, spg_type, natoms,
+		 op, tolmin, spg_symprec, hallmin, nhall, 0);
+      if (nhall!=hallmax)
+	spg_scan(spg_latt, spg_pos, spg_type, natoms,
+		 op, spg_symprec, tolmax, nhall, hallmax, 0);
+    }
+    else{
+      if (nhall!=hallmin)
+	spg_sym_print(spg,spg_symprec,op);
+      else if (nhall!=hallmax){
+	if (spg) spg_free_dataset(spg);
+	for(i=0;i<3;i++)
+	  for(j=0;j<3;j++)
+	    tmp_latt[i][j]=spg_latt[i][j];
+	memcpy(tmp_pos,spg_pos,3*natoms*sizeof(double));
+	memcpy(tmp_type,spg_type,natoms*sizeof(int));
+	spg_symprec=tolmax;
+	spg=spg_get_dataset(tmp_latt,tmp_pos,tmp_type,natoms,spg_symprec);
+	spg_sym_print(spg,spg_symprec,op);
+      }
+    }
+
+    free(tmp_type);
+    free(tmp_pos);
+    if (spg) spg_free_dataset(spg);
+  
+  }
+
+  static void spg_sym_print(SpglibDataset *spg,double spg_symprec, int op){
+  
+    if (!spg){
+      fprintf(stderr,"Tol=%-7.3g attempt to find symmetry failed\n",
+	      spg_symprec);
+      return;
+    }
+    
+    if (op&CSPG_INT)
+      fprintf(stderr,"Tol=%-7.3g International symmetry is %s\n",spg_symprec,
+	      spg->international_symbol);
+    if (op&CSPG_SYM)
+      fprintf(stderr,"Tol=%-7.3g %d symmetry operations found.\n",spg_symprec,
+	      spg->n_operations);
+    if (op&CSPG_PNT)
+      fprintf(stderr,"Tol=%-7.3g Point group is %s\n",spg_symprec,
+	      spg->pointgroup_symbol);
+    if (op&CSPG_SCH)
+      fprintf(stderr,"Tol=%-7.3g Schoenflies symmetry is %s\n",spg_symprec,
+	      spg_get_spacegroup_type(spg->hall_number).schoenflies);
+
+  }
+#endif

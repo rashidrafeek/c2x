@@ -1,4 +1,4 @@
-#define C2XSF_VER "2.30c"
+#define C2XSF_VER "2.32"
 
 /* Global variables for system description */
 
@@ -55,6 +55,8 @@
 #define QE 23
 #define CASTEP_BANDS 24
 #define CASTEP_GEOM 25
+#define XV 26
+#define CCP4 27
 
 /* flags for reading and output */
 #define CHDEN 1
@@ -80,7 +82,10 @@
 #define K_WEIGHT 2097152
 #define OCCUPANCIES 4194304
 #define ONETEP 8388608
-#define ONETEP_OUT 16777216
+/* Alternate output format: changes CELL to ONETEP,
+ *                          changes CUBE to MO CUBE
+ */
+#define ALT_OUT 16777216
 #define CHGCAR 33554432
 #define DE_AU 67108864
 
@@ -210,7 +215,9 @@ void simple_super(struct unit_cell *c, struct contents *m,
            struct grid *gptr);
 
 double dist(double a,double b);
+double atom_dist(struct atom *a, struct atom *b, double basis[3][3]);
 double vmod2(double v[3]);
+void cell_check(struct unit_cell *c, struct contents *m);
 
 #ifndef min
 #define min(a,b) ((a)<(b)?(a):(b))

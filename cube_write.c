@@ -3,10 +3,12 @@
  * If no density given, as density is a required part of a Guassian
  * file, writes a 1x1x1 grid containing the value zero (in common with
  * some other programs).
+ *
+ * If ALT_OUT flag set, use molecular orbital form (but just one orbital)
  */
 
 
-/* Copyright (c) 2007-2018 MJ Rutter 
+/* Copyright (c) 2007-2019 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -52,18 +54,20 @@ void cube_write(FILE* outfile, struct unit_cell *c, struct contents *m,
   else
     fprintf(outfile,"\n");
 
-
-  fprintf(outfile,"%d 0.0 0.0 0.0\n",m->n);
+  if (flags&ALT_OUT)
+    fprintf(outfile,"%d 0.0 0.0 0.0\n",-m->n);
+  else
+    fprintf(outfile,"%d 0.0 0.0 0.0\n",m->n);
 
   if (flags&HIPREC){
     fmt1="%d %.15f %.15f %.15f\n";
     fmt2="%d %.4f %.15f %.15f %.15f\n";
-    fmt3="%.15f\n";
+    fmt3="%22.15E";
   }
   else{
     fmt1="%d %f %f %f\n";
     fmt2="%d %.3f %f %f %f\n";
-    fmt3="%f\n";
+    fmt3="%12.5E";
   }
       
   
@@ -80,17 +84,23 @@ void cube_write(FILE* outfile, struct unit_cell *c, struct contents *m,
     fprintf(outfile,fmt2,m->atoms[i].atno,m->atoms[i].chg,x,y,z);
   }
 
+  if (flags&ALT_OUT) fprintf(outfile," 1 1\n");
+  
   dptr2=g->data;
   for(k=0;k<g->size[0];k++){
     for(j=0;j<g->size[1];j++){
       dptr1=dptr2+((k*g->size[1])+j)*g->size[2];
-      for(i=0;i<g->size[2];i++)
+      for(i=0;i<g->size[2];i++){
         if (flags&AU){
           fprintf(outfile,fmt3,(*(dptr1+i))*BOHR*BOHR*BOHR);
         }
         else{
           fprintf(outfile,fmt3,*(dptr1+i));
         }
+        if ((i%6)==5) fwrite("\n",1,1,outfile);
+        else fwrite(" ",1,1,outfile);
+      }
+      if ((g->size[2]%6)!=0) fwrite("\n",1,1,outfile);
     }
   }
 }

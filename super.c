@@ -24,15 +24,6 @@
 
 void vcross(double a[3],double b[3],double c[3]);
 
-/* Minimum distance between two points in periodic system */
-double dist(double a,double b){
-  double d;
-
-  d=fabs(fmod(a-b,1.0));
-  if (d>0.5) d=1-d;
-
-  return d;
-}
 
 void to235(int *i);
 void grid_interp(struct unit_cell *c, struct grid *grid,int old_fft[3],
@@ -413,12 +404,12 @@ void grid_interp(struct unit_cell *c, struct grid *grid, int old_fft[3],
 
   sum=0;
 
-  if (!(gnew=malloc(sizeof(double)*grid->size[0]*grid->size[1]*grid->size[2])))
-     error_exit("Malloc error in grid_interp");
-
   if (debug>1) fprintf(stderr,"Moving from %dx%dx%d grid to %dx%dx%d\n",
 		       old_fft[0],old_fft[1],old_fft[2],
 		       grid->size[0],grid->size[1],grid->size[2]);
+
+  if (!(gnew=malloc(sizeof(double)*grid->size[0]*grid->size[1]*grid->size[2])))
+     error_exit("Malloc error in grid_interp");
 
   for(i=0;i<grid->size[0];i++){
     di=(double)i/grid->size[0];

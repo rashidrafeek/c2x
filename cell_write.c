@@ -1,5 +1,6 @@
-/* Write a .cell file */
-
+/* Write a .cell file
+ * Use ONETEP format if ALT_OUT flag set
+ */
 
 /* Copyright (c) 2007,2014 MJ Rutter 
  * 
@@ -132,7 +133,7 @@ static void cell_write_atoms_abs(FILE* outfile, struct contents *m){
     fmt2="%3s%s % .9f % .9f % .9f";
   }
 
-  if (flags&ONETEP_OUT) cell_write_species_block(outfile,m);
+  if (flags&ALT_OUT) cell_write_species_block(outfile,m);
 
   fprintf(outfile,"%%block POSITIONS_ABS\n");
   if (flags&AU){
@@ -145,7 +146,7 @@ static void cell_write_atoms_abs(FILE* outfile, struct contents *m){
   }
     
   for(i=0;i<m->n;i++){
-    if ((flags&ONETEP_OUT)&&(m->atoms[i].label))
+    if ((flags&ALT_OUT)&&(m->atoms[i].label))
       fprintf(outfile,fmt,
               m->atoms[i].label,m->atoms[i].abs[0]*scale,
               m->atoms[i].abs[1]*scale,m->atoms[i].abs[2]*scale);
@@ -179,11 +180,11 @@ static void cell_write_atoms(FILE *outfile, struct contents *m){
     fmt2="%3s%s % .9f % .9f % .9f";
   }
   
-  if (flags&ONETEP_OUT) cell_write_species_block(outfile,m);
+  if (flags&ALT_OUT) cell_write_species_block(outfile,m);
 
   fprintf(outfile,"%%block POSITIONS_FRAC\n");
   for(i=0;i<m->n;i++){
-    if ((flags&ONETEP_OUT)&&(m->atoms[i].label))
+    if ((flags&ALT_OUT)&&(m->atoms[i].label))
       fprintf(outfile,fmt,
               m->atoms[i].label,m->atoms[i].frac[0],
               m->atoms[i].frac[1],m->atoms[i].frac[2]);

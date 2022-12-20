@@ -33,6 +33,11 @@
 void interpolate1d(struct grid *gptr, double st[3], double end[3],
                    int n, double *pts);
 
+double interpolate0d(struct grid *gptr,double x_in[3]);
+void interpolate3d(struct grid *old_grid, struct grid *new_grid);
+void  interpolate_r(struct grid *gptr, struct unit_cell *c, double *start,
+		    double len, int n, double *points);
+
 /* lscan: parse "(x,y,z)" or "AtN" or "At"
  *        expects termination by : or null
  *        used by main() for point value, and this file for line
@@ -105,7 +110,7 @@ void line_write(FILE* outfile, struct unit_cell *c,
                 struct contents *m, struct grid *gptr, char *line_spec,
                 int lflags){
   char *ptr;
-  int i,j,n;
+  int i,j,n,radial;
   double start[3],end[3],v[3],*points,len;
   struct grid *g;
   char *fmt;
@@ -121,7 +126,7 @@ void line_write(FILE* outfile, struct unit_cell *c,
 
   /* parse line spec */
 
-
+  radial=0;
   ptr=line_spec;
 
   if (!strcmp(line_spec,"a")){
@@ -149,7 +154,18 @@ void line_write(FILE* outfile, struct unit_cell *c,
     if (*ptr!=':') error_exit("Failed to find first colon in line_spec");
     ptr++;
 
-    lscan(&ptr,m,end);
+    if (*ptr=='r'){
+      ptr++;
+      radial=1;
+      sscanf(ptr,"%lf%n",&len,&n);
+      ptr+=n;
+      if (*ptr=='B'){
+	len*=BOHR;
+	ptr++;
+      }
+    }
+    else
+      lscan(&ptr,m,end);
 
     if (*ptr!=':') error_exit("Failed to find second colon in line_spec");
     ptr++;
@@ -157,34 +173,47 @@ void line_write(FILE* outfile, struct unit_cell *c,
     if(sscanf(ptr,"%d",&n)!=1)
       error_exit("Invalid number of points in line_spec");
   }
-  
-  if (debug)
-    fprintf(stderr,"Requested line (%f,%f,%f) to (%f,%f,%f) with %d points.\n",
-            start[0],start[1],start[2],end[0],end[1],end[2],n);
-
-  /* Find length of line */
-
-  /* Convert to absolute co-ords */
-
-  for(i=0;i<3;i++){
-    v[i]=0;
-    for(j=0;j<3;j++)
-      v[i]+=(end[j]-start[j])*c->basis[j][i];
-  }
-
-  len=0;
-  for(i=0;i<3;i++) len+=v[i]*v[i];
-  len=sqrt(len);
-  if (flags&AU) len=len/BOHR;
 
   points=malloc(n*sizeof(double));
   if(!points) error_exit("Malloc error for points in line_write");
 
+  if (debug){
+    if (radial)
+      fprintf(stderr,
+	      "Requested line centre (%f,%f,%f) radius %f A with %d points.\n",
+	      start[0],start[1],start[2],len,n);
+    else
+      fprintf(stderr,
+	      "Requested line (%f,%f,%f) to (%f,%f,%f) with %d points.\n",
+	      start[0],start[1],start[2],end[0],end[1],end[2],n);
+  }
+  
+  /* Find length of line */
+
+  /* Convert to absolute co-ords */
+
+  if (!radial){
+    for(i=0;i<3;i++){
+      v[i]=0;
+      for(j=0;j<3;j++)
+	v[i]+=(end[j]-start[j])*c->basis[j][i];
+    }
+
+    len=0;
+    for(i=0;i<3;i++) len+=v[i]*v[i];
+    len=sqrt(len);
+    if (flags&AU) len=len/BOHR;
+  }
+  
   if (m->title) fprintf(outfile,"# %s\n\n",m->title);
 
   fprintf(outfile,"# %s\n",line_spec);
-  fprintf(outfile,"# (%f,%f,%f) to (%f,%f,%f) with %d points\n",
-          start[0],start[1],start[2],end[0],end[1],end[2],n);
+  if (radial)
+    fprintf(outfile,"# centre (%f,%f,%f) length %f with %d points\n",
+	    start[0],start[1],start[2],len,n);
+  else
+    fprintf(outfile,"# (%f,%f,%f) to (%f,%f,%f) with %d points\n",
+	    start[0],start[1],start[2],end[0],end[1],end[2],n);
   fprintf(outfile,"# distance in %s\n",(flags&AU)?"Bohr":"Angstrom");
   if (m->comment->txt){
     fprintf(outfile,"\n");
@@ -212,7 +241,10 @@ void line_write(FILE* outfile, struct unit_cell *c,
   }
 
   while(gptr&&(gptr->data)){
-    interpolate1d(gptr,start,end,n,points);
+    if (radial)
+      interpolate_r(gptr,c,start,len,n,points);
+    else
+      interpolate1d(gptr,start,end,n,points);
 
     fprintf(outfile,"# %s\n",gptr->name);
 
@@ -228,4 +260,60 @@ void line_write(FILE* outfile, struct unit_cell *c,
   if (lflags&1) fprintf(outfile,"pause -1 \"Press return to exit\"\n");
 
   free(points);
+}
+
+void  interpolate_r(struct grid *gptr, struct unit_cell *c, double *start,
+		    double len, int n, double *points){
+  int i,j,jj,k,jmax;
+  double abc[6],origin[3],pt[3],frac[3],radius,sum,integral;
+  struct grid ng;
+  
+  basis2abc(c->basis,abc);
+  if ((!(aeq(abc[3],90)))||(!(aeq(abc[4],90))))
+    error_exit("c not perpendicular to ab plane\n");
+
+  /* Reduce grid */
+
+  if (gptr->size[2]!=1){
+    for(i=0;i<2;i++) ng.size[i]=gptr->size[i];
+    ng.size[2]=1;
+    interpolate3d(gptr,&ng);
+    free(gptr->data);
+    gptr->data=ng.data;
+    for(i=0;i<3;i++) gptr->size[i]=ng.size[i];
+  }
+
+  for(i=0;i<2;i++)
+    origin[i]=start[0]*c->basis[0][i]+start[1]*c->basis[1][i];
+  origin[2]=0;
+
+  if (debug)
+    fprintf(stderr,"Origin, abs coords: (%f,%f,%f)\n",origin[0],
+	    origin[1],origin[2]);
+
+  
+  integral=0;
+  for(i=0;i<n;i++){
+    radius=i*len/n;
+    jmax=2+2*M_PI*n*radius/len;
+    sum=0;
+    for(j=0;j<jmax;j++){
+      pt[0]=origin[0]+radius*cos((2*M_PI*j)/jmax);
+      pt[1]=origin[1]+radius*sin((2*M_PI*j)/jmax);
+      pt[2]=0;
+      for(jj=0;jj<3;jj++){
+	frac[jj]=0;
+	for(k=0;k<3;k++)
+	  frac[jj]+=pt[k]*c->recip[jj][k];
+      }
+      sum+=interpolate0d(gptr,frac);
+    }
+    points[i]=sum/jmax;
+    integral+=points[i]*2*M_PI*radius;
+  }
+  integral*=len/n;
+  integral*=abc[2];
+  if (debug)
+    fprintf(stderr,"Radial integral: %f\n",integral);
+  
 }

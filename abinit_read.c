@@ -41,6 +41,8 @@
  * Record 5: Undocumented
  * Record 6 to 5+nspec: pseudopotentials
  * Two more records if usepaw==1
+ *
+ * For values of fform, see 56_io_mpi/m_hdr.F90 in abinit source
  */
 
 #include<stdio.h>
@@ -253,7 +255,8 @@ void abinit_charge_read(FILE* infile, struct unit_cell *c,
 
   abinit_header_read(infile,c,m,kp,elect,fft,&gamma,&fileform);
 
-  if ((!(flags&CHDEN))&&(!(flags&SPINDEN))) return;
+  if (((fileform>=50)&&(fileform<100))&&
+      ((!(flags&CHDEN))&&(!(flags&SPINDEN)))) return;
   
   fread(&reclen,4,1,infile);
   if (reclen!=8*fft[0]*fft[1]*fft[2]){
@@ -306,7 +309,26 @@ void abinit_charge_read(FILE* infile, struct unit_cell *c,
         gptr->data[i]*=scale;
     }
   }
-  else if ((fileform>=100)&&(fileform<120)) gptr->name="Potential";
+  else if ((fileform>=100)&&(fileform<120)) {
+    gptr->name="Potential";
+    if (fileform==104)
+      gptr->name="Potential_VHA";
+    else if (fileform==105)
+      gptr->name="Potential_PSP";
+    else if (fileform==106)
+      gptr->name="Potential_VCLMB";
+    else if (fileform==107)
+      gptr->name="Potential_VHXC";
+    else if (fileform==107)
+      gptr->name="Potential_VXC";
+      
+    if (!(flags&RAW)){
+      if (debug) fprintf(stderr,"Rescaling data from Ha to eV\n");
+      scale=H_eV;
+      for(i=0;i<gptr->size[0]*gptr->size[1]*gptr->size[2];i++)
+        gptr->data[i]*=scale;
+    }
+  }
   else gptr->name="Unknown";
 
   if ((fileform!=52)||(elect->nspins!=2)) return;

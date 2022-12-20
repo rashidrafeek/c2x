@@ -28,8 +28,9 @@ ending in '.cif' is assumed to be in cif format, ending in '.res' is
 assumed to be in shelx97, ending '.cub' or '.cube' is assumed to be in
 cube format, ending '.in' is assumed to be an Abinit or Quantum
 Espresso input file, ending '.xml' is assumed to be a Quantum Espresso
-output file, and ending in '.xsf' is assumed to be in xsf
-format. Input files ending CHG, CHGCAR, POSCAR, CONTCAR or WAVEDCAR
+output file, ending in '.xsf' is assumed to be in xsf
+format, and ending in '.xv' or 'XV' is assumed to be in Siesta's XV format.
+Input files ending CHG, CHGCAR, POSCAR, CONTCAR or WAVEDCAR
 are assumed to be in VASP 5.x format. Input files ending in DEN, POT or WFK
 are assumed to be in Abinit format. Otherwise, if the first byte is
 either zero, 10 or 30 it is assumed to be a .check file, else it is
@@ -101,6 +102,9 @@ extent exp(-mu^2r^2). If the ionic charge differs from the atomic number,
 a further localised smoothing of the atomic potential occurs, unless the first
 character after the = is -.
 .TP
+.B \-\-formats
+list supported formats
+.TP
 .B \-H
 shift atoms by half a grid cell. For use with xplor data format, see below.
 .TP
@@ -131,7 +135,8 @@ shift if some co-ordinates are negative, or if a,b,c given shift by
 those numbers of FFT grid cells.
 .TP
 .B \-n
-discard symmetry information. Give twice to discard k-points too.
+discard symmetry information, and, if output is XSF, discard forces. Give
+twice to discard k-points too.
 .TP
 .B \-N
 normalise by reducing fractional coords to 0<=x<1.
@@ -149,9 +154,22 @@ Si3 for silicon atom number 3, or simply Si for the first Si atom. Using
 a 0 (zero) for a p is equivalent to (0,0,0), and the three cell axes
 "(0,0,0):(1,0,0):ngx+1" (etc.) can be specified as a, b and c.
 .TP
+.B \-P=p1:rl:nn
+output data with cylindrical averaging. p1 is the centre of the cylinder,
+rl (literal "r", followed by a length, suffixed by "B" if Bohr) is the radius,
+and nn the number of points. The axis of the cylinder must be the c axis, and
+alpha and beta must be 90 degrees. Data are averaged over c and theta.
+.TP
 .B \-R
 don't attempt to rescale densities, but output them raw. Charge density
-becomes electrons per unit cell.
+becomes electrons per unit cell if reading from Castep, for instance.
+Also do not attempt to adjust radius to maintain bond length on
+nanotube creation.
+.TP
+.B \-R=x
+rescale grid data by factor x, not whatever factor (if any) would normally
+be used. If the factor is suffixed by an "x", do include c2x's usual
+conversion factor too.
 .TP
 .B \-s
 include spin density.
@@ -188,6 +206,7 @@ factors.
 .TP
 .B \-w
 weight bands by occupancies, or sqrt(occ) if not calculating density.
+.TP
 .B \-W
 weight bands by occupancies and k-point weight, or sqrt thereof if not
 calculating density.
@@ -206,9 +225,21 @@ change given axis/axes to new length by inserting / removing vacuum
 around the origin. Removing non-existent vacuum will produce nonsense.
 Length may be suffixed with B (for Bohr) or nm.
 .TP
+.B \-y=i,j[:x]
+make nanotube. The input cell must have c perpendicular to the ab
+plane, and c as the nonperiodic direction of the sheet to be
+rolled. The circumference is then defined by the vector i*a+j*b. The
+vector along the tube's length found automatically, and the size of
+the cell perpendicular to the tube's length is given by the optional
+parameter x, which may be suffixed with B (for Bohr) or nm.
+.TP
 .B \-z=p1
 print to stdout data at given point, and set output type to null. For
 specification of p1, see -P= option.
+.TP
+.B \-Z=p1
+ditto, but assume that data represents an electron density in A^-3,
+and also output Perdew Zunger 81 XC energy.
 .TP
 .B \-1
 assume input .cell file follows Onetep conventions (such as default units
@@ -233,6 +264,12 @@ Abinit, but can easily be made so.
 .TP
 .B \-\-bands
 CASTEP .bands file, no sorting of bands.
+.TP
+.B
+\-\-ccp4
+CCP4 density map format. Note no atomic positions can be recorded in this
+format, and c2x will always produce a right-hand set of axes unless
+the input is a lhs and the option -L is given.
 .TP
 .B \-\-cell
 CASTEP .cell, cartesian cell, fractional co-ordinates.
@@ -266,9 +303,8 @@ Data Explorer. Data set only.
 CASTEP formatted density
 .TP
 .B \-\-fdf
-Siesta. Current support is very partial. If you want a density, you must
-name the output file on the command line, the filename must end ".fdf",
-and the density will appear in a corresponding ".RHO" file.
+Siesta. If a density has been read, a corresponding .RHO file
+will be written.
 .TP
 .B \-\-gnu
 Gnuplot command file for 1D data.
@@ -319,6 +355,10 @@ when creating the pdb file.
 .B \-\-xsf
 XCrysDen format. Default. The only format in which multiple data sets are
 supported.
+.TP
+.B \-\-xv
+Siesta's .XV format (positions only, velocities written as zero). Will also
+write a .RHO file if grid data have been read.
 .TP
 .B \-\-xyz
 XYZ format. Atoms only, no unit cell.
@@ -423,7 +463,8 @@ densities) is meaningless except at gamma, for the phase due to the k
 point is not considered.
 
 .LP
-Densities by default are in Angstroms**-3, and psis in Angstroms**-1.5.
+Densities by default are in Angstroms**-3, and psis in Angstroms**-1.5,
+save that .RHO files are written in Bohr**-3 as expected.
 
 .SH EXAMPLES
 

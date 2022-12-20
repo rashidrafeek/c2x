@@ -1,10 +1,10 @@
-/* Read a single data set from a CASTEP .den_fmt file 
+/* Read a single data set from a CASTEP .den_fmt (or .pot_fmt) file 
  *
  * The format seems to be undocumented,
  * so it is hard to work out how it should be parsed...
  */
 
-/* Copyright (c) 2017 MJ Rutter 
+/* Copyright (c) 2017-2019 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -22,24 +22,31 @@
 
 #include<stdio.h>
 #include<stdlib.h> /* malloc */
+#include<string.h>
 
 #include "c2xsf.h"
 
-#define LINE_SIZE 100
+#define LINE_SIZE 120
 
 void denfmt_read(FILE* infile, struct unit_cell *c,
-               struct grid *gptr){
+                 struct grid *gptr, int rescale){
   static char buffer[LINE_SIZE+1];
   int i,nx,ny,nz,ngx,ngy,ngz;
   double x,scale;
 
   if (debug>2) fprintf(stderr,"denfmt_read called\n");
   
-  fgets(buffer,LINE_SIZE,infile);
-  fgets(buffer,LINE_SIZE,infile);
-  fgets(buffer,LINE_SIZE,infile);
+  while(fgets(buffer,LINE_SIZE,infile))
+    if (strstr(buffer,"BEGIN header")) break;
 
-  if (!(c->basis=malloc(72)))
+  if (!strstr(buffer,"BEGIN header")) error_exit("BEGIN header not found");
+  
+  while(fgets(buffer,LINE_SIZE,infile))
+    if (strstr(buffer,"Real Lattice")) break;
+
+  if (!strstr(buffer,"Real Lattice")) error_exit("Real Lattice not found");
+  
+  if (!(c->basis=malloc(9*sizeof(double))))
     error_exit("Malloc error in denfmt_read for c->basis");
  
   for(i=0;i<3;i++){
@@ -67,24 +74,41 @@ void denfmt_read(FILE* infile, struct unit_cell *c,
   gptr->size[1]=ngy;
   gptr->size[2]=ngz;
 
+
   if (debug>1) fprintf(stderr,"denfmt read grid size to be %dx%dx%d\n",
                        ngx,ngy,ngz);
   
   if(!(gptr->data=malloc(ngx*ngy*ngz*sizeof(double))))
     error_exit("Malloc error in denfmt_read for grid data");
 
-  fgets(buffer,LINE_SIZE,infile);
+  while(fgets(buffer,LINE_SIZE,infile))
+    if (strstr(buffer,"END header")) break;
+
+  if (!strstr(buffer,"END header")) error_exit("END header not found");
+
   fgets(buffer,LINE_SIZE,infile);
 
   while(fgets(buffer,LINE_SIZE,infile)){
     if(sscanf(buffer,"%d %d %d",&nx,&ny,&nz)==3) break;
   }
+
+  scale=1;
+  if (!(flags&RAW)){
+    if (rescale==1)
+      scale=1/c->vol;
+    else if (rescale==2)
+      scale=H_eV;
+  }
   
-  scale=1/c->vol;
   for(i=0;i<ngx*ngy*ngz;i++){
     if (i) if (!fgets(buffer,LINE_SIZE,infile)) break;
     if (sscanf(buffer,"%d %d %d %lf",&nx,&ny,&nz,&x)!=4){
       fprintf(stderr,"Parse error for data item %d\n",i);
+      exit(1);
+    }
+    if ((nx>ngx)||(ny>ngy)||(nz>ngz)){
+      fprintf(stderr,"Found point (%d,%d,%d) but grid is %dx%dx%d\n",
+              nx,ny,nz,ngx,ngy,ngz);
       exit(1);
     }
     nx--;ny--;nz--;
@@ -93,6 +117,19 @@ void denfmt_read(FILE* infile, struct unit_cell *c,
 
   if (i!=ngx*ngy*ngz) error_exit("Too few data points read in denfmt_read");
   
-  gptr->name="Unknown";
+  if (rescale==1){
+    if (flags&RAW)
+      gptr->name="Density_raw";
+    else
+      gptr->name="Density";
+  }
+  else if (rescale==2){
+    if (flags&RAW)
+      gptr->name="Potential_raw";
+    else
+      gptr->name="Potential";
+  }
+  else
+    gptr->name="Unknown";
 
 }

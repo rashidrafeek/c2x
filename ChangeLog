@@ -1,4 +1,36 @@
-2.30c
+2.32
+----
+
+Add ccp4 writer
+Correct several issues in lhs to rhs converter for abc[6] output formats
+Attempt to expand nanotube radius to maintain bond lengths
+Change Gaussian cube output to make compatible with gabedit
+Introduce --mocube output
+Minor improvements to QE .in reader
+Discard forces from .xsf output with -n
+Support reading of Castep pot_fmt, Abinit VCLMB
+Rescale Abinit potentials to eV
+Add -R= option for rescaling grid data
+Add -Z option for XC pot approximation
+Change sign of cst_esp scaling, to be consistent with other DFT codes
+Read and scale from Ry to V Siesta's .VH and .VT
+Add radially-averaged 1D plots for nanotubes (-P=ctr:rx:npts)
+
+2.31
+----
+
+Add support for reading and writing Siesta's .XV format (velocities ignored)
+Correctly support -15 high precision flag in .xyz output
+Rewrite symmetry search through range of tolerances
+Add sanity check to warn if two atoms are within 0.2A
+Minor improvements to .cif symmetry expansion
+Support writing .RHO files with charge and spin (previously charge only)
+Support reading .RHO files
+Attempt to read .psf files to obtain pseudocharges to support .RHO
+Improvements to .fdf reading and writing
+Add ability to make nanotubes with -y=i,j[:x]
+
+2.30c (6/11/19)
 -----
 
 Add --primitive_nr
