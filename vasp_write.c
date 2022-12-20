@@ -32,7 +32,7 @@ void vasp_write(FILE* outfile, struct unit_cell *c, struct contents *m,
   char *fmt;
   
   if (m->title) fprintf(outfile,"%s\n",m->title);
-  else fprintf(outfile,"\n");
+  else fprintf(outfile,"comment\n");
   
   fprintf(outfile," %20.16f\n",1.0);  /* Scale factor */
 

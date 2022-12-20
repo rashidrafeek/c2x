@@ -30,7 +30,7 @@ static int strnncpy(char *dest, char *src, int n);
 void pdb_read(FILE* infile, struct unit_cell *c, struct contents *m){
   double abc[6],*dptr;
   int have_basis=0,i,j;
-  char buffer[LINE_SIZE+1],buff2[LINE_SIZE],*cptr;
+  char buffer[LINE_SIZE+1],buff2[LINE_SIZE],*cptr,*cptr2;
 
   m->n=0;
 
@@ -52,7 +52,17 @@ void pdb_read(FILE* infile, struct unit_cell *c, struct contents *m){
     if (!strcasecmp(buff2,"MTRIX2")) continue; /* operations which can */
     if (!strcasecmp(buff2,"MTRIX3")) continue; /* be safely ignored */
 
-
+    if ((!strcasecmp(buff2,"TITLE"))||(!strcasecmp(buff2,"HEADER"))){
+      if (!m->title){
+        m->title=malloc(strlen(buffer)-9);
+        cptr=buffer+10;
+        cptr2=m->title;
+        while((*cptr)&&(*cptr!='\n')) *(cptr2++)=*(cptr++);
+        *cptr2=0;
+      }
+      else add_cmt(m->comment,buffer+10);
+    }
+    
     if (!strcasecmp(buff2,"CRYST1")){
       sscanf(buffer+7,"%lf %lf %lf %lf %lf %lf",abc,abc+1,abc+2,
                                               abc+3,abc+4,abc+5);
@@ -104,12 +114,14 @@ void pdb_read(FILE* infile, struct unit_cell *c, struct contents *m){
 	strnncpy(buff2,buffer+12,2);
 	cptr=buff2;
 	cptr[2]=0;
-	 /* I have seen things (mostly H) prefixed by a digit */
+        /* I have seen things (mostly H) prefixed by a digit */
 	if ((*cptr>='0')&&(*cptr<='9')) *cptr=' ';
-	if ((*cptr=='H')&&((((cptr[1]^'E')&31)!=0)||
-			   (((cptr[1]^'F')&31)!=0)||
-			   (((cptr[1]^'G')&31)!=0)||
-			   (((cptr[1]^'O')&31)!=0))) cptr[1]=0;
+        /* If starts with an H, is H, unless He, Hf, Hg or Ho */
+	if ((*cptr=='H')&&((((cptr[1]^'E')&95)!=0)||
+			   (((cptr[1]^'F')&95)!=0)||
+			   (((cptr[1]^'G')&95)!=0)||
+			   (((cptr[1]^'O')&95)!=0))) cptr[1]=0;
+        if ((cptr[1]>='0')&&(cptr[1]<='9')) cptr[1]=0;
 	if ((cptr[0]==' ')&&(cptr[1]==' ')){
 	  strnncpy(buff2,buffer+14,2);
 	  cptr=buff2;

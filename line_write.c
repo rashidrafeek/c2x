@@ -99,8 +99,11 @@ void lscan(char **p, struct contents *m, double x[3]){
 
 }
 
+/* lflags&1 -> use gnuplot syntax */
+
 void line_write(FILE* outfile, struct unit_cell *c,
-                struct contents *m, struct grid *gptr, char *line_spec){
+                struct contents *m, struct grid *gptr, char *line_spec,
+                int lflags){
   char *ptr;
   int i,j,n;
   double start[3],end[3],v[3],*points,len;
@@ -194,7 +197,7 @@ void line_write(FILE* outfile, struct unit_cell *c,
   }
 
 
-  if (flags&GNUPLOT){
+  if (lflags&1){
     fprintf(outfile,"set xlabel \"%s\"\n",(flags&AU)?"Bohr":"Angstrom");
     fprintf(outfile,"set title \"%s (length %g %s)\"\n",line_spec,len,
             (flags&AU)?"Bohr":"A");
@@ -215,14 +218,14 @@ void line_write(FILE* outfile, struct unit_cell *c,
 
     for(i=0;i<n;i++) fprintf(outfile,fmt,i*len/(n-1),points[i]);
 
-    if (flags&GNUPLOT) fprintf(outfile,"e\n");
+    if (lflags&1) fprintf(outfile,"e\n");
 
     gptr=gptr->next;
 
     if (gptr&&(gptr->data)) fprintf(outfile,"\n");
   }
 
-  if (flags&GNUPLOT) fprintf(outfile,"pause -1 \"Press return to exit\"\n");
+  if (lflags&1) fprintf(outfile,"pause -1 \"Press return to exit\"\n");
 
   free(points);
 }

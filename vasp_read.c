@@ -1,7 +1,7 @@
-/* Read a VASP CHGCAR or CHG file
+/* Read a VASP CHGCAR or CHG, or also a POSCAR or a CONTCAR file
  */
 
-/* Copyright (c) 2017 MJ Rutter 
+/* Copyright (c) 2017-2019 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -59,15 +59,25 @@
 
 #define LINE_SIZE 2049
 
+void to235(int *i);
+
 static int formatted_read(double *dptr, unsigned int len, FILE *infile,
                           char *first);
 
-void vasp_read(FILE* infile, struct unit_cell *c, struct contents *m,
-                struct grid *gptr, struct es *elect){
+static void vasp_kpoints_read(FILE *infile, struct kpts *k);
+
+char *strrsubs(char *str, char *old, char *new);
+
+
+void vasp_read(FILE* infile, char *filename, struct unit_cell *c,
+               struct contents *m, struct kpts *kp, struct grid *gptr,
+               struct es *elect){
   int i,j,k,nspec,natoms,frac,fft[3],ffts[3],isize;
   int *nionsp,*species;
   char buffer[LINE_SIZE+1], *ptr,*p2;
+  char *names[]={"POSCAR","CHGCAR","CONTCAR","CHG",NULL};
   double scale,ascale[3],vscale,*dptr,*dptr2,*magmom;
+  FILE *f;
 
   dptr=dptr2=magmom=NULL;
   
@@ -82,6 +92,7 @@ void vasp_read(FILE* infile, struct unit_cell *c, struct contents *m,
   /* Was the title more than spaces and an end-of-line? */
   ptr=buffer;
   while((*ptr==' ')||(*ptr=='\n')) ptr++;
+  if (!strcasecmp(ptr,"comment\n")) *ptr=0;
   if (*ptr){
     m->title=malloc(strlen(buffer)+1);
     if (!m->title){
@@ -231,6 +242,28 @@ void vasp_read(FILE* infile, struct unit_cell *c, struct contents *m,
   if (frac) addabs(m->atoms,m->n,c->basis);
   else addfrac(m->atoms,m->n,c->recip);
 
+  /* Interlude to wonder about reading kpoints from IBZKPT */
+
+  for(i=0;names[i];i++){
+    ptr=names[i];
+    if (strstr(filename,ptr)){
+      p2=strrsubs(filename,ptr,"IBZKPT");
+      if (p2){
+        f=fopen(p2,"r");
+        if (f) {
+          vasp_kpoints_read(f,kp);
+          fclose(f);
+          if (kp->n){
+            fprintf(stderr,"Additionally read %s\n",p2);
+            free(p2);
+            break;
+          }
+        }
+        free(p2);
+      }
+    }
+  }
+
   /* Next have FFT grid if CHG/CHGCAR,
      or perhaps velocities if POSCAR/CONTCAR */
 
@@ -238,7 +271,7 @@ void vasp_read(FILE* infile, struct unit_cell *c, struct contents *m,
   if(!fgets(buffer,LINE_SIZE,infile)) return;
   
   if (sscanf(buffer,"%d %d %d",fft,fft+1,fft+2)!=3){
-    fprintf(stderr,"Unable to find/parse grid data\n");
+    if (debug>1) fprintf(stderr,"Unable to find/parse grid data\n");
     return;
   }
 
@@ -267,7 +300,7 @@ void vasp_read(FILE* infile, struct unit_cell *c, struct contents *m,
     for(i=0;i<3;i++) gptr->size[i]=fft[i];
 
 
-  /* Now reverse order, writing consecutively for efficiency */
+    /* Now reverse order, writing consecutively for efficiency */
 
     dptr2=gptr->data;
     for(i=0;i<fft[0];i++)
@@ -275,7 +308,7 @@ void vasp_read(FILE* infile, struct unit_cell *c, struct contents *m,
         for(k=0;k<fft[2];k++)
           *(dptr2++)=dptr[i+j*fft[0]+k*fft[0]*fft[1]];
 
-  /* Rescale density */
+    /* Rescale density */
   
     scale=1/fabs(c->vol);
     if (flags&AU) scale*=BOHR*BOHR*BOHR;
@@ -306,7 +339,8 @@ void vasp_read(FILE* infile, struct unit_cell *c, struct contents *m,
 
   /* We might have some augmentation occupancies.
      For the moment, discard these. If norm-conserving pots used, this
-     section will be absent. */
+     section will be absent, as it also is in CHG rather than CHGCAR
+     files. */
 
   while (!strncasecmp(buffer,"augmentation occupancies ",25)){
     if (sscanf(buffer+25,"%d %d",&i,&j)!=2){
@@ -325,67 +359,68 @@ void vasp_read(FILE* infile, struct unit_cell *c, struct contents *m,
   /* End of augmentation occupancies */
 
   /* Might now have natom floats to read. These are the magnetic moments
-     for the atoms */
+     for the atoms. But not if we have a CHG not CHGCAR file */
 
-  magmom=malloc(natoms*sizeof(double));
-  formatted_read(magmom,natoms,infile,buffer);
-  for(i=0;i<natoms;i++)
-    m->atoms[i].spin=magmom[i];
-  free(magmom);
-
-  if (!fgets(buffer,LINE_SIZE,infile)) return;
+  if (sscanf(buffer,"%d %d %d",ffts,ffts+1,ffts+2)!=3){
+    magmom=malloc(natoms*sizeof(double));
+    formatted_read(magmom,natoms,infile,buffer);
+    for(i=0;i<natoms;i++)
+      m->atoms[i].spin=magmom[i];
+    free(magmom);
+    if (!fgets(buffer,LINE_SIZE,infile)) return;
+  }
   
   if (sscanf(buffer,"%d %d %d",ffts,ffts+1,ffts+2)==3){
     if ((ffts[0]==fft[0])&&
         (ffts[1]==fft[1])&&
         (ffts[2]==fft[2])){
       if (debug) fprintf(stderr,"Spin density found\n");
-        if (gptr->next) gptr=gptr->next;
-        gptr->next=malloc(sizeof(struct grid));
-        if (!gptr->next) error_exit("Malloc error for struct grid");
-        gptr->next->next=NULL;
-        gptr->next->data=NULL;
+      if (gptr->next) gptr=gptr->next;
+      gptr->next=malloc(sizeof(struct grid));
+      if (!gptr->next) error_exit("Malloc error for struct grid");
+      gptr->next->next=NULL;
+      gptr->next->data=NULL;
 
-        isize=fft[0]*fft[1]*fft[2];
-        if(!(gptr->data=malloc(isize*sizeof(double))))
-          error_exit("Malloc error in vasp_read for grid data");
-        for(i=0;i<3;i++) gptr->size[i]=fft[i];
+      isize=fft[0]*fft[1]*fft[2];
+      if(!(gptr->data=malloc(isize*sizeof(double))))
+        error_exit("Malloc error in vasp_read for grid data");
+      for(i=0;i<3;i++) gptr->size[i]=fft[i];
 
-        /* Data are not stored in the order that we want them */
+      /* Data are not stored in the order that we want them */
 
-        if(!(dptr=malloc(isize*sizeof(double))))
-          error_exit("Malloc error in vasp_read for temp grid data");
+      if(!(dptr=malloc(isize*sizeof(double))))
+        error_exit("Malloc error in vasp_read for temp grid data");
 
-        if (formatted_read(dptr,isize,infile,NULL)) exit(1);
+      if (formatted_read(dptr,isize,infile,NULL)) exit(1);
 
-        /* Now reverse order, writing consecutively for efficiency */
+      /* Now reverse order, writing consecutively for efficiency */
 
-        dptr2=gptr->data;
-        for(i=0;i<fft[0];i++)
-          for(j=0;j<fft[1];j++)
-            for(k=0;k<fft[2];k++)
-              *(dptr2++)=dptr[i+j*fft[0]+k*fft[0]*fft[1]];
+      dptr2=gptr->data;
+      for(i=0;i<fft[0];i++)
+        for(j=0;j<fft[1];j++)
+          for(k=0;k<fft[2];k++)
+            *(dptr2++)=dptr[i+j*fft[0]+k*fft[0]*fft[1]];
 
-        free(dptr);
-        dptr=NULL;
+      free(dptr);
+      dptr=NULL;
   
-        /* Rescale density */
+      /* Rescale density */
   
-        scale=1/fabs(c->vol);
-        if (flags&AU) scale*=BOHR*BOHR*BOHR;
+      scale=1/fabs(c->vol);
+      if (flags&AU) scale*=BOHR*BOHR*BOHR;
         
-        if(!(flags&RAW)){
-          for(i=0;i<isize;i++) gptr->data[i]*=scale;
-          gptr->name="Spin";
-          if (flags&AU)
-            add_cmt(m->comment,"Spin in e Bohr^-3");
-          else
-            add_cmt(m->comment,"Spin in e A^-3");
-        }
-        else{
-          gptr->name="Spin_raw";
-        } 
-        elect->nspins=2;
+      if(!(flags&RAW)){
+        for(i=0;i<isize;i++) gptr->data[i]*=scale;
+        gptr->name="Spin";
+        if (flags&AU)
+          add_cmt(m->comment,"Spin in e Bohr^-3");
+        else
+          add_cmt(m->comment,"Spin in e A^-3");
+      }
+      else{
+        gptr->name="Spin_raw";
+      } 
+      elect->nspins=2;
     }
   }
   else
@@ -428,4 +463,445 @@ static int formatted_read(double *dptr,unsigned int len, FILE *infile,
     return 1;
   }
   return 0;
+}
+
+/* VASP does not record the plane wave component to grid mapping,
+ * but the answer seems to be standard (and dodgy for involving
+ * comparisons of doubles).
+ *
+ * Call with nplwv=0 and pwgrid=NULL for a count of the number of
+ * plane waves within sphere.
+ *
+ * pwgrid must be malloced to 3*nplwv ints
+ * gamma!=0 -> form half grid for gamma-point calculations
+ */
+static int grid_fill(int *pwgrid, double recip[3][3], double kpt[3],
+                     double ecut, int fft[3], int nplwv, int gamma){
+  int i,j,k,ii,count;
+  int nx,ny,nz;
+  double rx,ry,rz,v[3],e;
+  const double vmagic=3.810019874080794559413826;
+
+  count=0;
+  for (i=0;i<fft[2];i++){
+    nz=i;
+    if (i>fft[2]/2) nz=i-fft[2];
+    rz=nz+kpt[2];
+    for (j=0;j<fft[1];j++){
+      ny=j;
+      if (j>fft[1]/2) ny=j-fft[1];
+      ry=ny+kpt[1];
+      for (k=0;k<fft[0];k++){
+        nx=k;
+        if (k>fft[0]/2) {
+          if (gamma) break;
+          else nx=k-fft[0];
+        }
+        if ((gamma)&&(k==0)&&(ny<0)) continue;
+        if ((gamma)&&(k==0)&&(j==0)&&(nz<0)) continue;
+        rx=nx+kpt[0];
+        for(ii=0;ii<3;ii++)
+          v[ii]=2*M_PI*(rx*recip[0][ii]+ry*recip[1][ii]+rz*recip[2][ii]);
+        e=vmagic*vmod2(v);
+        if (e<ecut){
+          if (count<nplwv){
+            pwgrid[3*count]=k;
+            pwgrid[3*count+1]=j;
+            pwgrid[3*count+2]=i;
+          }
+          count++;
+        }
+      }
+    }
+  }
+  return count;
+}
+
+/* TO DO:
+ *        Read grid from CHG/CHGCAR?
+ *        Test lots!
+ */
+
+void vasp_psi_read(FILE* infile, char *filename, struct unit_cell *c,
+                   struct contents *m, struct kpts *k, struct grid *gptr,
+                   struct es *elect, int *i_grid){
+  int i,j,ns,tmp,nb,ik,n0,n1,n2;
+  int nspins,reclen,nkpts,nbands,nplwv,*pwgrid,fft[3],nfft[3],ffft[3];
+  int ngpts,offset,gamma,wt_warn,khdr_len,okay;
+  double junk,version,ecut,kpt[3],conv,occ,wkpt;
+  float *psi_float;
+  double *psi,*dptr,basis[3][3];
+  const double vmagic=3.810019874080794559413826;
+  char *newfile;
+  char *files[]={"CHG","CHGCAR","CONTCAR","POSCAR",NULL}; /* Seven char max */
+  FILE *f;
+  
+  fft[0]=fft[1]=fft[2]=0;
+  gamma=0;
+  wt_warn=1;
+  khdr_len=1;
+  
+  fread(&junk,8,1,infile);
+  if (junk!=(int)junk) error_exit("Unable to read WAVECAR");
+  reclen=junk;
+  if (debug>2) fprintf(stderr,"reclen=%d  (%d doubles)\n",reclen,reclen/8);
+  
+  fread(&junk,8,1,infile);
+  nspins=junk;
+
+  fread(&version,8,1,infile);
+  fprintf(stderr,"WAVECAR version %f\n",version);
+  if ((version!=45200)&&(version!=53300))
+    error_exit("Unknown WAVECAR version");
+
+  
+  
+  if (m->n==0){ /* We'd like to find some atoms too */
+    newfile=malloc(strlen(filename)+4);
+    if (!newfile) error_exit("Malloc error for filename");
+    for (i=0;files[i];i++){
+      newfile=strrsubs(filename,"WAVECAR",files[i]);
+      if (!newfile) break;
+      f=fopen(newfile,"r");
+      if (f){
+        fprintf(stderr,"Additionally reading %s\n",newfile);
+        vasp_read(f,newfile,c,m,k,gptr,elect);
+        fclose(f);
+        free(newfile);
+        break;
+      }
+      else if (debug>1) fprintf(stderr,"Tried *%s*\n",newfile);
+      free(newfile);
+    }
+  }
+  
+  fseek(infile,reclen,SEEK_SET);
+
+  fread(&junk,8,1,infile);
+  nkpts=junk;
+  fread(&junk,8,1,infile);
+  nbands=junk;
+
+  tmp=(3*nbands+4)*8;
+  if (tmp>reclen){
+    if (version==53300){
+      khdr_len=(tmp+reclen-1)/reclen;
+      if (debug>2) fprintf(stderr,"khdr_len=%d\n",khdr_len);
+    }
+    else
+      error_exit("Confused by record length and nbands");
+  }
+  
+  fread(&ecut,8,1,infile);
+  if (debug>2) fprintf(stderr,"ecut=%f\n",ecut);
+
+  fread(basis,8,9,infile);
+  if (c->basis){
+    okay=1;
+    for(i=0;i<3;i++)
+      for(j=0;j<3;j++)
+        if (!(aeq(c->basis[i][j],basis[i][j]))) okay=0;
+    if (!okay){
+      fprintf(stderr,
+              "Warning: basis in WAVECAR differs from that just read\n");
+      fprintf(stderr,"Read:\n");
+      print_basis(c->basis);
+      fprintf(stderr,"WAVECAR contains\n");
+      print_basis(basis);
+    }
+    free(c->basis); /* DP version in WAVECAR should be more accurate */
+  }
+  c->basis=malloc(9*sizeof(double));
+  for(i=0;i<3;i++)
+    for(j=0;j<3;j++)
+      c->basis[i][j]=basis[i][j];
+
+  real2rec(c);
+
+  for(i=0;i<3;i++)
+    if (fft[i]==0){
+      fft[i]=4*sqrt(ecut/(4*M_PI*M_PI*vmagic*vmod2(c->recip[i])))+1;
+      to235(fft+i);
+    }
+
+  if (debug) fprintf(stderr,"Grid chosen: %dx%dx%d\n",fft[0],fft[1],fft[2]);
+  
+  elect->e_fermi=malloc(sizeof(double));
+  fread(elect->e_fermi,8,1,infile);
+  
+  if ((k->n!=0)&&(k->n!=nkpts)){
+    fprintf(stderr,"%d kpts in %s, but %d in IBZKPT!",nkpts,filename,k->n);
+    if (k->kpts) free(k->kpts);
+    k->kpts=NULL;
+    k->n=0;
+  }
+  if (k->n==0){
+    k->n=nkpts;
+    k->kpts=malloc(k->n*sizeof(struct atom));
+    if (!k->kpts) error_exit("Malloc error for kpts");
+    init_atoms(k->kpts,k->n);
+  }
+  else wt_warn=0;
+  
+  elect->nbands=nbands;
+  elect->nbspins=elect->nspins=nspins;
+  tmp=nspins*nkpts*nbands;
+  elect->occ=malloc(tmp*sizeof(double));
+  elect->eval=malloc(tmp*sizeof(double));
+  if ((!elect->occ)||(!elect->eval))
+    error_exit("Malloc error for occupations/evals");
+  for(ns=0;ns<nspins;ns++){
+    for(ik=0;ik<nkpts;ik++){
+      fseek(infile,((ns*nkpts+ik)*(nbands+khdr_len)+2)*reclen,SEEK_SET);
+      fread(&junk,8,1,infile);
+      nplwv=junk;
+      fread(kpt,8,3,infile);
+      tmp=(ik*nspins+ns)*nbands;
+      for(j=0;j<nbands;j++){
+        fread(elect->eval+tmp+j,8,1,infile);
+        fread(&junk,8,1,infile); /* Imaginary part of energy?! */
+        fread(elect->occ+tmp+j,8,1,infile);
+      }
+      if (wt_warn==0){
+        if ((!aeq(kpt[0],k->kpts[ik].frac[0]))||
+            (!aeq(kpt[1],k->kpts[ik].frac[1]))||
+            (!aeq(kpt[2],k->kpts[ik].frac[2]))){
+          fprintf(stderr,"Warning: k-point coords inconsistent with IBZKPT");
+          wt_warn=1;
+        }
+      }
+      else k->kpts[ik].wt=1/(double)nkpts;
+      for(j=0;j<3;j++) k->kpts[ik].frac[j]=kpt[j];
+      pwgrid=malloc(3*nplwv*sizeof(int));
+      if (((flags&BANDS)||(flags&BANDPARITY))&&
+          (inrange(ik+1,elect->kpt_range))&&
+          (inrange(ns,elect->spin_range))){
+        tmp=grid_fill(pwgrid, c->recip, kpt, ecut, fft, nplwv,gamma);
+        if (tmp!=nplwv){
+          /* VASP fails to store the Gamma point kpoint as precisely zero */
+          if ((tmp==2*nplwv-1)&&(vmod2(kpt)<1e-20)){
+            gamma=1;
+            tmp=grid_fill(pwgrid, c->recip, kpt, ecut, fft, nplwv,gamma);
+            if (tmp!=nplwv){
+              fprintf(stderr,
+                      "Unexpected number of components in gamma mapping: "
+                  "skipping kpt %d\n",ik+1);
+              continue;
+            }
+            for(i=0;i<3;i++) k->kpts[ik].frac[i]=kpt[i]=0;
+          }
+          else{
+            fprintf(stderr,"Unexpected number of plane wave components: "
+                    "skipping kpt %d\n",ik+1);
+            fprintf(stderr,"Expected %d, mapping finds %d\n",nplwv,tmp);
+            continue;
+          }
+        }
+        if (debug>2) fprintf(stderr,"nplwv=%d\n",nplwv);
+        for(nb=0;nb<nbands;nb++){
+          if (inrange(nb+1,elect->band_range)){
+            if (debug>2) fprintf(stderr,"Reading band %d\n",nb+1);
+            fseek(infile,
+                  ((ns*nkpts+ik)*(nbands+khdr_len)+nb+2+khdr_len)*reclen,
+                  SEEK_SET);
+            psi_float=malloc(2*nplwv*sizeof(float));
+            if (!psi_float) error_exit("Malloc error for psi_float");
+            tmp=fread(psi_float,4,2*nplwv,infile);
+            if (tmp!=2*nplwv) error_exit("Short read for psi_float");
+            fprintf(stderr,"psi_float[0]=(%f,%f)\n",psi_float[0],psi_float[1]);
+            ngpts=fft[0]*fft[1]*fft[2];
+            psi=malloc(2*ngpts*sizeof(double));
+            if (!psi) error_exit("Malloc error for psi");
+            for(i=0;i<2*ngpts;i++) psi[i]=0;
+            for(i=0;i<nplwv;i++){
+              offset=pwgrid[3*i+2]+fft[2]*(pwgrid[3*i+1]+
+                                            fft[1]*pwgrid[3*i]);
+              if ((offset<0)||(offset>ngpts)){
+                fprintf(stderr,"Impossible offset in wave_read off=%d i=%d\n",
+                        offset,i);
+                exit(1);
+              }
+              psi[2*offset]=psi_float[2*i];
+              psi[2*offset+1]=psi_float[2*i+1];
+            }
+            if (gamma){ /* construct psi(-k)=conjg(psi(k)) */
+              for(i=0;i<nplwv;i++){
+                if ((pwgrid[3*i]==0)&&(pwgrid[3*i+1]==0)&&(pwgrid[3*i+2]==0))
+		continue;
+                n0=fft[2]-pwgrid[3*i+2];
+                if (n0==fft[2]) n0=0;
+                n1=fft[1]-pwgrid[3*i+1];
+                if (n1==fft[1]) n1=0;
+                n2=fft[0]-pwgrid[3*i];
+                if (n2==fft[0]) n2=0;
+                offset=n0+fft[2]*(n1+fft[1]*n2);
+                if ((offset<0)||(offset>ngpts)){
+                  fprintf(stderr,
+                          "Impossible -offset in wave_read off=%d i=%d\n",
+                          offset,i);
+                  exit(1);
+                }
+                psi[2*offset]=psi_float[2*i];
+                psi[2*offset+1]=-psi_float[2*i+1];
+              }
+            }
+            free(psi_float);
+
+            if (debug>2) fprintf(stderr,"Before FFT g=0 component is %g+%gi\n",
+                                 psi[0],psi[1]);
+
+            if (((kpt[0]==0)||aeq(fabs(kpt[0]),0.5))&&
+                ((kpt[1]==0)||aeq(fabs(kpt[1]),0.5))&&
+                ((kpt[2]==0)||aeq(fabs(kpt[2]),0.5))&&
+                (flags&BANDPARITY)) inv_parity(psi,fft,nb,kpt);
+
+            if (!(flags&BANDS)) {
+              free(psi);
+              continue;
+            }
+
+            /* Padding */
+            
+            if (i_grid){
+              for(i=0;i<3;i++) nfft[i]=i_grid[i];
+              if(debug>1)
+                fprintf(stderr,"Padding wavefunction onto %dx%dx%d grid\n",
+                        nfft[0],nfft[1],nfft[2]);
+              if ((fft[0]==nfft[0])&&(fft[1]==nfft[1])&&(fft[2]==nfft[2])){
+                if (debug>1)
+                  fprintf(stderr,"Skipping null padding operation\n");
+              }
+              else{
+                pad_recip(psi,fft,&dptr,nfft);
+                ngpts=nfft[0]*nfft[1]*nfft[2];
+                free(psi);
+                psi=dptr;
+              }
+            }
+            else
+             for(i=0;i<3;i++) nfft[i]=fft[i]; 
+            
+            ffft[0]=nfft[2];
+            ffft[1]=nfft[1];
+            ffft[2]=nfft[0];
+            fft3d(psi,ffft,1);
+
+            dptr=malloc(nfft[0]*nfft[1]*nfft[2]*sizeof(double));
+            if (!dptr) error_exit("Malloc error for grid data");
+            band2real(psi,dptr,nfft,kpt);
+            free(psi);
+
+            /* Do we need to rescale? */
+            if (((flags&RAW)==0)&&((flags&BANDPHASE)==0)){ /* Yes */
+              if (flags&BANDDEN) conv=1/c->vol;
+              else conv=1/sqrt(c->vol);
+              if (debug>2) fprintf(stderr,"Scaling wavefun by %f\n",conv);
+              for(i=0;i<nfft[0]*nfft[1]*nfft[2];i++) dptr[i]*=conv;
+            }
+
+            if (elect->occ)
+              occ=elect->occ[elect->nspins*nb*ik+ns*nbands+nb];
+            else
+              occ=1;
+            wkpt=k->kpts[ik].wt;
+            band_store(&gptr,dptr,occ,wkpt,1,ns,ik+1,nb+1,elect,m,nfft);
+
+          } /* inrange(band) */
+
+        } /* End band loop */
+      } /* inrange(kpt) */
+      free(pwgrid);
+    } /* End kpt loop */
+
+  } /* End spin loop */
+
+  if ((flags&K_WEIGHT)&&(wt_warn))
+    fprintf(stderr,"Warning: kpoint weights not read, "
+            "weights likely to be wrong\n");
+
+  
+  if (debug){
+    print_elect(elect);
+  }
+
+  if (debug>2)
+    fprintf(stderr,"Final offset %d  reclen=%d\n",(int)ftell(infile),reclen);
+  
+}
+
+/* Replace right-most occurance of old with new in str.
+ * Return malloced pointer to new string
+ */
+char *strrsubs(char *str, char *old, char *new){
+  char *cptr,*rtn,*cptr2;
+
+  //  fprintf(stderr,"strrsubs called *%s* *%s* *%s*\n",str,old,new);
+  
+  if (!strstr(str,old)) return NULL;
+
+  rtn=malloc(strlen(str)+strlen(new)-strlen(old)+1);
+  if (!rtn) error_exit("Malloc error in strrsubs");
+
+  cptr=str;
+  while(strstr(cptr+1,old)) cptr=strstr(cptr+1,old); /* Find last occurance */
+
+  strncpy(rtn,str,cptr-str); /* Copy part before old */
+  cptr2=rtn+(cptr-str);
+
+  strncpy(cptr2,new,strlen(new)); /* Copy new */
+  cptr2+=strlen(new);
+  cptr+=strlen(old);        /* No nulls copied */
+
+  /* Copy tail of original string */
+  while(*cptr) {
+    *(cptr2++)=*(cptr++);
+  }
+
+  *cptr2=0; /* And final null */
+  
+  //  fprintf(stderr,"strrsubs returns *%s*\n",rtn);
+  
+  return rtn;
+  
+}
+
+/* Read IBZKPT format only */
+static void vasp_kpoints_read(FILE *infile, struct kpts *k){
+  char buffer[LINE_SIZE+1];
+  double total;
+  int i;
+  
+  /* Skip first line */
+  if (!fgets(buffer,LINE_SIZE,infile)) return;
+
+  if (!fgets(buffer,LINE_SIZE,infile)) return;
+  if (sscanf(buffer,"%d",&k->n)!=1) return;
+
+  fgets(buffer,LINE_SIZE,infile);
+  if (buffer[0]!='R'){
+    fprintf(stderr,"Unsupported IBZKPT format");
+    k->n=0;
+    return;
+  }
+
+  k->kpts=malloc(k->n*sizeof(struct atom));
+  if (!k->kpts) error_exit("Malloc error for kpts");
+  init_atoms(k->kpts,k->n);
+  for(i=0;i<k->n;i++){
+    fgets(buffer,LINE_SIZE,infile);
+    if (sscanf(buffer,"%lf %lf %lf %lf",k->kpts[i].frac,
+               k->kpts[i].frac+1,k->kpts[i].frac+2,&k->kpts[i].wt)!=4){
+      fprintf(stderr,"Parse error for kpt");
+      free(k->kpts);
+      k->kpts=NULL;
+      k->n=0;
+    }
+  }
+
+  /* Need to sort out unnormalised weights */
+
+  total=0;
+  for(i=0;i<k->n;i++) total+=k->kpts[i].wt;
+  for(i=0;i<k->n;i++) k->kpts[i].wt/=total;
+  
 }

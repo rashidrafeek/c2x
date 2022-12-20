@@ -78,6 +78,26 @@ static int qe_float_read(char **ptr,double *x){
   return 1;
 }
 
+static int qe_logical_read(char **ptr,int *l){
+
+  while((*ptr)&&(isspace(**ptr))) (*ptr)++;
+
+  if (!strncasecmp(*ptr,".true.",6)){
+    *ptr+=6;
+    *l=1;
+  }
+  else if (!strncasecmp(*ptr,".false.",7)){
+    *ptr+=7;
+    *l=0;
+  }
+  else return 0;
+  
+  while((*ptr)&&(isspace(**ptr))) (*ptr)++;
+  if (**ptr==',') (*ptr)++;
+  return 1;
+    
+}
+
 /* Read a string delimited by ' or " */
 static int qe_string_read(char **ptr, char **str){
   int quote;
@@ -190,6 +210,13 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
           dict_add(m->dict,"QE_pseudo_dir",p3);
         else fprintf(stderr,"Warning: error parsing QE_pseudo_dir\n");
       }
+      else if(!tokenmatch(&ptr,"outdir")){
+        while ((*ptr)&&(isspace(*ptr))) ptr++;
+        if (*ptr=='=') ptr++;
+        if (qe_string_read(&ptr,&p3))
+          dict_add(m->dict,"QE_outdir",p3);
+        else fprintf(stderr,"Warning: error parsing QE_outdir\n");
+      }
       else if(!tokenmatch(&ptr,"calculation")){
 	while ((*ptr)&&(isspace(*ptr))) ptr++;
         if (*ptr=='=') ptr++;
@@ -242,7 +269,7 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
         while ((*ptr)&&(isspace(*ptr))) ptr++;
         if (*ptr=='=') ptr++;
         if (qe_float_read(&ptr,&dtmp)){
-          e->etol=2*dtmp/H_eV; /* units were Rydberg per cell */
+          e->etol=dtmp*H_eV/2; /* units were Rydberg per cell */
         }                 /* cannot yet normalise by number of atoms */
       }
       else {/* Just tidy indentation */
@@ -288,6 +315,31 @@ void qe_read(FILE* infile, struct unit_cell *c, struct contents *m,
 	if (qe_float_read(&ptr,(double*)p3))
 	  dict_add(m->dict,"QE_degauss",p3);
 	else fprintf(stderr,"Warning: error parsing QE_degauss\n");
+      }
+      else  if(!tokenmatch(&ptr,"tot_charge")){
+	while ((*ptr)&&(isspace(*ptr))) ptr++;
+        if (*ptr=='=') ptr++;
+	e->charge=malloc(sizeof(double));
+	if (!qe_float_read(&ptr,e->charge)){
+	  fprintf(stderr,"Warning: error parsing QE_tot_charge\n");
+          free(e->charge);
+          e->charge=NULL;
+        }
+      }
+      else if (!tokenmatch(&ptr,"noncolin")){
+	while ((*ptr)&&(isspace(*ptr))) ptr++;
+        if (*ptr=='=') ptr++;
+        if (qe_logical_read(&ptr,&i)){
+          if (i) e->nspinors=2;
+        }
+      }
+      else if (!tokenmatch(&ptr,"nosym")){
+	while ((*ptr)&&(isspace(*ptr))) ptr++;
+        if (*ptr=='=') ptr++;
+	p3=malloc(sizeof(int));
+	if (qe_logical_read(&ptr,(int*)p3))
+	  dict_add(m->dict,"QE_nosym",p3);
+	else fprintf(stderr,"Warning: error parsing QE_nosym\n");
       }
       else if (!tokenmatch(&ptr,"nat")){
         if (!qe_int_read(&ptr,&(m->n)))

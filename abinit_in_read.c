@@ -75,8 +75,8 @@ void abinit_in_read(FILE* infile, struct unit_cell *c, struct contents *m,
   
   while(1){
     /* remove leading spaces */
-    while(*ptr&&(*ptr==' ')) ptr++;
-    if ((*ptr=='\n')||(*ptr==0)){
+    while(*ptr&&(isspace(*ptr))) ptr++;
+    if (*ptr==0){
       if (!ab_readline(line,&ptr,infile)) break;
     }
 
@@ -220,6 +220,10 @@ void abinit_in_read(FILE* infile, struct unit_cell *c, struct contents *m,
       toldfe=malloc(sizeof(double));
       ptr=line+ab_energy_read(line,ptr-line,toldfe,1,infile);
     }
+    else if (!tokenmatch(&ptr,"charge")){
+      e->charge=malloc(sizeof(double));
+      ptr=line+ab_float_read(line,ptr-line,e->charge,1,infile);
+    }
     else{
       i=0;
       while (*(ptr+i)&&(!isspace(*(ptr+i)))) i++;
@@ -238,8 +242,8 @@ void abinit_in_read(FILE* infile, struct unit_cell *c, struct contents *m,
   
   while(1){
     /* remove leading spaces */
-    while(*ptr&&(*ptr==' ')) ptr++;
-    if ((*ptr=='\n')||(*ptr==0)){
+    while(*ptr&&(isspace(*ptr))) ptr++;
+    if (*ptr==0){
       if (!ab_readline(line,&ptr,infile)) break;
     }
 

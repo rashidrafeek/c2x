@@ -44,6 +44,7 @@ void qe_write(FILE* outfile, struct unit_cell *c, struct contents *m,
   char *fmt,*ptr;
   double *spspin,dtmp;
   int *spxtra,*atxtra;
+  struct kpts *k2;
 
   if (m->title) fprintf(outfile,"# %s\n\n",m->title);
   
@@ -69,7 +70,8 @@ void qe_write(FILE* outfile, struct unit_cell *c, struct contents *m,
             *(int*)dict_get(m->dict,"QE_iprint"));
   if (dict_get(m->dict,"QE_control_list"))
     fprintf(outfile,"%s",(char*)dict_get(m->dict,"QE_control_list"));
-  fprintf(outfile,"  outdir = '.',\n");
+  fprintf(outfile,"  outdir = '%s',\n",dict_get(m->dict,"QE_outdir")?
+	  (char*)dict_get(m->dict,"QE_outdir"):".");
   fprintf(outfile,"  pseudo_dir = '%s'\n",dict_get(m->dict,"QE_pseudo_dir")?
 	  (char*)dict_get(m->dict,"QE_pseudo_dir"):".");
   fprintf(outfile,"/\n");
@@ -122,12 +124,19 @@ void qe_write(FILE* outfile, struct unit_cell *c, struct contents *m,
       fprintf(outfile,"! c2x default\n  degauss = 0.05,\n");
   }
 
+  if (e->nspinors==2) fprintf(outfile,"  noncolin = .true.,\n");
+
   if (dict_get(m->dict,"QE_occupations"))
     fprintf(outfile,"  occupations = '%s',\n",
 	    (char*)dict_get(m->dict,"QE_occupations"));
   if (dict_get(m->dict,"QE_degauss"))
     fprintf(outfile,"  degauss = %f,\n",
 	    *(double*)dict_get(m->dict,"QE_degauss"));
+  if (dict_get(m->dict,"QE_nosym"))
+    fprintf(outfile,"  nosym = %s,\n",
+	    (*(int*)dict_get(m->dict,"QE_nosym"))?".true.":".false.");
+  if ((e->charge)&&(*e->charge!=0.0))
+    fprintf(outfile,"  tot_charge = %f,\n",*e->charge);
   
   if (e->cut_off)
     fprintf(outfile,"  ecutwfc = %f\n",2*e->cut_off/H_eV);
@@ -138,7 +147,7 @@ void qe_write(FILE* outfile, struct unit_cell *c, struct contents *m,
 
   fprintf(outfile,"&ELECTRONS\n");
   if (e->etol)
-    fprintf(outfile,"  conv_thr = %g,\n",(e->etol*m->n)*(H_eV/2));
+    fprintf(outfile,"  conv_thr = %g,\n",(e->etol*m->n)*(2/H_eV));
   if (dict_get(m->dict,"QE_electron_list"))
     fprintf(outfile,"%s",(char*)dict_get(m->dict,"QE_electron_list"));
   fprintf(outfile,"/\n");
@@ -220,8 +229,9 @@ void qe_write(FILE* outfile, struct unit_cell *c, struct contents *m,
 	      m->atoms[i].abs[1],m->atoms[i].abs[2]);
   }
 
-  if ((k->n)||(k->mp)){
+  if ((dict_get(m->dict,"QE_k_in"))||(k->n)||(k->mp)){
     fprintf(outfile,"\nK_POINTS ");
+    okay=0;
     if (k->mp){
       okay=1;
       for(i=0;i<3;i++){
@@ -246,21 +256,26 @@ void qe_write(FILE* outfile, struct unit_cell *c, struct contents *m,
         mp_gen(k,c);
       }
     }
-    if ((k->n==1)&&(k->kpts[0].frac[0]==0)
-	&&(k->kpts[0].frac[1]==0)&&(k->kpts[0].frac[2]==0))
-      fprintf(outfile,"gamma\n");
-    else if (k->n>0){
-      fprintf(outfile,"crystal\n");
-      fprintf(outfile,"  %d\n",k->n);
-      if (flags&HIPREC){
-	fmt="% 19.15f % 19.15f % 19.15f     %19.15f\n";
+    if (!okay){
+      if ((k->n==1)&&(k->kpts[0].frac[0]==0)
+	  &&(k->kpts[0].frac[1]==0)&&(k->kpts[0].frac[2]==0))
+	fprintf(outfile,"gamma\n");
+      else if ((k->n>0)||(dict_get(m->dict,"QE_k_in"))){
+	k2=k;
+	if (dict_get(m->dict,"QE_k_in"))
+	  k2=(struct kpts *)(dict_get(m->dict,"QE_k_in"));
+	fprintf(outfile,"crystal\n");
+	fprintf(outfile,"  %d\n",k2->n);
+	if (flags&HIPREC){
+	  fmt="% 19.15f % 19.15f % 19.15f     %19.15f\n";
+	}
+	else{
+	  fmt="% 13.9f % 13.9f % 13.9f     %12.9f\n";
+	}
+	for(i=0;i<k2->n;i++)
+	  fprintf(outfile,fmt,k2->kpts[i].frac[0],
+		  k2->kpts[i].frac[1],k2->kpts[i].frac[2],k2->kpts[i].wt);
       }
-      else{
-	fmt="% 13.9f % 13.9f % 13.9f     %12.9f\n";
-      }
-      for(i=0;i<k->n;i++)
-      fprintf(outfile,fmt,k->kpts[i].frac[0],
-              k->kpts[i].frac[1],k->kpts[i].frac[2],k->kpts[i].wt);
     }
   }
 

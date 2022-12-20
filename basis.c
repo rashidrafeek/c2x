@@ -1,7 +1,7 @@
 /* Various utility functions for dealing with basis sets */
 
 
-/* Copyright (c) 2007, 2014 MJ Rutter 
+/* Copyright (c) 2007-2019 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -352,7 +352,59 @@ void init_atoms(struct atom *a, int n){
     a[i].wt=0;
     a[i].spin=0;
     a[i].chg=0;
+    a[i].site_chg=0;
     a[i].label=NULL;
   }
 }
-				      
+
+
+void vacuum_adjust(struct unit_cell *c, struct contents *m, double new_abc[3]){
+  int i,j,k;
+  double stretch,old_len;
+
+  for(i=0;i<3;i++){
+    if (new_abc[i]==0) continue;
+
+    old_len=sqrt(vmod2(c->basis[i]));
+    
+    if (debug) fprintf(stderr,"Adjusting %c axis from %f A to %f A\n",
+                       'a'+i,old_len,new_abc[i]);
+
+    stretch=0.5*(new_abc[i]/old_len-1);
+    for(j=0;j<m->n;j++)
+      for(k=0;k<3;k++)
+	m->atoms[j].abs[k]+=stretch*c->basis[i][k];
+
+    stretch=new_abc[i]/old_len;
+    for(j=0;j<3;j++)
+      c->basis[i][j]*=stretch;
+  }
+
+  real2rec(c);
+  c->vol=fabs(c->vol);
+  addfrac(m->atoms,m->n,c->recip);
+
+}
+
+
+void old_in_new(double old_basis[3][3],double new_recip[3][3]){
+  int i,j,k;
+  double dot;
+  
+  for(i=0;i<3;i++){
+    fprintf(stderr,"(");
+    for(j=0;j<3;j++){
+      dot=0;
+      for(k=0;k<3;k++)
+        dot+=old_basis[i][k]*new_recip[j][k];
+      if (aeq(dot,floor(dot+0.5)))
+        fprintf(stderr,"%d",(int)floor(dot+0.5));
+      else
+        fprintf(stderr,"*");
+      if (j!=2)fprintf(stderr,",");
+    }
+    fprintf(stderr,")");
+  }
+  fprintf(stderr,"\n");
+
+}

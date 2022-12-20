@@ -202,6 +202,7 @@ void inv_parity(double *d,int fft[3],int band,double kpt[3]){
     if (debug>1) fprintf(stderr,"No parity: modulus check failed\n");
     free(phi);
     free(a);
+    tol=old_tol;
     return;
   }
   
@@ -213,6 +214,7 @@ void inv_parity(double *d,int fft[3],int band,double kpt[3]){
     if (debug>1) fprintf(stderr,"No parity: one of x, y or z failed\n");
     free(phi);
     free(a);
+    tol=old_tol;
     return;
   }
 
@@ -270,6 +272,7 @@ void inv_parity(double *d,int fft[3],int band,double kpt[3]){
     if (debug>1) fprintf(stderr,"No parity: constant failed\n");
     free(phi);
     free(a);
+    tol=old_tol;
     return;
   }
 

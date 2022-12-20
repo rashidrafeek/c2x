@@ -28,7 +28,6 @@
 
 #include "c2xsf.h"
 
-double vmod2(double v[3]);
 void vcross(double a[3],double b[3],double c[3]); /* From ident_sym.c */
 int is_rhs(double b[3][3]); /* From basis.c */
 
@@ -85,11 +84,13 @@ int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
 
   if (debug>1) fprintf(stderr,"Calling spglib with op=0x%x\n",op);
 
-  if (op&CSPG_SNAP){
+  if ((op&CSPG_SNAP)||(op&CSPG_PRIM_NR)){
     for(i=0;i<3;i++)
       for(j=0;j<3;j++)
 	old_basis[i][j]=c->basis[i][j];
-
+  }
+  
+  if (op&CSPG_SNAP){
     m2=malloc(sizeof(struct contents));
     if (!m2) error_exit("Malloc error for m2");
     memcpy(m2,m,sizeof(struct contents));
@@ -522,6 +523,11 @@ int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
       c->basis[j][i]=spg_latt[i][j];
   real2rec(c);
 
+  if (debug&&(op&CSPG_PRIM_NR)){
+    fprintf(stderr,"Old basis in terms of new: ");
+    old_in_new(old_basis,c->recip);
+  }
+  
   free(m->atoms);
   m->atoms=malloc(m->n*sizeof(struct atom));
   for(i=0;i<m->n;i++){

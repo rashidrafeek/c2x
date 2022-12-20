@@ -55,11 +55,26 @@ static struct infiles {
 } *files;
 static FILE *infile;
 
+static void set_length_unit(char *ptr, char *buffer, double *unit){
+  if (!strncasecmp(ptr,"ang",3)){
+    *unit=1;
+    cellreadline(buffer,LINE_SIZE);
+  }
+  else if(!strncasecmp(ptr,"bohr",4)){
+    *unit=BOHR;
+    cellreadline(buffer,LINE_SIZE);
+  }
+  else if(!strncasecmp(ptr,"nm",2)){
+    *unit=10;
+    cellreadline(buffer,LINE_SIZE);
+  }
+}
 
 void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
                struct kpts *kp, struct symmetry *s){
-  int units,i,j,k,n,n2,frac,nsym,success,default_units,nlabels;
+  int i,j,k,n,n2,frac,nsym,success,nlabels;
   int smisc_size=0,sblock_size=0;
+  double scale,default_scale;
   double lat_abc[6],*dptr;
   char sym[14],*ptr2;
   static char buffer[LINE_SIZE+1];
@@ -74,9 +89,9 @@ void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
   files->line=0;
   infile=in;
   
-  default_units=0;
-  if (flags&ONETEP) default_units=1;
-  units=default_units;
+  default_scale=1;
+  if (flags&ONETEP) default_scale=BOHR;
+  scale=default_scale;
   m->n=0;
   nsym=0;
   frac=0;
@@ -140,6 +155,20 @@ void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
         }
       }
     }
+    if ((!strncasecmp(ptr,"kpoint_mp_spacing",17))||
+        (!strncasecmp(ptr,"kpoints_mp_spacing",18))){
+      ptr2=ptr+17;
+      if ((ptr[6]=='s')||(ptr[6]=='S')) ptr2++;
+      /* Increment ptr2 over spaces, = and : */
+      while ((*ptr2)&&((*ptr2==' ')||(*ptr2==':')||(*ptr2=='='))) ptr2++;
+      dptr=malloc(sizeof(double));
+      if (sscanf(ptr2,"%lf",dptr)!=1){
+        fprintf(stderr,"Warning: error parsing kpoint_mp_spacing\n");
+        free(dptr);
+      }
+      else kp->spacing=dptr;
+    }
+      
 
 /* What remains ought to be a block or a keyword.  */
     if (strncasecmp(ptr,"%block",6)) continue;
@@ -154,16 +183,10 @@ void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
     if (debug>2) fprintf(stderr,"Found a %s block\n",ptr);
 
     if (!strcasecmp(ptr,"lattice_cart")){
-      units=default_units;
+      scale=default_scale;
       cellreadline(buffer,LINE_SIZE);
       ptr=buffer;
-      if (!strncasecmp(ptr,"ang",3)){
-        units=0;
-        cellreadline(buffer,LINE_SIZE);
-      }else if(!strncasecmp(ptr,"bohr",4)){
-        units=1;
-        cellreadline(buffer,LINE_SIZE);
-      }
+      set_length_unit(ptr,buffer,&scale);
       for(i=0;i<3;i++){
         if(multi_scan(buffer,c->basis[i],3,NULL)!=3){
           PARSE_ERROR;
@@ -171,22 +194,16 @@ void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
         }
         cellreadline(buffer,LINE_SIZE);
       }
-      if (units==1)
+      if (scale!=1)
         for(i=0;i<3;i++)
           for(j=0;j<3;j++)
-            c->basis[i][j]*=BOHR;
+            c->basis[i][j]*=scale;
 
     }else if(!strcasecmp(ptr,"lattice_abc")){
-      units=default_units;
+      scale=default_scale;
       cellreadline(buffer,LINE_SIZE);
       ptr=buffer;
-      if (!strncasecmp(ptr,"ang",3)){
-        units=0;
-        cellreadline(buffer,LINE_SIZE);
-      }else if(!strncasecmp(ptr,"bohr",4)){
-        units=1;
-        cellreadline(buffer,LINE_SIZE);
-      }
+      set_length_unit(ptr,buffer,&scale);
       for(i=0;i<2;i++){
         if(multi_scan(buffer,lat_abc+3*i,3,NULL)!=3){
           PARSE_ERROR;
@@ -194,9 +211,9 @@ void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
         }
         cellreadline(buffer,LINE_SIZE);
       }
-      if (units==1)
+      if (scale!=1)
         for(i=0;i<3;i++)
-          *(lat_abc+i)*=BOHR;
+          *(lat_abc+i)*=scale;
       abc2cart(lat_abc,c);
 
     }else if((!strcasecmp(ptr,"positions_frac"))||
@@ -205,16 +222,8 @@ void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
       if(!strcasecmp(ptr,"positions_abs")) frac=0;
       cellreadline(buffer,LINE_SIZE);
       ptr=buffer;
-      units=default_units;
-      if(!frac){
-        if (!strncasecmp(ptr,"ang",3)){
-          units=0;
-          cellreadline(buffer,LINE_SIZE);
-        }else if(!strncasecmp(ptr,"bohr",4)){
-          units=1;
-          cellreadline(buffer,LINE_SIZE);
-        }
-      }
+      scale=default_scale;
+      if(!frac) set_length_unit(ptr,buffer,&scale);
       if ((flags&ONETEP)&&(!nlabels)){
         fprintf(stderr,"Warning: ONETEP input specified, but %%block species "
                 "does not preceed atoms\n");
@@ -300,10 +309,10 @@ void cell_read(FILE* in, struct unit_cell *c, struct contents *m,
       }
       m->n=i;
       if (debug>2) fprintf(stderr,"%d m->atoms read\n",m->n);
-      if (units==1)
+      if ((!frac)&&(scale!=1))
         for(i=0;i<m->n;i++)
           for(j=0;j<3;j++)
-            m->atoms[i].abs[j]*=BOHR;
+            m->atoms[i].abs[j]*=scale;
     }else if(!strcasecmp(ptr,"kpoints_list")){
       i=0;
       while(1){
@@ -558,6 +567,13 @@ static int cell_read_length(char *buff, double *x){
     return 1;
   }
 
+  if (!strncasecmp(p,"nm",2)){
+    (*x)*=10;
+    free(p);
+    return 1;
+  }
+
+  
   fprintf(stderr,"Unexpected length unit: %s\n",p);
   free(p);
   return 0;

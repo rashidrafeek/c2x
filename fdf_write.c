@@ -112,6 +112,9 @@ void fdf_write(FILE* fdf, char* filename, struct unit_cell *c,
     fprintf(fdf,"DM.Energy.Tolerance %g eV\n",e->etol*m->n);
   }
 
+  if ((e->charge)&&(*e->charge!=0.0))
+    fprintf(fdf,"NetCharge %f\n",*e->charge);
+  
   /* And now write density */
 
   if (g->data==0) return;

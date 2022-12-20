@@ -5,10 +5,13 @@
  * in x,y and z independently.
  *
  * Assumes all 3D data are on same FFT grid
+ *
+ * Revised 2019 so that automatic mode tries to centre molecule in cell,
+ *  and does so precisely if there is no grid data to worry about
  */
 
 
-/* Copyright (c) 2007 MJ Rutter 
+/* Copyright (c) 2007,2019 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -26,6 +29,7 @@
 
 #include<stdio.h>
 #include<stdlib.h>
+#include<math.h>
 
 #include "c2xsf.h"
 
@@ -33,7 +37,7 @@ void molecule_fix(int* m_abc, struct unit_cell *c, struct contents *m,
                   struct grid *gptr){
   int i,j,k,ii,jj,kk,off1,off2;
   int fft[3],shift[3];
-  double min,max,*grid3;
+  double amin,amax,ashift[3],*grid3;
 
   if (gptr->data){
     fft[0]=gptr->size[0];
@@ -46,34 +50,34 @@ void molecule_fix(int* m_abc, struct unit_cell *c, struct contents *m,
   if(!m_abc){ /* We are expected to determine the shift automatically */
 
     for(k=0;k<3;k++){
-      min=1;
-      max=-1;
+      amin=1000;
+      amax=-1000;
       for(i=0;i<m->n;i++){
-        if (m->atoms[i].frac[k]>max)
-          max=m->atoms[i].frac[k];
-        if (m->atoms[i].frac[k]<min)
-          min=m->atoms[i].frac[k];
+        if (m->atoms[i].frac[k]>amax)
+          amax=m->atoms[i].frac[k];
+        if (m->atoms[i].frac[k]<amin)
+          amin=m->atoms[i].frac[k];
       }
-      if (((max-min)<=1)&&((min<0)||(max>1))){  /* We should shift */
-        if (!m_abc){
-          m_abc=malloc(3*sizeof(int));
-          if (!m_abc) error_exit("Malloc error for three ints!");
-          for(kk=0;kk<k;kk++) m_abc[kk]=0;
-        }
-        if ((max<=0.5)&&(min>=-0.5))
-          m_abc[k]=fft[k]/2;
-        else
-          m_abc[k]=(0.5-0.5*(max+min))*fft[k]+0.99;
-      }
+      ashift[k]=0.5-0.5*(amax+amin);
+    }
+    if (!gptr->data){
+      fprintf(stderr,"Shifting by (%.6f,%.6f,%.6f)\n",ashift[0],
+              ashift[1],ashift[2]);
+      for(i=0;i<m->n;i++)
+        for(k=0;k<3;k++)
+          m->atoms[i].frac[k]+=ashift[k];
+
+      addabs(m->atoms,m->n,c->basis);
+      return;
+    }
+    else{
+      m_abc=malloc(3*sizeof(int));
+      if (!m_abc) error_exit("Malloc error in molecule_fix");
+      for(k=0;k<3;k++) m_abc[k]=floor(ashift[k]*fft[k]+0.5);
     }
   }
 
-  if(!m_abc){
-    if (debug>1) fprintf(stderr,"Shift requested, but none found\n");
-    return;
-  }
-
-  if (debug>1)
+  if (debug)
       fprintf(stderr,"Will translate grid by (%d,%d,%d) gridpoints\n"
                      " which is (%f,%f,%f)\n",
               m_abc[0],m_abc[1],m_abc[2],(double)m_abc[0]/fft[0],

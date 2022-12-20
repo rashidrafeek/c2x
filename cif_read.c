@@ -1,7 +1,7 @@
 /* A very simplistic reader which, whilst not an (mm)cif reader,
 * sometimes reads very basic versions of those files */
 
-/* Copyright (c) 2014-2018 MJ Rutter 
+/* Copyright (c) 2014-2019 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -28,7 +28,7 @@
 #define LINE_SIZE 2049
 
 static char* cif_loop(FILE *infile, struct unit_cell *c, struct contents *m,
-		      struct symmetry *s, int *need_abs);
+		      struct symmetry *s, char ***sxyz, int *need_abs);
 
 int scmp(char *s1, char *s2){
   return (strncasecmp(s1,s2,strlen(s2))==0)?1:0;
@@ -39,11 +39,13 @@ void cif_read(FILE* infile, struct unit_cell *c, struct contents *m,
   int have_data=0,have_basis=0,hit,i,no_read,sym_warn=0,need_abs=0;
   double abc[6];
   char buffer[LINE_SIZE+1], *buff;
+  char **sym_as_xyz;
 
   for(i=0;i<6;i++) abc[i]=123456;
   m->n=0;
   no_read=0;
-
+  sym_as_xyz=NULL;
+  
   if (debug>2) fprintf(stderr,"cif_read called\n");
 
   if (!(c->basis=malloc(72)))
@@ -89,7 +91,7 @@ void cif_read(FILE* infile, struct unit_cell *c, struct contents *m,
     else if (scmp(buff,"_symmetry"))
       sym_warn=1;
     else if (scmp(buff,"loop_")){
-      buff=cif_loop(infile,c,m,s,&need_abs);
+      buff=cif_loop(infile,c,m,s,&sym_as_xyz,&need_abs);
       if (buff){
 	strncpy(buffer,buff,LINE_SIZE);
 	no_read=1;
@@ -123,6 +125,19 @@ void cif_read(FILE* infile, struct unit_cell *c, struct contents *m,
   if ((sym_warn)&&(s->n==0)){
     fprintf(stderr,"Warning: CIF file contains symmetry information, but\n"
 	    "no list of symmetry operations. Symmetry information ignored.\n");
+  }
+
+  /* Need to wait until basis read for this */
+
+  if (sym_as_xyz){
+    s->ops=malloc((s->n+1)*sizeof(struct sym_op));
+    if(!s->ops) error_exit("realloc error in cif_read");
+    for(i=0;i<s->n;i++){
+      s->ops[i].tr=NULL;
+      equiv_read(s->ops+i,c,sym_as_xyz[i]);
+      free(sym_as_xyz[i]);
+    }
+    free(sym_as_xyz);
   }
 
   if (s->n>0){ /* Need to symmetrise atoms */
@@ -175,14 +190,16 @@ void sym_expand(struct unit_cell *c, struct contents *m, struct symmetry *s){
 
 
 static char* cif_loop(FILE *infile, struct unit_cell *c, struct contents *m,
-		      struct symmetry *s, int *need_abs){
+		      struct symmetry *s, char ***sxyz, int *need_abs){
   int i,j,maxfield,first;
-  int fx,fy,fz,fsym,flab,fsym_as_xyz,*f;
+  int fx,fy,fz,fsym,flab,fsym_as_xyz,fst_chg,*f;
   int cx,cy,cz;
   static char buffer[LINE_SIZE];
   char *p1,sym[4],*buff;
+  char **sym_as_xyz;
   
-  fx=fy=fz=fsym=flab=fsym_as_xyz=cx=cy=cz=-1;
+  fx=fy=fz=fsym=flab=fsym_as_xyz=fst_chg=cx=cy=cz=-1;
+  sym_as_xyz=*sxyz;
   f=NULL;
   i=0;
   if (debug>2) fprintf(stderr,"loop_ being parsed\n");
@@ -194,14 +211,20 @@ static char* cif_loop(FILE *infile, struct unit_cell *c, struct contents *m,
     buff=buffer;
     while (*buff==' ') buff++;
     if(buff[0]=='\n') continue;
+    if(buff[0]=='\r') continue;
     if(buff[0]=='#') continue;
 
     if (scmp(buff,"_atom_site_type_symbol")||
 	scmp(buff,"_atom_site.type_symbol"))
       fsym=i;
     else if (scmp(buff,"_atom_site_label_atom_id")||
-	scmp(buff,"_atom_site.label_atom_id"))
+             scmp(buff,"_atom_site.label_atom_id"))
       flab=i;
+    else if (scmp(buff,"_atom_site_charge")||
+             scmp(buff,"_atom_site.charge")){
+      fst_chg=i;
+      dict_add(m->dict,"site_charge",(void*)1);
+    }
     else if (scmp(buff,"_atom_site_label")||
 	scmp(buff,"_atom_site.label"))
       {if (isspace(buff[strlen("_atom_site.label")])) flab=i;}
@@ -234,8 +257,8 @@ static char* cif_loop(FILE *infile, struct unit_cell *c, struct contents *m,
   }
 
   if (debug>2) fprintf(stderr,"fx=%d fy=%d fz=%d fsym=%d flab=%d "
-		       "fsym_as_xyz=%d i=%d\n",
-		       fx,fy,fz,fsym,flab,fsym_as_xyz,i);
+		       "fsym_as_xyz=%d fst_chg=%d i=%d\n",
+		       fx,fy,fz,fsym,flab,fsym_as_xyz,fst_chg,i);
 
   if (fsym==-1) fsym=flab;
 
@@ -253,6 +276,7 @@ static char* cif_loop(FILE *infile, struct unit_cell *c, struct contents *m,
     if (cz>maxfield) maxfield=cz;
     if (fsym>maxfield) maxfield=fsym;
     if (flab>maxfield) maxfield=flab;
+    if (fst_chg>maxfield) maxfield=fst_chg;
     /* We must either have all of the below, or none */
     if (maxfield!=-1){
       if ((fx==-1)&&(cx==-1))
@@ -323,14 +347,16 @@ static char* cif_loop(FILE *infile, struct unit_cell *c, struct contents *m,
     }
 
     if (fsym_as_xyz!=-1){
-      s->ops=realloc(s->ops,(s->n+1)*sizeof(struct sym_op));
-      if(!s->ops) error_exit("realloc error in cif_read");
-      s->ops[s->n].tr=NULL;
-      equiv_read(s->ops+s->n,c,buff+f[fsym_as_xyz]);
+      sym_as_xyz=realloc(sym_as_xyz,(s->n+1)*sizeof(char*));
+      if(!sym_as_xyz) error_exit("realloc error in cif_read");
+      *sxyz=sym_as_xyz;
+      sym_as_xyz[s->n]=malloc(strlen(buff+f[fsym_as_xyz])+1);
+      if(!sym_as_xyz[s->n]) error_exit("realloc error in cif_read");
+      strcpy(sym_as_xyz[s->n],buff+f[fsym_as_xyz]);
       s->n++;
       continue;
-    }
-
+    }    
+    
     m->atoms=realloc(m->atoms,(m->n+1)*sizeof(struct atom));
     if(!m->atoms) error_exit("realloc error in cif_read");
     init_atoms(m->atoms+m->n,1);
@@ -342,6 +368,9 @@ static char* cif_loop(FILE *infile, struct unit_cell *c, struct contents *m,
     if (cy!=-1) sscanf(buff+f[cy],"%lf",m->atoms[m->n].abs+1);
     if (cz!=-1) sscanf(buff+f[cz],"%lf",m->atoms[m->n].abs+2);
 
+    if (fst_chg!=-1) sscanf(buff+f[fst_chg],"%lf",&(m->atoms[m->n].site_chg));
+
+    
     /* The symbol field ends on a space, the symbol part of the label
        field ends on a non-alpha, so we can read the symbol in the same
        manner from either */
@@ -354,11 +383,11 @@ static char* cif_loop(FILE *infile, struct unit_cell *c, struct contents *m,
     m->atoms[m->n].atno=atsym2no(sym);
 
     m->n++;
-
   }
 
   /* Cannot add fractional / absolute co-ords, as might not have basis yet */
-  
+
+  *sxyz=sym_as_xyz;
   
   free(f);
   return(buffer);

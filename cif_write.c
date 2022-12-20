@@ -30,7 +30,7 @@
 
 void cif_write(FILE* outfile, struct unit_cell *c, struct contents *m, 
 	       struct symmetry *s, int mm){
-  int i,j,prec;
+  int i,j,prec,site_charge;
   unsigned char sep;
   double abc[6];
 
@@ -56,6 +56,9 @@ void cif_write(FILE* outfile, struct unit_cell *c, struct contents *m,
   fprintf(outfile,"_cell%cangle_gamma   %.*f\n",sep,prec,abc[5]);
   fprintf(outfile,"\n");
 
+  site_charge=0;
+  if (dict_get(m->dict,"site_charge")) site_charge=1;
+  
   fprintf(outfile,"\n");
   fprintf(outfile,"loop_\n"
 	  "_atom_site%ctype_symbol\n"
@@ -64,6 +67,8 @@ void cif_write(FILE* outfile, struct unit_cell *c, struct contents *m,
 	  "_atom_site%cfract_z\n"
 	  "_atom_site%cU_iso_or_equiv\n"
 	  "_atom_site%coccupancy\n",sep,sep,sep,sep,sep,sep);
+  if (site_charge)
+    fprintf(outfile,"_atom_site%ccharge\n",sep);
 
   if (prec<10) prec=10;
 
@@ -71,7 +76,9 @@ void cif_write(FILE* outfile, struct unit_cell *c, struct contents *m,
     fprintf(outfile,"%s ",atno2sym(m->atoms[i].atno));
     for(j=0;j<3;j++)
       fprintf(outfile,"%.*f ",prec,m->atoms[i].frac[j]);
-    fprintf(outfile,"0.01 1.00\n");
+    fprintf(outfile,"0.01 1.00");
+    if (site_charge) fprintf(outfile," %.4f",m->atoms[i].site_chg);
+    fprintf(outfile,"\n");
   }
 
   if (s->n){

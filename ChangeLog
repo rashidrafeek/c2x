@@ -1,4 +1,46 @@
-2.29
+2.30c
+-----
+
+Add --primitive_nr
+Print old cell in terms of new after -P and --primitive_nr
+Support _atom_site_charge in CIF reading and writing
+Fix uninitialised value in CIF reading of symmetry translations
+Support DOS line endings in CIF and Abinit readers
+Make default output --cell if called as cellsym
+
+2.30b
+-----
+
+Fix regression preventing reading of bands or eigenvals from .orbitals file
+Reconstruct unsorted .bands from .orbitals, refactor print_occ()
+Modify CIF reader to accept symmetry ops before lattice defined
+Improve PDB reader's parsing of atom names
+Add initial QE xml to Castep .geom conversion
+Fix error in scaling forces from QE xml file
+
+2.30 (16/8/19)
+----
+
+Change to selection of new grid size in supercells
+Add Abinit wavefunction reader, including spinors
+Read spin density from a VASP CHG file successfully
+Initial work on VASP WAVECAR reader
+Add calculation of int|s| for spin, intended for antiferromagnetic systems
+-m does a better job of centering molecules
+Add QE wavefunction reader, and refactor Castep's psi reader
+Accept nm as length unit in blocks in .cell files
+Add -x=ixjxk option for simple tiling
+Split formats from --help text, and add --formats option
+
+2.29a
+-----
+
+Add -X[abc]= option for vacuum scaling
+Preserve kpoint_mp_spacing in .cell files
+Some very experimental charged system corrections
+
+
+2.29 (5/7/19)
 ----
 
 Retain electrons namelist from QE files, scaling conv_thr

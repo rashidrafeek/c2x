@@ -1,4 +1,4 @@
-#define C2XSF_VER "2.29"
+#define C2XSF_VER "2.30c"
 
 /* Global variables for system description */
 
@@ -53,12 +53,14 @@
 #define DENFMT 21
 #define ABINIT 22
 #define QE 23
+#define CASTEP_BANDS 24
+#define CASTEP_GEOM 25
 
 /* flags for reading and output */
 #define CHDEN 1
 #define SPINDEN 2
 #define BANDS 4
-#define BANDDEN 12
+#define BANDDEN 8
 #define BANDPHASE 16
 #define BANDREAL 32
 #define BANDIMAG 64
@@ -72,7 +74,6 @@
 #define FRAC 16384
 #define CST_ESP 32768
 #define AU 65536
-#define GNUPLOT 131072
 #define HIPREC 262144
 #define LHS_FUDGE 524288
 #define OCC_WEIGHT 1048576
@@ -111,7 +112,7 @@ struct cmt {char *txt; struct cmt *next;};
    two different atoms may poin to the same location */
 struct atom
    {unsigned int atno; double abs[3]; double frac[3]; double force[3];
-    double wt; double spin; double chg; char *label;};
+     double wt; double spin; double chg; double site_chg; char *label;};
 /* grid.next == NULL if grid unused */
 /* grids storage order is size[0]=ngx, size[1]=ngy, size[2]=ngz,
      data[x*ngy*ngz+y*ngz+z] */
@@ -122,16 +123,22 @@ struct mp_grid {int grid[3]; double disp[3];};
 struct vector {double v[3]; double mod2;};
 /* We store symmetry matrix and translations in absolute co-ords */
 struct sym_op {double mat[3][3]; double *tr;};
-struct unit_cell {double (*basis)[3]; double recip[3][3]; double vol;};
+struct unit_cell {double (*basis)[3]; double recip[3][3]; double vol;
+  double (*stress)[3];};
 struct contents {int n; int forces; struct atom *atoms; char *title;
   struct cmt *comment; char *block_species; char *species_misc;
   struct dct *dict;};
-struct kpts {int n; struct atom *kpts; struct mp_grid *mp;};
+struct kpts {int n; struct atom *kpts; struct mp_grid *mp; double *spacing;};
 struct symmetry {int n; double *tol; int *gen; struct sym_op *ops;};
 struct es {int nspins; int nspinors; char *spin_method; double cut_off;
   double etol; char *band_range; char *kpt_range; char *spin_range;
-  char *dip_corr; char *dip_corr_dir; double *dip_ctr;
-  double *energy; double *e_fermi;};
+  char *dip_corr; char *dip_corr_dir; double *dip_ctr; double *charge;
+  double *energy; double *e_fermi; int nbands; int nbspins; double nel;
+  double nup_minus_down; double *occ; double *eval;};
+
+struct time_series {int nsteps; int nc; struct unit_cell *cells;
+  int nm; struct contents *m; int nen; double *energies;
+  int nenth; double *enthalpies;};
 
 void *dict_get(struct dct *dict, char *key);
 void dict_add(struct dct *dict, char *key, void *value);
@@ -167,6 +174,10 @@ void inv_parity(double *d,int fft[3], int band, double kpt[3]);
 void dipole_calc(struct unit_cell *c, struct contents *m,
                  struct grid *g, double *dipole_ctr, double *dpole);
 void print_cell(struct unit_cell *c, struct contents *m);
+void print_occ(struct es *elect, struct kpts *kp);
+void print_elect(struct es *elect);
+void print_basis(double basis[3][3]);
+void old_in_new(double old_basis[3][3],double new_recip[3][3]);
 
 unsigned int atsym2no(char* sym);
 char* atno2sym(unsigned no);
@@ -180,13 +191,26 @@ int multi_scan(char *buff, double *x, int rep, int *n);
 
 void mp_gen(struct kpts *ks, struct unit_cell *c);
 
+int inrange(int x, char *range);
+void fft3d(double *c, int *ngptar, int dir);
+void band2real(double *psi, double *out, int nfft[3], double kpoint[3]);
+void band_store(struct grid **g, double *dptr, double occ, double wkpt,
+                int nspr, int ns, int k, int b, struct es *elect,
+                struct contents *m, int fft[3]);
+void pad_recip(double *o, int fft[3], double **nptr, int nfft[3]);
+
+
 extern int igr2hall[];
 
 int super(struct unit_cell *c, struct contents *m,
            double new_basis[3][3], struct kpts *k, struct symmetry *s,
            struct grid *gptr, int rhs);
+void simple_super(struct unit_cell *c, struct contents *m,
+           int expand[3], struct kpts *kp, struct symmetry *s,
+           struct grid *gptr);
 
 double dist(double a,double b);
+double vmod2(double v[3]);
 
 #ifndef min
 #define min(a,b) ((a)<(b)?(a):(b))

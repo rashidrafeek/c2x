@@ -39,6 +39,7 @@
 
 void help(void);
 void refs(void);
+void formats(void);
 
 void xsf_write(FILE* outfile, struct unit_cell *c, struct contents *m,
                int molecule, struct grid *g);
@@ -68,7 +69,7 @@ void cml_write(FILE* outfile, struct unit_cell *c, struct contents *m);
 void fdf_write(FILE* fdf, char* filename, struct unit_cell *c,
                struct contents *m,struct grid *g, struct es *e);
 void line_write(FILE* outfile, struct unit_cell *c, struct contents *m,
-                struct grid *g, char *line_spec);
+                struct grid *g, char *line_spec, int lflags);
 void lscan(char **p, struct contents *m, double x[3]);
 void shelx_write(FILE* outfile, struct unit_cell *c, struct contents *m);
 void py_write(FILE* outfile, struct unit_cell *c, struct contents *m,
@@ -95,17 +96,24 @@ void cube_read(FILE* infile, struct unit_cell *c, struct contents *m,
                struct grid *gptr);
 void xsf_read(FILE* infile, struct unit_cell *c, struct contents *m,
 	      struct grid *gptr);
-void vasp_read(FILE* infile, struct unit_cell *c, struct contents *m,
+void vasp_read(FILE* infile, char *filename,
+		struct unit_cell *c, struct contents *m, struct kpts *k,
                 struct grid *gptr, struct es *elect);
+void vasp_psi_read(FILE* infile, char * filename, struct unit_cell *c,
+		struct contents *m, struct kpts *k, struct grid *gptr,
+		struct es *elect, int *i_grid);
 void denfmt_read(FILE* infile, struct unit_cell *c, struct grid *gptr);
 void fort34_read(FILE* infile, struct unit_cell *c, struct contents *m,
               struct symmetry *s);
 void crystal_read(FILE* infile, struct unit_cell *c, struct contents *m,
                   struct symmetry *s);
-void abinit_read(FILE* infile, struct unit_cell *c, struct contents *m,
-                 struct grid *gptr);
+void abinit_charge_read(FILE* infile, struct unit_cell *c, struct contents *m,
+                 struct kpts *kp, struct grid *gptr, struct es *elect);
 void abinit_in_read(FILE* infile, struct unit_cell *c, struct contents *m,
                  struct kpts *k, struct symmetry *s, struct es *e);
+void abinit_psi_read(FILE* infile, struct unit_cell *c,
+                     struct contents *m, struct kpts *kp, struct grid *gptr,
+                     struct es *elect, int *i_grid);
 void fdf_read(FILE* in, struct unit_cell *c, struct contents *m,
                struct kpts *kp, struct es *e);
 void qe_rho_read(FILE* infile, struct unit_cell *c, struct contents *m,
@@ -113,8 +121,8 @@ void qe_rho_read(FILE* infile, struct unit_cell *c, struct contents *m,
                 struct es *elect, int *i_grid);
 void qe_xml_read(FILE* infile, char *filename, struct unit_cell *c,
 		 struct contents *m,
-                struct kpts *k, struct symmetry *s, struct grid *g,
-                struct es *elect, int *i_grid);
+                 struct kpts *k, struct symmetry *s, struct grid *g,
+                 struct es *elect, struct time_series *ts, int *i_grid);
 
 void molecule_fix(int* m_abc, struct unit_cell *c, struct contents *m,
                   struct grid *g);
@@ -128,13 +136,19 @@ int cspq_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
             struct kpts *k, int op, double tolmin);
 void dipole(struct unit_cell *c, struct contents *m,
             struct grid *g, struct es *elect);
+void charge_corr(struct unit_cell *c, struct contents *m,
+                 struct grid *g, struct es *elect);
 void es_pot(struct unit_cell *c, struct contents *m,
             struct grid *g, struct es *elect, double musq);
 
 void sym_kpts(struct kpts *k_in, struct kpts *k_out, struct symmetry *s,
               double basis[3][3]);
 void sym2ksym(struct symmetry *rs, struct symmetry *ks);
-  
+void vacuum_adjust(struct unit_cell *c, struct contents *m, double new_abc[3]);
+void bands_write(FILE* outfile, struct unit_cell *c,
+                 struct kpts *k, struct es *e);
+void geom_write(FILE *outfile, struct time_series *ts);
+
 /* Global variables for system description */
 
 int debug,flags;
@@ -158,23 +172,26 @@ void version(){
     printf("      1/eps_0 = %.11f e^-1 V A\n",1/EPS0);
   }
 
+  printf("\nFurther documentation at https://www.c2x.org.uk/\n");
   exit(0);
 }
 
 int main(int argc, char **argv)
 {
   int i,j,k,opt=1,expand,rotate,half_shift=0,no_mp=0,prim=0,compact=0;
-  int molecule=0,reduce=0;
+  int molecule=0,reduce=0,vexpand=0,lflags=0,pr_occ=0;
   int sort_style=0;
   int no_sym=0;
   int spg_op;
-  int gen_mp=0, failure=0,calc_esp=0,sym_k=0;
-  int format,preserve_c;
+  int gen_mp=0, failure=0,calc_esp=0,sym_k=0,charge_correction=0;
+  int format,preserve_c,mask;
   int *i_grid;
+  int i_expand[3];
   char *optp,*file1=NULL,*file2=NULL,*line_spec=NULL,*pt_spec=NULL;
   char *cdfile,*cptr;
   FILE *infile,*outfile;
   double abc[6],new_cell[3][3],new_cell_rel[3][3],*new_mp,zpt[3],g_cut;
+  double new_abc[3],dtmp,scale;
   double tolmin=1e-4,ionic_charge,musq;
   int *m_abc;
   struct grid *gptr;
@@ -184,6 +201,7 @@ int main(int argc, char **argv)
   struct kpts kp;
   struct grid grid1;
   struct es elect;
+  struct time_series *ts,series;
 
 /* Initialise all pointers to NULL, etc. */
 
@@ -191,6 +209,7 @@ int main(int argc, char **argv)
   elect.kpt_range="1";
   elect.spin_range="-";
   elect.nspins=1;
+  elect.nbspins=1;
   elect.nspinors=1;
   elect.spin_method=NULL;
   elect.cut_off=0;
@@ -198,8 +217,13 @@ int main(int argc, char **argv)
   elect.dip_corr=NULL;
   elect.dip_corr_dir=NULL;
   elect.dip_ctr=NULL;
+  elect.charge=NULL;
   elect.energy=NULL;
   elect.e_fermi=NULL;
+  elect.nbands=0;
+  elect.occ=NULL;
+  elect.eval=NULL;
+  elect.nel=elect.nup_minus_down=0;
   
   motif.atoms=NULL;
   motif.n=motif.forces=0;
@@ -213,6 +237,7 @@ int main(int argc, char **argv)
   motif.dict->key=NULL;
   motif.dict->next=NULL;
   cell.basis=NULL;
+  cell.stress=NULL;
   cell.vol=0;
   sym.tol=NULL;
   sym.ops=NULL;
@@ -221,6 +246,7 @@ int main(int argc, char **argv)
   kp.n=0;
   kp.kpts=NULL;
   kp.mp=NULL;
+  kp.spacing=NULL;
   new_mp=NULL;
   sym.gen=NULL;
   for(i=0;i<3;i++){
@@ -232,11 +258,23 @@ int main(int argc, char **argv)
   grid1.name=NULL;
   flags=0;
 
+  series.nsteps=0;
+  series.cells=NULL;
+  series.m=NULL;
+  series.energies=NULL;
+  series.enthalpies=NULL;
+  series.nc=series.nm=series.nen=series.nenth=0;
+  ts=NULL;
+  
   opt=1;
   optp=argv[opt];
   debug=molecule=format=expand=rotate=preserve_c=0;
   spg_op=0;
 
+  for(i=0;i<3;i++) new_abc[i]=0;
+
+  if (!strcmp("cellsym",&argv[0][strlen(argv[0])-7])) format=CELL;
+  
   while (opt<argc){
     switch(*optp){
     case 0:
@@ -269,7 +307,7 @@ int main(int argc, char **argv)
         else if (!strcmp(optp,"--xyz")) format=XYZ;
         else if (!strcmp(optp,"--cml")) format=CML;
         else if (!strcmp(optp,"--fdf")) format=FDF;
-        else if (!strcmp(optp,"--gnu")) flags|=GNUPLOT;
+        else if (!strcmp(optp,"--gnu")) lflags|=1;
         else if (!strcmp(optp,"--shelx")) format=SHELX;
         else if (!strcmp(optp,"--airss")) {format=SHELX; flags|=SHELX_AIRSS;}
         else if (!strcmp(optp,"--fbin")) format=FBIN;
@@ -284,9 +322,18 @@ int main(int argc, char **argv)
         else if (!strcmp(optp,"--abinit")) format=ABINIT;
         else if (!strcmp(optp,"--qe")) format=QE;
         else if (!strcmp(optp,"--qef")) {format=QE; flags|=FRAC;}
+        else if (!strcmp(optp,"--bands")) {
+          format=CASTEP_BANDS;
+          flags|=OCCUPANCIES;
+        }
+        else if (!strcmp(optp,"--geom")) {
+          format=CASTEP_GEOM;
+          ts=&series;
+        }
         else if (!strcmp(optp,"--null")) format=CNULL;
 
         else if (!strcmp(optp,"--primitive")) spg_op|=CSPG_PRIM;
+        else if (!strcmp(optp,"--primitive_nr")) spg_op|=CSPG_PRIM_NR;
         else if (!strcmp(optp,"--refine")) spg_op|=CSPG_REF;
         else if (!strcmp(optp,"--standardise")) spg_op|=CSPG_STD;
         else if (!strcmp(optp,"--standardize")) spg_op|=CSPG_STD;
@@ -299,6 +346,7 @@ int main(int argc, char **argv)
 
         else if (!strcmp(optp,"--help")) help();
         else if (!strcmp(optp,"--refs")) refs();
+        else if (!strcmp(optp,"--formats")) formats();
         else if (!strcmp(optp,"--version")) version();
        else {
           fprintf(stderr,"Invalid option %s.\n%s -h for usage.\n",
@@ -334,7 +382,7 @@ int main(int argc, char **argv)
           }
           break;
         case 'B':
-          flags|=BANDDEN;
+          flags|=BANDS+BANDDEN;
           if(*(optp+1)=='='){
             elect.band_range=optp+2;
             while(*((++optp)+1));
@@ -464,6 +512,7 @@ int main(int argc, char **argv)
           break;
         case 'O':
           flags|=OCCUPANCIES;
+          pr_occ=1;
           break;
         case 'p':
           flags|=BANDPHASE;
@@ -476,6 +525,9 @@ int main(int argc, char **argv)
             while(*((++optp)+1));
           }
           else prim++;
+          break;
+        case 'q':
+          charge_correction=1;
           break;
         case 'Q':
           sort_style=1;
@@ -548,13 +600,21 @@ int main(int argc, char **argv)
         case 'x':
           if(*(optp+1)=='='){
             if (sscanf(optp+2,"(%lf,%lf,%lf)(%lf,%lf,%lf)(%lf,%lf,%lf)",
-               &new_cell_rel[0][0],&new_cell_rel[0][1],&new_cell_rel[0][2],
-               &new_cell_rel[1][0],&new_cell_rel[1][1],&new_cell_rel[1][2],
-               &new_cell_rel[2][0],&new_cell_rel[2][1],&new_cell_rel[2][2])!=9)
-               error_exit("malformed option -x=");
-            while(*((++optp)+1));
-            expand=2;
-            break;
+	         &new_cell_rel[0][0],&new_cell_rel[0][1],&new_cell_rel[0][2],
+                 &new_cell_rel[1][0],&new_cell_rel[1][1],&new_cell_rel[1][2],
+	         &new_cell_rel[2][0],&new_cell_rel[2][1],&new_cell_rel[2][2])
+		==9){
+	      while(*((++optp)+1));
+	      expand=2;
+	      break;
+	    }
+	    else if (sscanf(optp+2,"%dx%dx%d",
+			    i_expand,i_expand+1,i_expand+2)==3){
+	      while(*((++optp)+1));
+	      expand=6;
+	      break;
+	    }	      
+	    else error_exit("malformed option -x=");
           }
           else error_exit ("malformed option -x=");
         case 'X':
@@ -566,6 +626,28 @@ int main(int argc, char **argv)
                error_exit("malformed option -X=");
             while(*((++optp)+1));
             expand=3;
+            break;
+          }
+          else if ((*(optp+1)>='a')&&(*(optp+1)<='c')){
+            mask=0;
+            while((*(optp+1)>='a')&&(*(optp+1)<='c')){
+              if (*(optp+1)=='a') mask|=1;
+              if (*(optp+1)=='b') mask|=2;
+              if (*(optp+1)=='c') mask|=4;
+              optp++;
+            }
+            if (debug>2) fprintf(stderr,"Mask=%d\n",mask);
+            if(*(optp+1)!='=') error_exit("malformed option -X=");
+            if (sscanf(optp+2,"%lf",&dtmp)!=1)
+              error_exit("malformed option -X=");
+            while(*((++optp)+1));
+	    scale=1;
+	    if (*optp=='B') scale=BOHR;
+	    if ((*(optp-1)=='n')&&(*optp=='m')) scale=10;
+            if (mask&1) new_abc[0]=dtmp*scale;
+            if (mask&2) new_abc[1]=dtmp*scale;
+            if (mask&4) new_abc[2]=dtmp*scale;
+            vexpand=1;
             break;
           }
           else error_exit("malformed option -X=");
@@ -646,7 +728,7 @@ int main(int argc, char **argv)
   else if ((i==18)&&(!strcmp(file1,"charge-density.dat")))
     qe_rho_read(infile,&cell,&motif,&kp,&sym,&grid1,&elect,i_grid);
   else if ((i>4)&&(!strcmp(file1+i-4,".xml")))
-    qe_xml_read(infile,file1,&cell,&motif,&kp,&sym,&grid1,&elect,i_grid);
+    qe_xml_read(infile,file1,&cell,&motif,&kp,&sym,&grid1,&elect,ts,i_grid);
   else if ((i>2)&&(!strcmp(file1+i-2,"12")))
     crystal_read(infile,&cell,&motif,&sym);
   else if ((i>4)&&(!strcmp(file1+i-4,".res")))
@@ -664,17 +746,21 @@ int main(int argc, char **argv)
   else if ((i>4)&&(!strcmp(file1+i-4,".xsf")))
     xsf_read(infile,&cell,&motif,&grid1);
   else if ((i>=7)&&(!strcmp(file1+i-7,"CONTCAR")))
-    vasp_read(infile,&cell,&motif,&grid1,&elect);
+    vasp_read(infile,file1,&cell,&motif,&kp,&grid1,&elect);
   else if ((i>=6)&&(!strcmp(file1+i-6,"POSCAR")))
-    vasp_read(infile,&cell,&motif,&grid1,&elect);
+    vasp_read(infile,file1,&cell,&motif,&kp,&grid1,&elect);
   else if ((i>=6)&&(!strcmp(file1+i-6,"CHGCAR")))
-    vasp_read(infile,&cell,&motif,&grid1,&elect);
+    vasp_read(infile,file1,&cell,&motif,&kp,&grid1,&elect);
   else if ((i>=3)&&(!strcmp(file1+i-3,"CHG")))
-    vasp_read(infile,&cell,&motif,&grid1,&elect);
+    vasp_read(infile,file1,&cell,&motif,&kp,&grid1,&elect);
+  else if ((i>=7)&&(!strcmp(file1+i-7,"WAVECAR")))
+    vasp_psi_read(infile,file1,&cell,&motif,&kp,&grid1,&elect,i_grid);
   else if ((i>=3)&&(!strcmp(file1+i-3,"DEN")))
-    abinit_read(infile,&cell,&motif,&grid1);
+    abinit_charge_read(infile,&cell,&motif,&kp,&grid1,&elect);
   else if ((i>=3)&&(!strcmp(file1+i-3,"POT")))
-    abinit_read(infile,&cell,&motif,&grid1);
+    abinit_charge_read(infile,&cell,&motif,&kp,&grid1,&elect);
+  else if ((i>=3)&&(!strcmp(file1+i-3,"WFK")))
+    abinit_psi_read(infile,&cell,&motif,&kp,&grid1,&elect,i_grid);
   else if ((i>=3)&&(!strcmp(file1+i-3,".in")))
     abinit_in_read(infile,&cell,&motif,&kp,&sym,&elect);
   else if ((i>=7)&&(!strcmp(file1+i-7,"den_fmt")))
@@ -689,7 +775,7 @@ int main(int argc, char **argv)
               ((i>7)&&(!strcmp(file1+i-7,".chdiff")))))&&
            ((!strncmp(file1,"CONTCAR",7))||(!strncmp(file1,"POSCAR",6))||
             (!strncmp(file1,"CHGCAR",6))||(!strncmp(file1,"CHG",3))))
-    vasp_read(infile,&cell,&motif,&grid1,&elect);
+    vasp_read(infile,file1,&cell,&motif,&kp,&grid1,&elect);
   else{
     i=fgetc(infile);
     rewind(infile);
@@ -755,6 +841,11 @@ int main(int argc, char **argv)
   ionic_charge=0;
   if (motif.atoms)
     for(i=0;i<motif.n;i++) ionic_charge+=motif.atoms[i].chg;
+
+  if (elect.nel==0){
+    elect.nel=ionic_charge;
+    if (elect.charge) elect.nel-=*elect.charge;
+  }
   
   /* We define MP grid to include origin, and displacements to be in terms of
    * mesh cells. Castep defines displacements in reciprocal space cells, and
@@ -776,26 +867,17 @@ int main(int argc, char **argv)
 
   if (debug>1){
     fprintf(stderr,"Basis set\n");
-    for(i=0;i<=2;i++)
-      fprintf(stderr,"% 11.7f % 11.7f % 11.7f   modulus % 11.7f\n",
-              cell.basis[i][0],cell.basis[i][1],cell.basis[i][2],
-              sqrt(cell.basis[i][0]*cell.basis[i][0]+
-                   cell.basis[i][1]*cell.basis[i][1]+
-                   cell.basis[i][2]*cell.basis[i][2]));
+    print_basis(cell.basis);
   }
   if (debug>2){
     fprintf(stderr,"Reciprocal basis set\n");
-    for(i=0;i<=2;i++)
-      fprintf(stderr,"% 11.7f % 11.7f % 11.7f   modulus % 11.7f\n",
-              cell.recip[i][0],cell.recip[i][1],cell.recip[i][2],
-              sqrt(cell.recip[i][0]*cell.recip[i][0]+
-                   cell.recip[i][1]*cell.recip[i][1]+
-                   cell.recip[i][2]*cell.recip[i][2]));
+    print_basis(cell.recip);
   }
   if (debug){
     fprintf(stderr,"Cell volume %f\n",cell.vol);
     fprintf(stderr,"natoms      %d\n",motif.n);
     if (ionic_charge) fprintf(stderr,"Total ionic charge %f\n",ionic_charge);
+    print_elect(&elect);
 
     if ((kp.mp)&&(kp.mp->grid[0]>0)){
       fprintf(stderr,"kpoint MP grid %d %d %d\n",kp.mp->grid[0],
@@ -808,6 +890,8 @@ int main(int argc, char **argv)
 
   if ((elect.dip_ctr)&&(grid1.data)) dipole(&cell,&motif,&grid1,&elect);
 
+  if (charge_correction) charge_corr(&cell,&motif,&grid1,&elect);
+  
   if (debug>2){
     fprintf(stderr,"Ionic positions, fractional\n");
     for(i=0;i<motif.n;i++){
@@ -853,21 +937,25 @@ int main(int argc, char **argv)
   gptr=&grid1;
   while((gptr)&&(gptr->data)){
     if (debug){
-      double min,max,sum;
-      min=1e20;
-      max=-1e20;
-      sum=0;
+      double dmin,dmax,sum,sum_abs;
+      dmin=1e20;
+      dmax=-1e20;
+      sum=sum_abs=0;
 
       fprintf(stderr,"Found 3D data for %s\n",gptr->name);
       for(i=0;i<gptr->size[0]*gptr->size[1]*gptr->size[2];i++){
-	sum=sum+gptr->data[i];
-	if (gptr->data[i]>max) max=gptr->data[i];
-	if (gptr->data[i]<min) min=gptr->data[i];
+	sum+=gptr->data[i];
+        sum_abs+=fabs(gptr->data[i]);
+	if (gptr->data[i]>dmax) dmax=gptr->data[i];
+	if (gptr->data[i]<dmin) dmin=gptr->data[i];
       }
-      fprintf(stderr,"  min=%g  max=%g  sum=%g  int=%g\n",min,max,
+      fprintf(stderr,"  min=%g max=%g sum=%g int=%g",dmin,dmax,
 	      sum,sum*cell.vol/(gptr->size[0]*gptr->size[1]*gptr->size[2]));
+      if ((gptr->name)&&(strstr(gptr->name,"Spin")))
+        fprintf(stderr," int|s|=%g",
+                sum_abs*cell.vol/(gptr->size[0]*gptr->size[1]*gptr->size[2]));
       fprintf(stderr,
-	      "  (integral is e per cell for charge and spin densities)\n");
+	      "\n  (integral is e per cell for charge and spin densities)\n");
     }
 
     if (i_grid){
@@ -968,7 +1056,10 @@ int main(int argc, char **argv)
 
   
   if (prim) {
-    double nb1[3][3];
+    double nb1[3][3],ob[3][3];
+    for(i=0;i<3;i++)
+      for(j=0;j<3;j++)
+        ob[i][j]=cell.basis[i][j];
     primitive(&cell,&motif,nb1);
     if (debug>2){
       fprintf(stderr,"Primitive cell is:\n");
@@ -977,6 +1068,10 @@ int main(int argc, char **argv)
       }
     }
     super(&cell,&motif,nb1,&kp,&sym,&grid1,0);
+    if (debug){
+      fprintf(stderr,"Old basis in terms of new: ");
+      old_in_new(ob,cell.recip);
+    }
   }
 
   if (compact){
@@ -992,6 +1087,9 @@ int main(int argc, char **argv)
 
   if (expand){
     switch(expand){
+    case 6:
+      simple_super(&cell,&motif,i_expand,&kp,&sym,&grid1);
+      break;
     case 5: /* First vector given in relative terms */
       for(i=0;i<3;i++){
         new_cell[0][i]=new_cell_rel[0][0]*cell.basis[0][i]+
@@ -1024,9 +1122,26 @@ int main(int argc, char **argv)
     case 1:  /* We were expected to guess the appropriate new basis */
       fprintf(stderr,"-x: feature not present\n");
       break;
+    default:
+      error_exit("Internal error in expansion selection");
     } /* select(expand) ... */
   }  /* if (expand) ... */
 
+  if (vexpand){
+    vacuum_adjust(&cell,&motif,new_abc);
+    gptr=&grid1;
+    while (gptr->data){
+      free(gptr->data);
+      gptr->data=NULL;
+      if (gptr->next){
+	struct grid *g;
+	g=gptr->next;
+	gptr->next=NULL;
+	gptr=g;
+      }
+    }
+  }
+  
   if (rotate) cart2abc(&cell,&motif,abc,&grid1,1);
   if ((no_mp)&&(kp.mp)) {free(kp.mp);kp.mp=NULL;}
   if (sort_style) sort_atoms(&motif,sort_style);
@@ -1042,8 +1157,10 @@ int main(int argc, char **argv)
     }
   }
 
+  if (pr_occ) print_occ(&elect, &kp);
+  
   if (line_spec){
-    line_write(outfile,&cell,&motif,&grid1,line_spec);
+    line_write(outfile,&cell,&motif,&grid1,line_spec,lflags);
     exit(0);
   }
 
@@ -1117,13 +1234,20 @@ int main(int argc, char **argv)
     case QE:
       qe_write(outfile,&cell,&motif,&kp,&elect);
       break;
+    case CASTEP_BANDS:
+      bands_write(outfile,&cell,&kp,&elect);
+      break;
+    case CASTEP_GEOM:
+      geom_write(outfile,ts);
+      break;
     case CNULL:
       break;
 
     default:
       fprintf(stderr,"This cannot happen. Sorry\n");
   }
-
+  
+  if (outfile!=stdout) fclose(outfile);
   exit(0); /* valgrind prefers this to return(0); */
 }
 
@@ -1145,8 +1269,8 @@ void help(void){
          "               x,y,z (default .5,.5,.5) assuming -c also given\n"
          "-Da=[x,y,z]  ditto, and apply post-hoc slab energy correction with\n"
          "               perpendicular axis a. Valid values a, b and c.\n"
-         "-Dm=[x,y,z]  ditto, but apply post-hoc correction for molecule in\n"
-         "               cubic box\n"
+         "-Dm=[x,y,z]  ditto, but apply post-hoc correction for molecule in "
+         "cubic box\n"
          "-e           read also a .cst_esp file, constructing its name from\n"
          "               the .cell or .check file given\n"
          "-e=eps       set tolerance for supercell operations. Default=%g\n"
@@ -1177,6 +1301,7 @@ void help(void){
          "               or atomic symbol followed by atom number\n"
          "               e.g. (0.5,0.5,0.5):C3:20 -- centre to 3rd C atom, "
          "20 points\n"
+         "-q           naive energy correction for charged cells\n"
          "-Q[n]        quicksort atoms in descending atomic order "
          "(n=1 or absent)\n"
          "                                ascending atomic order  (n=2)\n"
@@ -1194,21 +1319,70 @@ void help(void){
          "-U           scale densities on reading .cube files from "
          "Bohr^-3 to A^-3\n"
          "-v           be verbose (may be repeated)\n"
+	 "--version    report version and exit, also conversion factors if "
+	 "preceded by -v\n"
          "-w           weight band by occupancy\n"
          "-W           weight band by kpt weight and occupancy\n");
   printf("-x=(x1,y1,z1)(x2,y2,z2)(x3,y3,z3)\n"
          "             re-express in new basis given in terms of old\n"
+	 "-x=ixjxk     trivial tiling to make a supercell\n"
          "-X=(x1,y1,z1)(x2,y2,z2)(x3,y3,z3)\n"
          "             re-express in new basis given in absolute terms\n"
-         "-z=X         print volumetric data at point\n"
-	 "               see -P= for point specification\n"
+	 "-X[abc]=x    expand given axes to given length by adjusting vacuum\n"
+	 "               length may be suffixed with B (Bohr) or nm, "
+         "else A assumed\n"
+         "-z=X         print volumetric data at point, "
+	 "see -P= for point specification\n"
          "-1           assume input .cell file follows Onetep conventions\n"
          "-3           if swapping axes to convert lhs to rhs, third axis\n"
          "               is special & first two swapped. Else first special.\n"
          "-15          use high precision in output.\n"
          "\n");
-  printf("FORMAT is one of: xsf       XCrySDen (default)\n"
+  printf("range specifies band and kpoint numbers as \"a,b-c,d\" starting"
+	 " from 1\n"
+         "-b and -B are mutually exclusive. Only one of the x and t"
+         " options may be given\n\n");
+#ifdef SPGLIB
+  printf("OPERATION is used to call spglib and is one of:\n"
+         "   primitive      call spg_find_primitive()\n"
+         "   primitive_nr   call spg_standardize_cell(to_primitive=1, "
+         "no_idealize=1)\n"
+         "   refine         call spg_refine_cell()\n"
+         "   int            call spg_get_dataset()"
+         " and report international symbol\n"
+         "   schoen         call spg_get_schoenflies()\n"
+	 "   snap           call spg_standardize_cell() then expand back\n"
+	 "                     to a snapped version of the original cell\n"
+         "   standardise    call spg_standardize_cell(no_idealize=1)\n"
+         "   symmetry       call spg_get_dataset() and keep symmetry ops\n"
+         "   list           call spg_get_dataset() and list symmetry ops\n"
+         "   point          call spg_get_dataset() followed by "
+         "spg_get_pointgroup()\n\n");
+#endif
+  printf("Valid values of FORMAT are listed by the --formats argument, as are"
+	 "\nrecognised input formats.\n\n");
+  printf("Version " C2XSF_VER ", (c) MJ Rutter 2007 - 2019"
+         " licenced under the GPL v3.\n\n");
+  printf("If useful to a published paper, please consider citing using the\n"
+         "references shown with the --refs argument.\n\n");
+  printf("This version is ");
+#ifdef SPGLIB
+  printf("linked with spglib version %d.%d.%d\n",
+         spg_get_major_version(),
+         spg_get_minor_version(),
+         spg_get_micro_version());
+#else
+  printf("not linked with spglib\n");
+#endif
+  printf("\nFurther documentation at https://www.c2x.org.uk/\n");
+  exit(0);
+}
+
+void formats(void){
+  printf("FORMAT is one of: xsf       XCrySDen (default"
+         " unless called as cellsym)\n"
 	 "                  abinit    Abinit .in\n"
+	 "                  bands     unsorted CASTEP .bands file\n"
          "                  cell      CASTEP .cell, cartesian and fractional\n"
          "                  cell_abc                abc and fractional\n"
          "                  cell_abs                cartesian and absolute\n"
@@ -1236,24 +1410,6 @@ void help(void){
          "                  vasp      VASP output (POSCAR/CHG)\n"
          "                  xplor     Xplor\n"
          "                  xyz       XYZ\n\n");
-#ifdef SPGLIB
-  printf("OPERATION is used to call spglib and is one of:\n"
-         "   primitive      call spg_find_primitive()\n"
-         "   refine         call spg_refine_cell()\n"
-         "   int            call spg_get_dataset()"
-         " and report international symbol\n"
-         "   schoen         call spg_get_schoenflies()\n"
-	 "   snap           call spg_standardize_cell() then expand back\n"
-	 "                     to a snapped version of the original cell\n"
-         "   standardise    call spg_standardize_cell(no_idealize=1)\n"
-         "   symmetry       call spg_get_dataset() and keep symmetry ops\n"
-         "   list           call spg_get_dataset() and list symmetry ops\n"
-         "   point          call spg_get_dataset() followed by "
-         "spg_get_pointgroup()\n\n");
-#endif
-  printf("range specifies band numbers as \"a,b-c,d\"\n"
-         "-b and -B are mutually exclusive. Only one of the x and t"
-         " options may be given\n\n");
   printf("Input files ending .cif or .mmcif are assumed to be in "
             "a cif format,\n"
 	 "            ending .cub, .cube or _CUBE are assumed to be in "
@@ -1265,31 +1421,19 @@ void help(void){
          "            ending .res are assumed to be in shelx97 format,\n"
 	 "            ending .xml are assumed to be QE PWscf output,\n"
          "            ending .xsf are assumed to be in xsf format,\n"
-	 "            ending POT or DEN are assumed to be in "
+	 "            ending POT, DEN or WFK are assumed to be in "
 	 "Abinit binary format,\n");
   
-  printf("            ending or beginning CHG, CHGCAR, POSCAR or CONTCAR "
-         "are assumed \n"
-         "              to be in VASP 5.x format,\n"
+  printf("            ending or beginning CHG, CHGCAR, POSCAR, CONTCAR "
+         "or WAVECAR are\n"
+         "              assumed to be in VASP 5.x format,\n"
 	 "            ending 12 are assumed to be in Crystal format,\n"
 	 "            called fort.34 are assumed to be in Crystal binary "
 	 "format.\n\n"
          "Otherwise "
          "automatic detection of .cell or .check input. Compatible with\n"
-         ".check files from CASTEP 3.0 to 19.1 (and perhaps beyond).\n\n"
-         "Version " C2XSF_VER ", (c) MJ Rutter 2007 - 2019"
-         " licenced under the GPL v3.\n\n");
-  printf("If useful to a published paper, please consider citing using the\n"
-         "references shown with the --refs argument.\n\n");
-  printf("This version is ");
-#ifdef SPGLIB
-  printf("linked with spglib version %d.%d.%d\n",
-         spg_get_major_version(),
-         spg_get_minor_version(),
-         spg_get_micro_version());
-#else
-  printf("not linked with spglib\n");
-#endif
+         ".check files from CASTEP 3.0 to 19.1 (and perhaps beyond).\n\n");
+  printf("\nFurther documentation at https://www.c2x.org.uk/\n");
   exit(0);
 }
 
@@ -1341,4 +1485,5 @@ void add_cmt(struct cmt *comment, char *txt){
   c->txt=malloc(strlen(txt)+1);
   if (!c->txt) error_exit("Malloc error for txt in add_cmt");
   strcpy(c->txt,txt);
+  if (c->txt[strlen(c->txt)-1]=='\n') c->txt[strlen(c->txt)-1]=0;
 }

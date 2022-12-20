@@ -197,5 +197,8 @@ void abinit_write(FILE* outfile, struct unit_cell *c, struct contents *m,
       fprintf(outfile,"\ntoldfe %g eV\n",1e-5*m->n);
 
   fprintf(outfile,"\nchksymbreak 0\nchkprim 0\n");
+
+  if ((e->charge)&&(*e->charge!=0))
+    fprintf(outfile,"charge %f\n",*e->charge);
   
 }

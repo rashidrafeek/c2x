@@ -84,6 +84,7 @@ void fdf_read(FILE* in, struct unit_cell *c, struct contents *m,
   shift[0]=shift[1]=shift[2]=0;
   dmetol=NULL;
   atomspins=NULL;
+  atomcoords=NULL;
   
   if (debug>2) fprintf(stderr,"fdf_read called\n");
 
@@ -142,6 +143,15 @@ void fdf_read(FILE* in, struct unit_cell *c, struct contents *m,
       continue;
     }
         
+    if (!fdftokenmatch(&ptr,"NetCharge")){
+      e->charge=malloc(sizeof(double));
+      if (sscanf(ptr,"%lf",e->charge)!=1){
+        fprintf(stderr,"Warning: error parsing NetCharge\n");
+        free(e->charge);
+        e->charge=NULL;
+      }
+      continue;
+    }
     
 
 /* What remains ought to be a block or a keyword.  */

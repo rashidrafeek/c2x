@@ -26,7 +26,6 @@
 
 void vcross(double a[3],double b[3],double c[3]);
 int minvert(double m[3][3]);
-double vmod2(double v[3]);
 
 void frac_print(FILE *out, double x){
   int i;
@@ -147,6 +146,10 @@ static void equiv_read_comp(char *str_in, double x[4]){
       fprintf(stderr,"Parsing of %s failed at %c\n",str_in,*str);
       exit(1);
     }
+    if (denom==0) {
+      fprintf(stderr,"Failed to parse symmetry operation of %s\n",str_in);
+      exit(1);
+    }
     if (num==0) x[i]=sign;
     else x[i]=sign*num/denom;
     denom=sign=1;
@@ -173,7 +176,8 @@ void equiv_read(struct sym_op *s, struct unit_cell *c, char *line){
   p1=p2=line;
   if ((*p1=='"')||(*p1=='\'')){p1++;p2++;}
   for(i=0;i<3;i++){
-    while((*p2!=',')&&(*p2!='\n')&&(*p2!='"')&&(*p2!='\'')&&(*p2)) p2++;
+    while((*p2!=',')&&(*p2!='\n')&&(*p2!='\r')&&(*p2!='"')&&
+          (*p2!='\'')&&(*p2)) p2++;
     if (((*p2==0)||(*p2=='"')||(*p2=='\''))&&(i!=2))
       error_exit("Unexpected end of string in equiv_read");
     *p2=0;

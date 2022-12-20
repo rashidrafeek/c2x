@@ -333,12 +333,15 @@ void cell_write_common(FILE* outfile, struct unit_cell *c, struct contents *m,
     }
 
     fprintf(outfile,fmt3,v[0],v[1],v[2]);
-  } else if(k->n) {
+  }
+  else if(k->n) {
     fprintf(outfile,"\n%%block KPOINTS_LIST\n");
     for(i=0;i<k->n;i++)
       fprintf(outfile,fmt2,k->kpts[i].frac[0],
               k->kpts[i].frac[1],k->kpts[i].frac[2],k->kpts[i].wt);
     fprintf(outfile,"%%endblock KPOINTS_LIST\n");
   }
-
+  else if (k->spacing){
+    fprintf(outfile,"\nkpoint_mp_spacing %g\n",*k->spacing);
+  }
 }

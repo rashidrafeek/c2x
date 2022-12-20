@@ -68,24 +68,20 @@
 
 
 int match(char *s1, char *s2);
-int inrange(int x, char *range);
 void reverse4(void *data);
 void reverse8(void *data);
 void reverse4n(int *data,int n);
 void reverse8n(double *data,int n);
-static void wave_read(FILE *infile, int nkpts, double *kpts_pos,
-                      double *wkpt, int gamma, struct grid *g,
+static void wave_read(FILE *infile, struct kpts *kp,
+                      int gamma, struct grid *g,
                       struct es *elect, int *i_grid,struct contents *m);
-static void occ_read(FILE *infile, double* occ, double *kpts_pos, int nkpts,
-                     int nspins, int nbands);
-static int find_kpt(double *kpt, double *kpts_pos, int nkpts);
-void fft3d(double *c, int *ngptar, int dir);
-void pad_recip(double *o, int fft[3], double **nptr, int nfft[3]);
+static void occ_read(FILE *infile, struct es *elect, struct kpts *kpt);
+static int find_kpt(double *kpt, struct kpts *kp);
+void band2real(double *psi, double *out, int nfft[3], double kpoint[3]);
 
 /* variables shared with wavefunction reader */
 
 static int endian;
-static int nbands;
 static double *cr_cell_vol;
 
 void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
@@ -108,7 +104,7 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
   struct grid *gptr2;
   int section;
   char *spin_method;
-  int nspins;
+  int nbands,nspins;
   double cut,x;
   char *sym,*lab,*cptr,*cptr2;
   char dipole_correction[21];
@@ -134,6 +130,7 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
   section=1;
   ver_maj=ver_min=0;
   nspins=1;
+  nbands=0;
 
   if(debug>2) fprintf(stderr,"check_read called with flags=%d\n",flags);
 
@@ -231,6 +228,20 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
       SCAN("NUM_SYMMETRY_OPERATIONS",4,nsymops);
       SCAN("SYMMETRY_OPERATIONS",72*(*nsymops),sym_mat);
       SCAN("SYMMETRY_DISPS",24*(*nsymops),sym_disp);
+      if (match(head,"END_CELL_GLOBAL")){ /* We should have read kpoints */
+          /* Rescue k-points into sane structure */
+        if ((kpts_pos)&&(wkpts)){
+          if(!(kp->kpts=malloc((*nkpts)*sizeof(struct atom))))
+            error_exit("Malloc error for kpts");
+          for(i=0;i<*nkpts;i++){
+            for(j=0;j<3;j++) kp->kpts[i].frac[j]=kpts_pos[3*i+j];
+            kp->kpts[i].wt=wkpts[i];
+          }
+          kp->n=*nkpts;
+          free(wkpts); wkpts=NULL;
+          free(kpts_pos); kpts_pos=NULL;
+        }
+      }
       if (match(head,"CELL%SPECIES_POT")){ /* We don't really know */
 	fread(&tmp,4,1,infile);            /* the length of this record */
 	if (endian) reverse4(&tmp);
@@ -245,17 +256,24 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
         fseek(infile,4*12+4,SEEK_CUR);
         fread(&nbands,4,1,infile);
         if (endian) reverse4(&nbands);
+        elect->nbands=nbands;
         /* From Castep 16 nspins is always zero,
             so read spin_polarized instead */
         fseek(infile,4+16+2*12+4,SEEK_CUR);
         fread(&tmp,4,1,infile);  /* This is a logical */
         fseek(infile,4,SEEK_CUR);
-        if (tmp==0) elect->nspins=1;
-        else elect->nspins=2;
+        if (tmp==0) elect->nspins=elect->nbspins=1;
+        else elect->nspins=elect->nbspins=2;
         if (debug>1) fprintf(stderr,"Spins=%d  nbands=%d\n",
 			     elect->nspins,nbands);
 
-        fseek(infile,18+5*16 ,SEEK_CUR);
+        fseek(infile,18+4*16,SEEK_CUR);
+        fseek(infile,4,SEEK_CUR);
+        elect->charge=malloc(sizeof(double));
+        fread(elect->charge,8,1,infile);
+        if (endian) reverse8(elect->charge);
+        fseek(infile,4,SEEK_CUR);
+        
 
         if (ver_maj>=9){
           fread(&tmp,4,1,infile);
@@ -392,12 +410,12 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
       if (match(head,"wave")||match(head,"Gpt")){
 	if (match(head,"wave")){
 	  if ((flags&BANDS)||(flags&OCCUPANCIES)||(flags&BANDPARITY))
-            wave_read(infile, *nkpts, kpts_pos, wkpts, 0,
+            wave_read(infile, kp, 0,
                       gptr, elect, i_grid, m);
 	}
 	if (match(head,"Gpt")){
 	  if ((flags&BANDS)||(flags&OCCUPANCIES)||(flags&BANDPARITY))
-            wave_read(infile, *nkpts, kpts_pos, wkpts, 1,
+            wave_read(infile, kp, 1,
                       gptr, elect, i_grid, m);
 	}
 	section=4;
@@ -406,13 +424,13 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
 	    add_cmt(m->comment,"Wavefunction unscaled");
 	  else{
             if (flags&AU){
-              if ((flags&BANDDEN)==BANDDEN)
+              if (flags&BANDDEN)
                 add_cmt(m->comment,"Wavefunction as density in e Bohr^-3");
               else
                 add_cmt(m->comment,"Wavefunction in Bohr^-1.5");
             }
             else{
-              if ((flags&BANDDEN)==BANDDEN)
+              if (flags&BANDDEN)
                 add_cmt(m->comment,"Wavefunction as density in e A^-3");
               else
                 add_cmt(m->comment,"Wavefunction in A^-1.5");
@@ -435,11 +453,11 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
             snprintf(cbuff,CBUFF,"spin range: %s",elect->spin_range);
             add_cmt(m->comment,cbuff);
           }
-          for (i=1;i<*nkpts;i++){
+          for (i=1;i<kp->n;i++){
             if(inrange(i,elect->kpt_range)){
               snprintf(cbuff,CBUFF,"kpt %3d is (% f, % f, % f)",
-                       i,kpts_pos[(i-1)*3],kpts_pos[(i-1)*3+1],
-                       kpts_pos[(i-1)*3+2]);
+                       i,kp->kpts[i-1].frac[0],kp->kpts[i-1].frac[1],
+                       kp->kpts[i-1].frac[2]);
               add_cmt(m->comment,cbuff);
             }
           }
@@ -582,6 +600,7 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
     if (sym_disp) reverse8n(sym_disp,3*(*nsymops));
   }
 
+#if 0
   /* Rescue k-points into sane structure */
   if ((kpts_pos)&&(wkpts)){
     if(!(kp->kpts=malloc((*nkpts)*sizeof(struct atom))))
@@ -594,7 +613,8 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
     free(wkpts);
     free(kpts_pos);
   }
-
+#endif
+  
   if((mp_xyz)&&(mp_off)&&(mp_xyz[0])&&(mp_xyz[1])&&(mp_xyz[2])){
     if(!(kp->mp=malloc(sizeof(struct mp_grid))))
         error_exit("Malloc error for mp");
@@ -901,27 +921,28 @@ void reverse8n(double *data, int n){
    }
 }
 
-static void wave_read(FILE *infile, int nkpts, double *kpts_pos,
-                      double* wkpt, int gamma, struct grid *g,
+static void wave_read(FILE *infile, struct kpts *kp,
+                      int gamma, struct grid *g,
                       struct es *elect, int *i_grid, struct contents *m){
   int tmp,ns,b,i,k,nplwv,fft[3],ffft[3],fft_pts,dummy[5],offset,n0,n1,n2;
   int nsp,nspr;
   int *pwgrid=NULL;
   long fpos;
-  double *dptr1,*dptr2,*dptr3,sum,phase_r,phase_i,phase_r2,phase_i2,dtmp;
-  double max,min,conv,w;
-  double kpoint[3],phi,*occ;
-  int ii,jj,kk,ind,k2;
-  int nfft[3],nfft_pts;
-  char cbuff[CBUFF+1];
+  double *dptr1,*dptr2,*dptr3,sum;
+  double conv;
+  double kpoint[3],occ;
+  int k2;
+  int nfft[3],nfft_pts,nbands,nkpts;
   
   char *band_range,*kpt_range,*spin_range;
 
+  nkpts=kp->n;
+  
   band_range=elect->band_range;
   kpt_range=elect->kpt_range;
   spin_range=elect->spin_range;
+  nbands=elect->nbands;
   
-  occ=NULL;
   dptr2=NULL;
   nfft_pts=0;
   if (i_grid){
@@ -1015,6 +1036,7 @@ static void wave_read(FILE *infile, int nkpts, double *kpts_pos,
     if (debug>2) fprintf(stderr,"Resetting nbands from %d to %d."
           " Reading a .orbitals file?\n",nbands,dummy[1]);
     nbands=dummy[1];
+    elect->nbands=nbands;
   }
   if (dummy[2]!=nkpts){
     fprintf(stderr,"Confused about number of k-points. Is it %d or %d?\n",
@@ -1049,9 +1071,7 @@ static void wave_read(FILE *infile, int nkpts, double *kpts_pos,
 	fseek(infile,nbands*elect->nspinors*(8+16*(long)nplwv),SEEK_CUR);
       }
     }
-    occ=malloc(8*nkpts*elect->nspins*nbands);
-    if(!occ) error_exit("Malloc error for occs\n");
-    occ_read(infile,occ,kpts_pos,nkpts,elect->nspins,nbands);
+    occ_read(infile,elect,kp);
 
     /* Rest file pointer */
     fseek(infile,fpos,SEEK_SET);
@@ -1065,7 +1085,13 @@ static void wave_read(FILE *infile, int nkpts, double *kpts_pos,
       fread(&nplwv,4,1,infile);
       if (endian) reverse8n(kpoint,3);
       if (endian) reverse4(&nplwv);
-      k=1+find_kpt(kpoint,kpts_pos,nkpts);
+      /* Orbitals files may have the same kpt multiple times... */
+      if (aeq(kp->kpts[k2-1].frac[0],kpoint[0])&&
+          aeq(kp->kpts[k2-1].frac[1],kpoint[1])&&
+          aeq(kp->kpts[k2-1].frac[2],kpoint[2]))
+        k=k2;
+      else
+        k=1+find_kpt(kpoint,kp);
       if(debug>2) fprintf(stderr,"kpoint no %d (%f,%f,%f) nplwv=%d\n",
                           k,kpoint[0],kpoint[1],kpoint[2],nplwv);
       fseek(infile,4,SEEK_CUR);
@@ -1192,134 +1218,25 @@ static void wave_read(FILE *infile, int nkpts, double *kpts_pos,
 	    
 	    if (!(dptr3=malloc(8*nfft_pts)))
 	      error_exit("Malloc error in band read");
-	    
-	    if (((flags&BANDDEN)==BANDS)&&
-		((kpoint[0]!=0)||(kpoint[1]!=0)||(kpoint[2]!=0))){ /* want psi,
-                                                    but not at gamma! */
-	      if (debug)
-		fprintf(stderr,"unwinding psi for non-gamma k-point...\n");
-	      for(ii=0;ii<nfft[0];ii++){
-		for(jj=0;jj<nfft[1];jj++){
-		  for(kk=0;kk<nfft[2];kk++){
-		    phi=2*M_PI*((ii*kpoint[0])/nfft[0]+
-				(jj*kpoint[1])/nfft[1]+
-				(kk*kpoint[2])/nfft[2]);
-		    phase_r=cos(phi);
-		    phase_i=sin(phi);
-		    ind=2*(kk+nfft[2]*(jj+ii*nfft[1]));
-		    dtmp=dptr2[ind];
-		    dptr2[ind]=phase_r*dptr2[ind]-phase_i*dptr2[ind+1];
-		    dptr2[ind+1]=phase_r*dptr2[ind+1]+phase_i*dtmp;
-		  }
-		}
-	      }
-	    }
-	    phase_r=phase_i=phase_r2=phase_i2=0;
-	    for(i=0;i<nfft_pts;i++){
-	      if (dptr2[2*i]>0){
-		phase_r+=dptr2[2*i];
-		phase_i-=dptr2[2*i+1];
-	      }else{
-		phase_r2-=dptr2[2*i];
-		phase_i2+=dptr2[2*i+1];
-	      }
-	    } 
-	    phase_r+=phase_r2;
-	    phase_i+=phase_i2;
-	    dtmp=sqrt(phase_r*phase_r+phase_i*phase_i);
-	    phase_r/=dtmp;
-	    phase_i/=dtmp;
-	    ii=0;
-	    max=-1e300;
-	    min=1e300;
-	    for (i=0;i<nfft_pts;i++){
-	      if (flags&BANDPHASE){
-		dptr3[i]=atan2(dptr2[2*i+1],dptr2[2*i]);
-	      }
-	      else if (flags&BANDREAL){
-		dptr3[i]=dptr2[2*i];
-	      }
-	      else if (flags&BANDIMAG){
-		dptr3[i]=dptr2[2*i+1];
-	      }
-	      else
-		if ((flags&BANDDEN)==BANDDEN)
-		  dptr3[i]=dptr2[2*i]*dptr2[2*i]+dptr2[2*i+1]*dptr2[2*i+1];
-		else{
-		  dptr3[i]=dptr2[2*i]*phase_r-dptr2[2*i+1]*phase_i;
-		  dtmp=dptr2[2*i]*phase_i+dptr2[2*i+1]*phase_r;
-		  if((fabs(dtmp)>.05))ii++;
-		}
-	      sum+=dptr3[i];
-	      if(dptr3[i]<min) min=dptr3[i];
-	      if(dptr3[i]>max) max=dptr3[i];
-	    }
-	    if (debug>2) fprintf(stderr,"Min=%g Max=%g Sum=%g\n",min,max,sum);
-	    if (ii>0) fprintf(stderr,"Warning: %d components with imaginary"
-			      " part >0.05\n",ii);
+
+	    band2real(dptr2,dptr3,nfft,kpoint);
 	    free(dptr2);
+
 	    /* Do we need to rescale? */
 	    if (((flags&RAW)==0)&&((flags&BANDPHASE)==0)){ /* Yes */
-	      if ((flags&BANDDEN)==BANDDEN) conv=1/(*cr_cell_vol);
+	      if (flags&BANDDEN) conv=1/(*cr_cell_vol);
 	      else conv=1/sqrt(*cr_cell_vol);
 	      if (debug>2) fprintf(stderr,"Scaling wavefun by %f\n",conv);
 	      for(i=0;i<nfft_pts;i++) dptr3[i]*=conv;
 	    }
-	    /* Do we need to weight? */
-	    if ((flags&OCC_WEIGHT)||(flags&K_WEIGHT)){
-	      w=1;
-	      /* Care: ns loop starts at 0, k and b loops at 1 */
-	      if (flags&OCC_WEIGHT)
-		w*=occ[elect->nspins*nbands*(k-1)+ns*nbands+(b-1)];
-	      if (flags&K_WEIGHT)
-		w*=wkpt[k-1];
-	      /* If we want densities, and we do not have spins, each
-	       * band is doubly occupied */
-	      if ((elect->nspins==1)&&(elect->nspinors==1)&&(flags&BANDDEN))
-		w*=2;
-	      if ((w!=1)&&(!(flags&BANDDEN))) w=sqrt(w);
-	      if (debug)
-		fprintf(stderr,"Using weight %f for ns=%d k=%d band=%d\n",
-			w,ns,k,b);
-	      if (debug>1)
-		fprintf(stderr,"  kpt weight %f occupancy %f\n",
-			wkpt[k-1],
-			occ[elect->nspins*nbands*(k-1)+ns*nbands+(b-1)]);
-		
-	      if (w!=1)
-		for(i=0;i<nfft_pts;i++) dptr3[i]*=w;
-	    }
-	    if (!(flags&ACCUMULATE)){
-	      g->data=dptr3;
-	      for(i=0;i<3;i++) g->size[i]=nfft[i];
-	      g->name=malloc(40);
-	      if (elect->nspinors==2)
-		sprintf(g->name,"band_vs%d_k%d_b%d",nspr,k,b);
-	      else if (elect->nspins==2)
-		sprintf(g->name,"band_s%d_k%d_b%d",ns,k,b);
-	      else
-		sprintf(g->name,"band_k%d_b%d",k,b);
-	      g->next=malloc(sizeof(struct grid));
-	      g=g->next;
-	      g->data=NULL;
-	      g->next=NULL;
-              if ((flags&OCC_WEIGHT)||(flags&K_WEIGHT)){
-                snprintf(cbuff,CBUFF,
-                         "Weight %f used for spin %d kpt %d band %d",
-                         w,(elect->nspinors==2)?nspr:ns,k,b);
-                add_cmt(m->comment,cbuff);
-              }
-	    }else{  /* Are accumulating */
-	      if (!g->data){  /* This is the first set */
-		g->data=dptr3;
-		for(i=0;i<3;i++) g->size[i]=nfft[i];
-		g->name=malloc(40);
-		sprintf(g->name,"bands"); /* Don't move to a new grid */
-	      }else{
-		for(i=0;i<nfft_pts;i++) g->data[i]+=dptr3[i];
-		free(dptr3);
-	      }
-	    }
+
+	    /* Care: ns loop starts at 0, k and b loops at 1 */
+	    if (elect->occ)
+              occ=elect->occ[elect->nspins*nbands*(k-1)+ns*nbands+(b-1)];
+	    else
+              occ=1;
+	    band_store(&g,dptr3,occ,kp->kpts[k-1].wt,nspr,ns,k,b,elect,m,nfft);
+
 	  }  /* if (inrange) */
 	  else fseek(infile,16*nplwv+4,SEEK_CUR);
 	} /*for(nspr=...) */
@@ -1334,40 +1251,62 @@ static void wave_read(FILE *infile, int nkpts, double *kpts_pos,
     g->next=NULL;
   }    
   if (pwgrid) free(pwgrid);
-  if (occ) free(occ); /* And we have printed occupancies */
   else{
-    if (flags&OCCUPANCIES){
-      dptr1=malloc(8*nkpts*elect->nspins*nbands);
-      if(!dptr1) error_exit("Malloc error for occs\n");
-      occ_read(infile,dptr1,kpts_pos,nkpts,elect->nspins,nbands);
-      free(dptr1);
-    }
+    if (flags&OCCUPANCIES) occ_read(infile,elect,kp);
   }
 }
 
+
 /* Note that the two spinor components share the same occupancy */
-void occ_read(FILE *infile, double* occ, double *kpts_pos, int nkpts,
-              int nspins, int nbands){
-  int tmp,k,k2,ns,b,i;
-  double *dptr1,*dptr2,*evals,total;
+void occ_read(FILE *infile, struct es *elect, struct kpts *kp){
+  int i,tmp,k,k2,ns,nbands,nspins,hit;
+  double *dptr1,*dptr2;
   double kpoint[3];
 
-  if (!(evals=malloc(8*nbands*nspins*nkpts)))
+  nbands=elect->nbands;
+  nspins=elect->nspins;
+  hit=0;
+  
+  elect->occ=malloc(8*kp->n*elect->nspins*nbands);
+  if (!elect->occ) error_exit("Malloc error for occs\n");
+  if (!(elect->eval=malloc(8*nbands*nspins*kp->n)))
     error_exit("Malloc error for evals\n");
-  for (k2=0;k2<nkpts;k2++){
+  for (k2=0;k2<kp->n;k2++){
     fread(&tmp,4,1,infile);
     if (endian) reverse4(&tmp);
     if (tmp!=24) error_exit("Error parsing end of wavefunction");
     fread(kpoint,3*8,1,infile);
     if (endian) reverse8n(kpoint,3);
-    fseek(infile,4,SEEK_CUR); 
-    k=find_kpt(kpoint,kpts_pos,nkpts);
+    fseek(infile,4,SEEK_CUR);
+    /* Orbitals files may have the same kpt multiple times... */
+    if (aeq(kp->kpts[k2].frac[0],kpoint[0])&&
+          aeq(kp->kpts[k2].frac[1],kpoint[1])&&
+          aeq(kp->kpts[k2].frac[2],kpoint[2]))
+        k=k2;
+      else
+        k=find_kpt(kpoint,kp);
     for(ns=0;ns<nspins;ns++){
-      dptr1=occ+nspins*nbands*k+ns*nbands;
-      dptr2=evals+nspins*nbands*k+ns*nbands;
       fread(&tmp,4,1,infile);
       if (endian) reverse4(&tmp);
-      if (tmp!=8*nbands) error_exit("Error parsing end of wavefunction");
+      if (tmp!=8*nbands) {
+        if (((tmp&7)==0)&&(hit==0)){
+          fprintf(stderr,"Is nbands %d or %d?\n",nbands,tmp/8);
+          fprintf(stderr,"Assuming %d...\n",tmp/8);
+          nbands=tmp/8;
+          elect->nbands=tmp/8;
+          free(elect->occ);
+          elect->occ=malloc(8*kp->n*elect->nspins*nbands);
+          if (!elect->occ) error_exit("Malloc error for occs\n");
+          free(elect->eval);
+          if (!(elect->eval=malloc(8*nbands*nspins*kp->n)))
+            error_exit("Malloc error for evals\n");
+          hit=1;
+        }
+        else
+          error_exit("Error parsing end of wavefunction");
+      }
+      dptr1=elect->occ+nspins*nbands*k+ns*nbands;
+      dptr2=elect->eval+nspins*nbands*k+ns*nbands;
       fread(dptr1,8*nbands,1,infile);
       if (endian) reverse8n(dptr1,nbands);
       fseek(infile,4,SEEK_CUR);
@@ -1379,24 +1318,9 @@ void occ_read(FILE *infile, double* occ, double *kpts_pos, int nkpts,
       fseek(infile,4,SEEK_CUR);
     }
   }
-  if (flags&OCCUPANCIES){
-    fprintf(stderr,"              kpoint              band spin "
-	    " occupancy      evalue (eV)\n");
-    i=0;
-    total=0;
-    for(k=0;k<nkpts;k++)
-      for(ns=0;ns<nspins;ns++)
-        for(b=0;b<nbands;b++){
-	  fprintf(stderr,"( % 8f % 8f % 8f )  %3d  %d  %10f   %14f\n",
-		  kpts_pos[3*k],kpts_pos[3*k+1],kpts_pos[3*k+2],b+1,ns,
-                  occ[i],evals[i]*H_eV);
-          total+=occ[i];
-          i++;
-        }
-    fprintf(stderr,"                                  Total:  %11f\n",total);
-  }
-          
-  free(evals);
+  for(i=0;i<nspins*kp->n*nbands;i++)  /* Store evalues in eV */
+    elect->eval[i]*=H_eV;
+
 }
 
 
@@ -1432,7 +1356,7 @@ int inrange(int x, char *range){
 }
 
 
-static int find_kpt(double *kpt, double *kpts_pos, int nkpts){
+static int find_kpt(double *kpt, struct kpts *kp){
   int i;
   int hit;
   double old_tol;
@@ -1442,16 +1366,17 @@ static int find_kpt(double *kpt, double *kpts_pos, int nkpts){
   old_tol=tol;
   tol=1e-8;
   
-  for(i=0;i<nkpts;i++){
-    if((aeq(kpt[0],kpts_pos[3*i]))&&
-       (aeq(kpt[1],kpts_pos[3*i+1]))&&
-       (aeq(kpt[2],kpts_pos[3*i+2]))){
+  for(i=0;i<kp->n;i++){
+    if((aeq(kpt[0],kp->kpts[i].frac[0]))&&
+       (aeq(kpt[1],kp->kpts[i].frac[1]))&&
+       (aeq(kpt[2],kp->kpts[i].frac[2]))){
       if (hit==-1) hit=i;
       else{
         fprintf(stderr,"Confused: seem to have identical kpts at\n");
         fprintf(stderr,"%d (%f, %f, %f) and %d (%f, %f, %f)\n",
-                hit,kpts_pos[3*hit],kpts_pos[3*hit+1],kpts_pos[3*hit+2],
-                i,kpts_pos[3*i],kpts_pos[3*i+1],kpts_pos[3*i+2]);
+                hit,kp->kpts[hit].frac[0],kp->kpts[hit].frac[1],
+                kp->kpts[hit].frac[2],
+                i,kp->kpts[i].frac[0],kp->kpts[i].frac[1],kp->kpts[i].frac[2]);
       }
     }
   }
@@ -1463,4 +1388,145 @@ static int find_kpt(double *kpt, double *kpts_pos, int nkpts){
 
   tol=old_tol;
   return hit;
+}
+
+void band2real(double *psi, double *out, int nfft[3], double kpoint[3]){
+  double phase_r,phase_r2,phase_i,phase_i2,phi,dtmp;
+  double min,max,sum;
+  int i,ii,jj,kk,ind,nfft_pts;
+
+  nfft_pts=nfft[0]*nfft[1]*nfft[2];
+  
+  if ((!(flags&BANDDEN))&&
+      ((kpoint[0]!=0)||(kpoint[1]!=0)||(kpoint[2]!=0))){ /* want psi,
+							    but not at gamma! */
+    if (debug)
+      fprintf(stderr,"unwinding psi for non-gamma k-point...\n");
+    for(ii=0;ii<nfft[0];ii++){
+      for(jj=0;jj<nfft[1];jj++){
+	for(kk=0;kk<nfft[2];kk++){
+	  phi=2*M_PI*((ii*kpoint[0])/nfft[0]+
+		      (jj*kpoint[1])/nfft[1]+
+		      (kk*kpoint[2])/nfft[2]);
+	  phase_r=cos(phi);
+	  phase_i=sin(phi);
+	  ind=2*(kk+nfft[2]*(jj+ii*nfft[1]));
+	  dtmp=psi[ind];
+	  psi[ind]=phase_r*psi[ind]-phase_i*psi[ind+1];
+	  psi[ind+1]=phase_r*psi[ind+1]+phase_i*dtmp;
+	}
+      }
+    }
+  }
+  phase_r=phase_i=phase_r2=phase_i2=0;
+  for(i=0;i<nfft_pts;i++){
+    if (psi[2*i]>0){
+      phase_r+=psi[2*i];
+      phase_i-=psi[2*i+1];
+    }else{
+      phase_r2-=psi[2*i];
+      phase_i2+=psi[2*i+1];
+    }
+  } 
+  phase_r+=phase_r2;
+  phase_i+=phase_i2;
+  dtmp=sqrt(phase_r*phase_r+phase_i*phase_i);
+  phase_r/=dtmp;
+  phase_i/=dtmp;
+  ii=0;
+  max=-1e300;
+  min=1e300;
+  sum=0;
+  for (i=0;i<nfft_pts;i++){
+    if (flags&BANDPHASE){
+      out[i]=atan2(psi[2*i+1],psi[2*i]);
+    }
+    else if (flags&BANDREAL){
+      out[i]=psi[2*i];
+    }
+    else if (flags&BANDIMAG){
+      out[i]=psi[2*i+1];
+    }
+    else
+      if (flags&BANDDEN)
+	out[i]=psi[2*i]*psi[2*i]+psi[2*i+1]*psi[2*i+1];
+      else{
+	out[i]=psi[2*i]*phase_r-psi[2*i+1]*phase_i;
+	dtmp=psi[2*i]*phase_i+psi[2*i+1]*phase_r;
+	if((fabs(dtmp)>.05))ii++;
+      }
+    sum+=out[i];
+    if(out[i]<min) min=out[i];
+    if(out[i]>max) max=out[i];
+  }
+  if (debug>2) fprintf(stderr,"Min=%g Max=%g Sum=%g\n",min,max,sum);
+  if ((debug>1)&&(ii>0)) fprintf(stderr,"Warning: %d components with "
+			      " imaginary part >0.05\n",ii);
+
+}
+
+
+void band_store(struct grid **gp, double *dptr, double occ, double wkpt,
+		int nspr, int ns, int k, int b, struct es *elect,
+		struct contents *m, int fft[3]){
+  double w;
+  int i,nfft_pts;
+  char cbuff[100];
+  struct grid *g;
+
+  g=*gp;
+  nfft_pts=fft[0]*fft[1]*fft[2];
+  w=1;
+
+  /* Do we need to weight? */
+  if ((flags&OCC_WEIGHT)||(flags&K_WEIGHT)){
+    if (flags&OCC_WEIGHT) w=occ;
+    if (flags&K_WEIGHT) w*=wkpt;
+    /* If we want densities, and we do not have spins, each
+     * band is doubly occupied */
+    if ((elect->nspins==1)&&(elect->nspinors==1)&&(flags&BANDDEN))
+      w*=2;
+    if ((w!=1)&&(!(flags&BANDDEN))) w=sqrt(w);
+    if (debug)
+      fprintf(stderr,"Using weight %f for ns=%d k=%d band=%d\n",
+	      w,ns,k,b);
+    if (debug>1)
+      fprintf(stderr,"  kpt weight %f occupancy %f\n",wkpt,occ);
+    
+    if (w!=1)
+      for(i=0;i<nfft_pts;i++) dptr[i]*=w;
+  }
+  
+  if (!(flags&ACCUMULATE)){
+    g->data=dptr;
+    for(i=0;i<3;i++) g->size[i]=fft[i];
+    g->name=malloc(40);
+    if (elect->nspinors==2)
+      sprintf(g->name,"band_vs%d_k%d_b%d",nspr,k,b);
+    else if (elect->nspins==2)
+      sprintf(g->name,"band_s%d_k%d_b%d",ns,k,b);
+    else
+      sprintf(g->name,"band_k%d_b%d",k,b);
+    g->next=malloc(sizeof(struct grid));
+    g=g->next;
+    g->data=NULL;
+    g->next=NULL;
+    if ((flags&OCC_WEIGHT)||(flags&K_WEIGHT)){
+      snprintf(cbuff,CBUFF,
+	       "Weight %f used for spin %d kpt %d band %d",
+	       w,(elect->nspinors==2)?nspr:ns,k,b);
+      if (m) add_cmt(m->comment,cbuff);
+    }
+  }else{  /* Are accumulating */
+    if (!g->data){  /* This is the first set */
+      g->data=dptr;
+      for(i=0;i<3;i++) g->size[i]=fft[i];
+      g->name=malloc(40);
+      sprintf(g->name,"bands"); /* Don't move to a new grid */
+    }else{
+      for(i=0;i<nfft_pts;i++) g->data[i]+=dptr[i];
+      free(dptr);
+    }
+  }
+  *gp=g;
 }

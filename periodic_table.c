@@ -50,7 +50,7 @@ unsigned int atsym2no(char* sym){
     p1=sym;
     p2=table[i];
     while(*p1==' ') p1++;
-    while((*p1)&&(*p2)&&(!(((*p1)^(*p2))&31))){p1++;p2++;}
+    while((*p1)&&(*p2)&&(!(((*p1)^(*p2))&95))){p1++;p2++;}
     if(((*p1==0)||(*p1==' ')||(*p1==':'))&&(*p2==0)) return i;
   }
 

@@ -23,7 +23,6 @@
 #include "c2xsf.h"
 
 void vcross(double a[3],double b[3],double c[3]);
-double vmod2(double v[3]);
 
 /* Minimum distance between two points in periodic system */
 double dist(double a,double b){
@@ -47,10 +46,10 @@ int atom_sort(const void *a, const void *b);
 
 int super(struct unit_cell *c, struct contents *mtf,
            double new_basis[3][3], struct kpts *kp, struct symmetry *s, 
-           struct grid *gptr, int flags){
+           struct grid *gptr, int sflags){
   int i,j,k,l,m,na,at,old_fft[3],same,rhs,quiet,kpts_only;
   double old_basis[3][3],old_recip[3][3],old_vol,dtmp;
-  double new_in_old[3][3],abc[6];
+  double new_in_old[3][3],abc[6],vtmp[3];
   struct atom *old_atoms;
   int *atom_ctr;
   int old_natoms;
@@ -58,9 +57,9 @@ int super(struct unit_cell *c, struct contents *mtf,
   double corner, fscan_min[3],fscan_max[3],disp[3],new_abs[3],new_frac[3];
   double fft_res;
 
-  rhs=flags&1;
-  quiet=flags&2;
-  kpts_only=flags&4;
+  rhs=sflags&1;
+  quiet=sflags&2;
+  kpts_only=sflags&4;
 
   /* Correct new basis if not rhs and rhs wanted */
   /* Correction is exchange of 2nd and 3rd vectors */
@@ -199,20 +198,22 @@ int super(struct unit_cell *c, struct contents *mtf,
   c->vol=fabs(c->vol);
 
 
-  if (debug) fprintf(stderr,"New cell volume %f (%g times old)\n",
-               c->vol,c->vol/old_vol);
-  if (debug>1){
+  if (!quiet){
+    if (debug) fprintf(stderr,"New cell volume %f (%g times old)\n",
+                       c->vol,c->vol/old_vol);
+    if (debug>1){
       fprintf(stderr,"New basis set\n");
       for(i=0;i<=2;i++)
         fprintf(stderr,"%f %f %f\n",c->basis[i][0],
 		c->basis[i][1],c->basis[i][2]);
-  }
+    }
 
-  if (debug>2){
-    fprintf(stderr,"New reciprocal basis set\n");
+    if (debug>2){
+      fprintf(stderr,"New reciprocal basis set\n");
       for(i=0;i<=2;i++)
         fprintf(stderr,"%f %f %f\n",c->recip[i][0],
 		c->recip[i][1],c->recip[i][2]);
+    }
   }
 
   /* Deal with symmetry operations */
@@ -303,6 +304,7 @@ int super(struct unit_cell *c, struct contents *mtf,
                 exit(1);
               }
             }
+	    init_atoms(mtf->atoms+na,1);
             for(l=0;l<3;l++){
               mtf->atoms[na].frac[l]=new_frac[l];
               mtf->atoms[na].abs[l]=new_frac[0]*c->basis[0][l]+
@@ -313,7 +315,10 @@ int super(struct unit_cell *c, struct contents *mtf,
             mtf->atoms[na].wt=old_atoms[at].wt;
             mtf->atoms[na].spin=old_atoms[at].spin;
             mtf->atoms[na].chg=old_atoms[at].chg;
+            mtf->atoms[na].site_chg=old_atoms[at].site_chg;
             mtf->atoms[na].label=old_atoms[at].label;
+	    for(l=0;l<3;l++)
+	      mtf->atoms[na].force[l]=old_atoms[at].force[l];
 	    atom_ctr[na]=1;
             na++;
           }
@@ -339,14 +344,9 @@ int super(struct unit_cell *c, struct contents *mtf,
   free(atom_ctr);
 
   sort_atoms(mtf,1);
-  #if 0
-#ifdef QSORT
-  fprintf(stderr,"Calling qsort() na=%d\n",na);
-  qsort(mtf->atoms,(size_t)na,sizeof(struct atom),atom_sort);
-#endif
-#endif
   
-  if (debug>1) fprintf(stderr,"New cell: na=%d, mtf->n=%d\n",na,mtf->n);
+  if ((!quiet)&&(debug>1))
+    fprintf(stderr,"New cell: na=%d, mtf->n=%d\n",na,mtf->n);
 
   if (na!=mtf->n){
     if (quiet) return 1;
@@ -361,6 +361,7 @@ int super(struct unit_cell *c, struct contents *mtf,
 
   while((gptr)&&(gptr->data)){
     fft_res=0;
+    /* Find maximal grid point density */
     for(i=0;i<3;i++){
       dtmp=gptr->size[i]/sqrt(old_basis[i][0]*old_basis[i][0]+
                               old_basis[i][1]*old_basis[i][1]+
@@ -371,6 +372,13 @@ int super(struct unit_cell *c, struct contents *mtf,
     for(i=0;i<3;i++){
       old_fft[i]=gptr->size[i];
       gptr->size[i]=abc[i]*fft_res;
+      /* But if new axis simply a multiple of old, make new grid size
+       * that multiple of old too */
+      vcross(old_basis[i],c->basis[i],vtmp);
+      if (vmod2(vtmp)<1e-6*vmod2(old_basis[i])){
+        dtmp=sqrt(vmod2(c->basis[i])/vmod2(old_basis[i]));
+        gptr->size[i]=old_fft[i]*dtmp+0.5;
+      }
       to235(gptr->size+i);
     }
     if (debug) fprintf(stderr,"New FFT grid is %d %d %d\n",
@@ -463,4 +471,115 @@ void grid_interp(struct unit_cell *c, struct grid *grid, int old_fft[3],
 
   if (debug>1) fprintf(stderr,"On new grid sum=%g int=%g\n",sum,
                      sum*c->vol/(grid->size[0]*grid->size[1]*grid->size[2]));
+}
+
+/* Independent code for the simple case of new vectors being integer
+ * multiples of old
+ */
+
+void simple_super(struct unit_cell *c, struct contents *m,
+           int expand[3], struct kpts *kp, struct symmetry *s, 
+           struct grid *gptr){
+  double new_basis[3][3],old_basis[3][3],*dptr;
+  int new_fft[3],old_fft[3];
+  int i,j,k,p,q,old_n;
+  int ii,jj,kk;
+  int old_off,new_off;
+  struct atom *old_atoms;
+  
+  if ((expand[0]==1)&&(expand[1]==1)&&(expand[2]==1)) return;
+
+  for(i=0;i<3;i++)
+    if(expand[i]<1) error_exit("Invalid cell tranformation");
+
+  if (debug>1)
+    fprintf(stderr,"Cell expansion by %dx%dx%d\n",
+            expand[0],expand[1],expand[2]);
+
+  for(i=0;i<3;i++)
+    for(j=0;j<3;j++)
+      old_basis[i][j]=c->basis[i][j];
+  old_atoms=m->atoms;
+  old_n=m->n;
+
+  /* k-points */
+
+  for(i=0;i<3;i++)
+    for(j=0;j<3;j++)
+      new_basis[i][j]=expand[i]*c->basis[i][j];
+
+  if (debug){
+    fprintf(stderr,"New basis:\n");
+    print_basis(new_basis);
+  }
+  
+  super(c,m,new_basis,kp,s,gptr,4);
+
+  /* New basis */
+
+  for(i=0;i<3;i++)
+    for(j=0;j<3;j++)
+      c->basis[i][j]=new_basis[i][j];
+  real2rec(c);
+  c->vol=fabs(c->vol);
+  
+  /* Deal with symmetry operations */
+
+  if (s) sym_basis(s,c);
+
+  /* Atoms */
+  
+  m->n*=expand[0]*expand[1]*expand[2];
+  m->atoms=malloc(m->n*sizeof(struct atom));
+  if (!m->atoms) error_exit("Malloc error for expanded atoms");
+
+  q=0;
+  for(i=0;i<expand[0];i++){
+    for(j=0;j<expand[1];j++){
+      for(k=0;k<expand[2];k++){
+	for(p=0;p<old_n;p++){
+	  m->atoms[q]=old_atoms[p];
+	  for(ii=0;ii<3;ii++)
+	    m->atoms[q].abs[ii]+=i*old_basis[0][ii];
+	  for(ii=0;ii<3;ii++)
+	    m->atoms[q].abs[ii]+=j*old_basis[1][ii];
+	  for(ii=0;ii<3;ii++)
+	    m->atoms[q].abs[ii]+=k*old_basis[2][ii];
+	  q++;
+	}
+      }
+    }
+  }
+
+  addfrac(m->atoms,m->n,c->recip);
+
+  free(old_atoms);
+
+  /* Worry about grids */
+
+  while((gptr)&&(gptr->data)){  
+    for(i=0;i<3;i++)
+      old_fft[i]=gptr->size[i];
+    for(i=0;i<3;i++)
+      new_fft[i]=expand[i]*old_fft[i];
+    dptr=malloc(new_fft[0]*new_fft[1]*new_fft[2]*sizeof(double));
+    if (!dptr) error_exit("Malloc error for new grid");
+    for(i=0;i<new_fft[0];i++){
+      ii=i%old_fft[0];
+      for(j=0;j<new_fft[1];j++){
+	jj=j%old_fft[1];
+	for(k=0;k<new_fft[2];k++){
+	  kk=k%old_fft[2];
+	  old_off=kk+old_fft[2]*(jj+ii*old_fft[1]);
+	  new_off=k+new_fft[2]*(j+i*new_fft[1]);
+	  dptr[new_off]=gptr->data[old_off];
+	}
+      }
+    }
+    free(gptr->data);
+    gptr->data=dptr;
+    for(i=0;i<3;i++)
+      gptr->size[i]=new_fft[i];
+    gptr=gptr->next;
+  }
 }

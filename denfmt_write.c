@@ -58,9 +58,9 @@ void denfmt_write(FILE* outfile, struct unit_cell *c, struct contents *m,
   ngrids=0;
   gptr=g;
   for(i=0;i<3;i++) nfft[i]=g->size[i];
+  same=1;
   while(gptr){
     if (gptr->data){
-      same=1;
       for(i=0;i<3;i++) if (gptr->size[i]!=nfft[i]) same=0;
       if (same) ngrids++;
       else break;
