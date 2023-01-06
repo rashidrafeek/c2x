@@ -30,7 +30,7 @@ void abinit_write(FILE* outfile, struct unit_cell *c, struct contents *m,
     
   /* The cell */
   
-  cart2abc(c,NULL,abc,NULL,0);
+  cart2abc(c,NULL,abc,NULL);
   for(i=0;i<3;i++) acell[i]=abc[i];
 
   /* Abinit likes to make rprim into rationals by modifying acell.

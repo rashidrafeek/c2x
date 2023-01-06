@@ -59,7 +59,7 @@ void xplor_write(FILE* outfile, struct unit_cell *c, struct contents *m,
                                                  g->size[1],0,g->size[1]-1,
                                                  g->size[2],0,g->size[2]-1);
 
-  cart2abc(c,m,abc,NULL,1);
+  cart2abc(c,m,abc,NULL);
   fprintf(outfile," %11f %11f %11f %11f %11f %11f\n",abc[0],abc[1],abc[2],
                                                      abc[3],abc[4],abc[5]);
 

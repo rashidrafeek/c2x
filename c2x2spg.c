@@ -1,6 +1,6 @@
 /* Interface between c2x and spglib */
 
-/* Copyright (c) 2014 -- 2019 MJ Rutter 
+/* Copyright (c) 2014 -- 2022 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -28,7 +28,6 @@
 
 #include "c2xsf.h"
 
-void vcross(double a[3],double b[3],double c[3]); /* From ident_sym.c */
 int is_rhs(double b[3][3]); /* From basis.c */
 
 void rotate(double v[3], double axis[3], double theta);
@@ -404,6 +403,10 @@ int cspg_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
     else{
       m->n=natoms2;
       s->n=0;
+      if (c->primitive){
+	free_cell(c->primitive);
+	c->primitive=NULL;
+      }
     }
   }
 
@@ -417,7 +420,13 @@ int cspg_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
     }
     else{
       m->n=natoms2;
-      s->n=0;
+      if (op&CSPG_STD_IDEAL) {
+	s->n=0;
+	if (c->primitive){
+	  free_cell(c->primitive);
+	  c->primitive=NULL;
+	}
+      }
     }
   }
     
@@ -431,6 +440,10 @@ int cspg_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
     else{
       m->n=natoms2;
       s->n=0;
+      if (c->primitive){
+	free_cell(c->primitive);
+	c->primitive=NULL;
+      }
     }
   }
 
@@ -442,7 +455,6 @@ int cspg_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
       error_exit("spglib finds no primitive cell\n");
     else{
       m->n=natoms2;
-      s->n=0;
     }
   }
       
@@ -477,15 +489,26 @@ int cspg_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
 	new_basis[j][i]=spg_latt[i][j];
     super(c,m,new_basis,kp,NULL,NULL,4);
   }
-  
+
   for(i=0;i<3;i++)
     for(j=0;j<3;j++)
       c->basis[j][i]=spg_latt[i][j];
   real2rec(c);
 
-  if (debug&&(op&CSPG_PRIM_NR)){
-    fprintf(stderr,"Old basis in terms of new: ");
-    old_in_new(old_basis,c->recip);
+  if (op==CSPG_PRIM_LATT){
+    free(auid);
+    free(spg_type);
+    free(spg_pos);
+    return 0;
+  }
+  
+  if (debug&&(op&CSPG_PRIM_NR))
+    print_old_in_new(old_basis,c->basis);
+
+  /* Should we retain old sym-ops? */
+  
+  if ((op&(CSPG_PRIM_NR|CSPG_STD))&&(s->n)){
+    sym_basis(s,c);
   }
   
   free(m->atoms);
@@ -510,7 +533,7 @@ int cspg_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
   if ((op&(CSPG_SYM|CSPG_PNT))&&(s->n)) {
     s->ops=sym_frac2abs(spg->rotations,spg->translations,c,s->n);
     if (op&CSPG_LST)
-      for(i=0;i<s->n;i++) ident_sym(&s->ops[i],c,stderr);
+      for(i=0;i<s->n;i++) ident_sym(&s->ops[i],c,m,stderr);
   }
 
   free(auid);
@@ -596,37 +619,37 @@ int cspg_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
 #else
 int cspg_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
             struct kpts *kp, int op, double tolmin){
-    fprintf(stderr,"Error: spglib functionality not available"
-	    " in this version of c2x\n");
-    exit(1);
-  }
+  fprintf(stderr,"Error: spglib functionality not available"
+	  " in this version of c2x\n");
+  exit(1);
+}
 
-  void cspg_hall2sym(int hall, struct unit_cell *c, struct symmetry *s){
-    if (hall==1) return;
-    fprintf(stderr,"Error: spglib functionality not available"
-	    " so cannot expand spacegroup\n");
-    exit(1);
-  }
+void cspg_hall2sym(int hall, struct unit_cell *c, struct symmetry *s){
+  if (hall==1) return;
+  fprintf(stderr,"Error: spglib functionality not available"
+	  " so cannot expand spacegroup\n");
+  exit(1);
+}
 
 #endif
 
-  /* Does space group have two possible origins? */
-  int spgr_is_double(int spgr){
-    int doubles[]={48,50,59,70,85,86,88,125,126,129,130,133,
-		   134,137,138,141,142,201,203,222,224,227,228,0};
-    int i,hit;
-
-    hit=0;
-    i=0;
-    while(doubles[i]){
-      if (doubles[i]==spgr){
-	hit=1;
-	break;
-      }
-      i++;
+/* Does space group have two possible origins? */
+int spgr_is_double(int spgr){
+  int doubles[]={48,50,59,70,85,86,88,125,126,129,130,133,
+    134,137,138,141,142,201,203,222,224,227,228,0};
+  int i,hit;
+  
+  hit=0;
+  i=0;
+  while(doubles[i]){
+    if (doubles[i]==spgr){
+      hit=1;
+      break;
     }
-    return hit;
+    i++;
   }
+  return hit;
+}
 
 
   void rotate(double v[3], double axis[3], double theta){
@@ -813,3 +836,5 @@ int cspg_op(struct unit_cell *c, struct contents *m, struct symmetry *s,
 
   }
 #endif
+
+

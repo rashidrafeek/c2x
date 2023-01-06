@@ -391,10 +391,11 @@ void abinit_charge_read(FILE* infile, struct unit_cell *c,
 void abinit_psi_read(FILE* infile, struct unit_cell *c,
                      struct contents *m, struct kpts *kp, struct grid *gptr,
                      struct es *elect, int *i_grid){
-  int i,j,ikpt,nb,isppol;
+  int i,j,ikpt,nb,isppol,junk;
   int reclen,fft[3],fileform,*gamma;
   int npw,nspinor,ispinor,nbnd,off;
   int *pwgrid;
+  long bytes_to_skip;
   double *dptr;
 
   dict_add(m->dict,"band_read_order",NULL); /* Delete any old entry */
@@ -435,14 +436,14 @@ void abinit_psi_read(FILE* infile, struct unit_cell *c,
         fprintf(stderr,"Gamma point storage for this kpt\n");
       fread(&nspinor,4,1,infile);
       fread(&nbnd,4,1,infile);
-      fseek(infile,4,SEEK_CUR);
+      fread(&junk,1,4,infile);
       if (nbnd>elect->nbands) error_exit("nbnd for kpt > nbands");
       pwgrid=realloc(pwgrid,3*npw*sizeof(int));
       if (!pwgrid) error_exit("Malloc error for pwgrid");
       fread(&reclen,4,1,infile);
       if (reclen!=12*npw) error_exit("Unexpected record length for npw");
       fread(pwgrid,4,3*npw,infile);
-      fseek(infile,4,SEEK_CUR);
+      fread(&junk,1,4,infile);
       for(i=0;i<3;i++)
         for(j=0;j<npw;j++)
           if (pwgrid[3*j+i]<0) pwgrid[3*j+i]+=fft[i];
@@ -454,18 +455,23 @@ void abinit_psi_read(FILE* infile, struct unit_cell *c,
       /* Abinit has band occupancy of two if nbspins=1 */
       if (elect->nbspins==1)
         for(i=0;i<nbnd;i++) elect->occ[off+i]*=0.5;
-      fseek(infile,4,SEEK_CUR);
+      fread(&junk,1,4,infile);
+      bytes_to_skip=0;
       for(nb=0;nb<nbnd;nb++){
-        i=fread(&reclen,4,1,infile);
-        if (reclen!=16*npw*nspinor){
-          error_exit("Unexpected record length for band");
-        }
         if ((flags&BANDPARITY||((flags&BANDS)&&
 				((inrange(nb+1,elect->band_range))&&
 				 (inrange(ikpt+1,elect->kpt_range))&&
 				 ((elect->nbspins==1)||
                                   (inrange(isppol,elect->spin_range))))))){
           if (debug>1) fprintf(stderr,"Reading band %d\n",nb+1);
+	  if (bytes_to_skip){
+	    fseek(infile,bytes_to_skip,SEEK_CUR);
+	    bytes_to_skip=0;
+	  }
+	  i=fread(&reclen,4,1,infile);
+	  if (reclen!=16*npw*nspinor){
+	    error_exit("Unexpected record length for band");
+	  }
           for(ispinor=1;ispinor<=nspinor;ispinor++){
             dptr=malloc(16*npw);
             if (!dptr) error_exit("Malloc error for band");
@@ -485,8 +491,12 @@ void abinit_psi_read(FILE* infile, struct unit_cell *c,
 	   free(dptr); 
           } /* end spinor loop */
         }
-        else fseek(infile,reclen+4,SEEK_CUR);
+        else bytes_to_skip+=16*npw*nspinor+8;
       } /* end for bands */
+      if (bytes_to_skip){
+	fseek(infile,bytes_to_skip,SEEK_CUR);
+	bytes_to_skip=0;
+      }
     }
   }
   if (pwgrid) free(pwgrid);

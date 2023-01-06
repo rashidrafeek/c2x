@@ -36,7 +36,7 @@ void cml_write(FILE* outfile, struct unit_cell *c, struct contents *m){
   fprintf(outfile,"<?xml version=\"1.0\"?>\n"
          "<molecule xmlns=\"http://www.xml-cml.org/schema\">\n");
 
-  cart2abc(c,m,abc,NULL,1);
+  cart2abc(c,m,abc,NULL);
 
   fprintf(outfile,
       "<crystal xmlns:cmldict=\"http://www.xml-cml.org/dict/cmlDict\">\n");

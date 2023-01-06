@@ -1,4 +1,3 @@
-/* Conversion to arbitrary, specified supercells, with grid interpolation */
 
 /* Copyright (c) 2015 MJ Rutter 
  * 
@@ -76,3 +75,36 @@ void sort_atoms(struct contents *mtf, int sort_style){
 
 }
 
+int symop_cmp(const void *a1, const void *b1){
+  struct sym_op *a = (struct sym_op *) a1;
+  struct sym_op *b = (struct sym_op *) b1;
+
+  double mult_a,mult_b;
+
+  mult_a=ident_sym(a,NULL,NULL,NULL);
+  if (mult_a<0) mult_a=fabs(mult_a)+0.5;
+
+  mult_b=ident_sym(b,NULL,NULL,NULL);
+  if (mult_b<0) mult_b=fabs(mult_b)+0.5;
+  
+  if (mult_a>mult_b) return(1);
+  if (mult_a<mult_b) return(-1);
+  if ((!a->tr)&&(!b->tr)) return(0);
+  if ((a->tr)&&(!b->tr)) return(1);
+  if ((b->tr)&&(!a->tr)) return(-1);
+  if (vmod2(a->tr)>vmod2(b->tr)) return(1);
+  if (vmod2(b->tr)>vmod2(a->tr)) return(-1);
+  if (a->tr[0]>b->tr[0]) return(1);
+  if (b->tr[0]>a->tr[0]) return(-1);
+  if (a->tr[1]>b->tr[1]) return(1);
+  if (b->tr[1]>a->tr[1]) return(-1);
+  if (a->tr[2]>b->tr[2]) return(1);
+  if (b->tr[2]>a->tr[2]) return(-1);
+  return 0;
+}
+  
+void sort_symops(struct symmetry *s, int sort_style){
+
+  qsort(s->ops,s->n,sizeof(struct sym_op),symop_cmp);
+  
+}

@@ -209,7 +209,7 @@ void cell_write_abc(FILE* outfile, struct unit_cell *c, struct contents *m,
                     struct kpts *k, struct symmetry *s){
   double abc[6];
 
-  cart2abc_sym(c,m,abc,NULL,1,s);
+  cart2abc_sym(c,m,abc,NULL,s);
 
   if (m->title)
     fprintf(outfile,"#TITL %s\n",m->title);
@@ -245,7 +245,7 @@ void cell_write_abc_abs(FILE* outfile, struct unit_cell *c, struct contents *m,
                         struct kpts *k, struct symmetry *s){
   double abc[6];
 
-  cart2abc_sym(c,m,abc,NULL,1,s);
+  cart2abc_sym(c,m,abc,NULL,s);
 
   if (m->title)
     fprintf(outfile,"#TITL %s\n",m->title);
@@ -303,6 +303,7 @@ void cell_write_common(FILE* outfile, struct unit_cell *c, struct contents *m,
   }
 
   if ((s->ops)&&(s->n>1)){
+    if (debug) fprintf(outfile,"\n! %d symmetry operations",s->n);
     fprintf(outfile,"\n%%block SYMMETRY_OPS");
     for(i=0;i<s->n;i++){
       fprintf(outfile,"\n");
@@ -310,7 +311,7 @@ void cell_write_common(FILE* outfile, struct unit_cell *c, struct contents *m,
         fprintf(outfile,"! ");
         equiv_sym(s->ops+i,c,outfile);
         fprintf(outfile,"! ");
-        ident_sym(s->ops+i,c,outfile);
+        ident_sym(s->ops+i,c,m,outfile);
       }
       /* Note transpose on output */
       for(j=0;j<3;j++)

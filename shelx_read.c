@@ -1,7 +1,7 @@
 /* A very simplistic SHELX reader */
 
 
-/* Copyright (c) 2013 MJ Rutter 
+/* Copyright (c) 2013, 2021 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -98,7 +98,7 @@ void shelx_read(FILE* infile, struct unit_cell *c, struct contents *m){
 				    * atomic species */
       cptr=cptr2+1;
       while(*cptr!=0){
-	while(*cptr==' ') cptr++;
+	while(isspace(*cptr)) cptr++;
 	cptr2=cptr;
 	while(isalpha(*cptr2)) cptr2++;
 	*cptr2=0;

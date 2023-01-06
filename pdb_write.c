@@ -61,14 +61,14 @@ void pdb_write(FILE* outfile, struct unit_cell *c, struct contents *m){
   if (m->n>99999)
     error_exit("Cannot write pdb file with more than 99,999 atoms");
   
-  if (flags&PDBN){
+  if (flags&ALT_OUT){
     n_in_el=calloc(periodic_max_el+1,sizeof(int));
     if (!n_in_el) error_exit("Calloc error in pdbn_write");
   }
 
   fprintf(outfile,"REMARK written by c2x\n");
 
-  cart2abc(c,m,abc,NULL,1);
+  cart2abc(c,m,abc,NULL);
   fprintf(outfile,"CRYST1 %8.3f %8.3f %8.3f %6.2f %6.2f %6.2f P 1"
                   "           1\n",
                   abc[0],abc[1],abc[2],abc[3],abc[4],abc[5]);
@@ -76,7 +76,7 @@ void pdb_write(FILE* outfile, struct unit_cell *c, struct contents *m){
 /* Ditch chain identifier (X)? */
 
   for(i=0;i<m->n;i++)
-    if (flags&PDBN){
+    if (flags&ALT_OUT){
       fprintf(outfile,"ATOM  %5d ",i+1);
       if(++n_in_el[min(m->atoms[i].atno,periodic_max_el)]<=99)
           fprintf(outfile,"%2s%02d",atno2sym(m->atoms[i].atno),
@@ -97,5 +97,5 @@ void pdb_write(FILE* outfile, struct unit_cell *c, struct contents *m){
                      m->atoms[i].abs[1],m->atoms[i].abs[2],atno2sym(m->atoms[i].atno));
 
   fprintf(outfile,"END\n");
-  if (flags&PDBN) free(n_in_el);
+  if (flags&ALT_OUT) free(n_in_el);
 }

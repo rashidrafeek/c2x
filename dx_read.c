@@ -106,7 +106,7 @@ void dx_read(FILE* infile,struct unit_cell *c, struct grid *gptr){
       while(isspace(*cptr)) cptr++;
       if ((strstr(cptr,"class"))&&(strstr(cptr,"field"))&&(*cptr=='"')){
 	cptr++;
-	cptr2=index(cptr,'"');
+	cptr2=strchr(cptr,'"');
 	if (cptr2){
 	  *cptr2=0;
 	  gptr->name=malloc((cptr2-cptr)+1);

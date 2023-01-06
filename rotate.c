@@ -26,8 +26,6 @@
 
 #include "c2xsf.h"
 
-int is_rhs(double b[3][3]); /* Found in basis.c */
-
 void rotation(struct unit_cell *c, struct contents *m, double new_cell[3][3]){
   double v1[3],v2[3],e[3],angle,tmp;
   double rot_mat[3][3];
@@ -180,4 +178,9 @@ void rotation(struct unit_cell *c, struct contents *m, double new_cell[3][3]){
   addabs(m->atoms,m->n,c->basis);
   real2rec(c);
 
+  if (c->primitive){
+    free_cell(c->primitive);
+    c->primitive=NULL;
+  }
+  
 }

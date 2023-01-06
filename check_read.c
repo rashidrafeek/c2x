@@ -47,7 +47,7 @@
     if ((!targ)&&!(targ=malloc(len_x))) error_exit("Malloc error in " #x); \
     fread(targ,len_x,1,infile); \
     if (endian && (len_x==4)) reverse4(targ); \
-    fseek(infile,4,SEEK_CUR); \
+    fread(junk,4,1,infile);				    \
     if (debug>2) fprintf(stderr,"Found %s, %d bytes\n", #x, len_x); \
   }
 
@@ -62,7 +62,7 @@
     if ((!targ)&&!(targ=malloc(len_x))) error_exit("Malloc error in " #x); \
     fread(targ,len_x,1,infile); \
     if (endian) reverse8n(targ,len_x/8);		\
-    fseek(infile,4,SEEK_CUR); \
+    fread(junk,4,1,infile);				    \
     if (debug>2) fprintf(stderr,"Found %s, %d bytes\n", #x, len_x); \
   }
 
@@ -85,7 +85,7 @@ static double *cr_cell_vol;
 void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
                 struct kpts *kp, struct symmetry *s, struct grid *gptr,
                 struct es *elect, int *i_grid){
-  int tmp,okay;
+  int tmp,junk[2],okay;
   char head[HEAD_LEN+1];
   char cbuff[CBUFF+1];
   int i,j,k,density,na,fft[3],ion_sym_len,ps_pot_len,ver_maj,ver_min;
@@ -182,7 +182,7 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
     head[i]=0;
     if (debug>3) fprintf(stderr,"%d: %.4s\n",tmp,head);
     if (i<tmp) fseek(infile,tmp-i,SEEK_CUR);
-    fseek(infile,4,SEEK_CUR); /* capricious */
+    fread(junk,4,1,infile); /* Fortran end of record length marker ignored */
 
     /* Need to find version of file so that we know how long the ionic
      * species symbol records will be. Version is stored in ASCII
@@ -197,7 +197,8 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
         if (endian) reverse4(&tmp);
         i=(tmp<HEAD_LEN)? tmp : HEAD_LEN;
         fread(head,i,1,infile);
-        fseek(infile,4,SEEK_CUR);
+	if (i<tmp) fseek(infile,tmp-i,SEEK_CUR);
+        fread(junk,4,1,infile);
         head[i]=0;
         j=0;
         ver_maj=0;
@@ -347,7 +348,7 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
           fread(&cut,8,1,infile);
           if (endian) reverse8(&cut);
           elect->cut_off=cut*H_eV;
-          fseek(infile,4,SEEK_CUR);
+	  fread(junk,4,1,infile);
         }
         else fseek(infile,4+tmp,SEEK_CUR);
         
@@ -534,7 +535,7 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
 		gptr=grid_new(gptr);
 		gptr->name="Density";
 		for(i=0;i<3;i++) gptr->size[i]=fft[i];
-		gptr->data=malloc(8*fft[0]*fft[1]*fft[2]);
+		gptr->data=malloc(8L*fft[0]*fft[1]*fft[2]);
 		if (!gptr->data){
 		  fprintf(stderr,"Error allocating density grid\n");
 		  exit(1);
@@ -545,7 +546,7 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
 		gptr2=grid_new(gptr2);
 		gptr2->name="Spin";
 		for(i=0;i<3;i++) gptr2->size[i]=fft[i];
-		gptr2->data=malloc(8*fft[0]*fft[1]*fft[2]);
+		gptr2->data=malloc(8L*fft[0]*fft[1]*fft[2]);
 		if (!gptr2->data){
 		  fprintf(stderr,"Error allocating density grid\n");
 		  exit(1);
@@ -597,7 +598,7 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
                 }
 		else if (nspins==4)
 		  fseek(infile,48*fft[2],SEEK_CUR);
-                fseek(infile,4,SEEK_CUR);
+                fread(junk,4,1,infile);
                 fread(&tmp,4,1,infile);
                 if (endian) reverse4(&tmp);
               } /* end while(tmp==(spins... ) */
@@ -628,7 +629,7 @@ void check_read(FILE* infile, struct unit_cell *c, struct contents *m,
 		add_cmt(m->comment,"Densities unscaled, e per unit cell");
               if (gptr2) gptr=gptr2;
             } /* end if ((flags&CHDEN)||(flags&SPINDEN)) */
-            else fseek(infile,(nspins*16*fft[2]+16)*fft[1]*fft[0]-4,
+            else fseek(infile,(nspins*16L*fft[2]+16)*fft[1]*fft[0]-4,
 		       SEEK_CUR);
             density=1;
             section=5;
@@ -1054,10 +1055,10 @@ void reverse8n(double *data, int n){
 static void wave_read(FILE *infile, struct kpts *kp,
                       int gamma, struct grid *g, struct unit_cell *c,
                       struct es *elect, int *i_grid, struct contents *m){
-  int tmp,ns,b,i,k,nplwv,fft[3],dummy[5];
+  int tmp,junk[2],ns,b,i,k,nplwv,fft[3],dummy[5];
   int nsp,nspr;
   int *pwgrid=NULL,*pwg2=NULL;
-  long fpos;
+  long fpos,bytes_to_skip;
   double *dptr1;
   double kpoint[3];
   int k2;
@@ -1107,7 +1108,7 @@ static void wave_read(FILE *infile, struct kpts *kp,
   if (tmp!=12) error_exit("Error parsing wavefunction");
 
   fread(fft,12,1,infile);
-  fseek(infile,4,SEEK_CUR);
+  fread(junk,4,1,infile);
   if (endian) {
      reverse4(fft);
      reverse4(fft+1);
@@ -1180,9 +1181,9 @@ static void wave_read(FILE *infile, struct kpts *kp,
        	fseek(infile,24,SEEK_CUR);
 	fread(&nplwv,4,1,infile);
 	if (endian) reverse4(&nplwv);
-	fseek(infile,4,SEEK_CUR);
+	/* fseek(infile,4,SEEK_CUR);  - add to next fseek */
 	/* Skip three plane wave to grid component arrays */
-	fseek(infile,3*(8+4*(long)nplwv),SEEK_CUR);
+	fseek(infile,4+3*(8+4*(long)nplwv),SEEK_CUR);
 	/* Skip nbands*nspinors complex wavefunction */
 	fseek(infile,nbands*elect->nspinors*(8+16*(long)nplwv),SEEK_CUR);
       }
@@ -1196,7 +1197,9 @@ static void wave_read(FILE *infile, struct kpts *kp,
   for(ns=0;ns<elect->nbspins;ns++){
     for(k2=1;k2<=nkpts;k2++){
 /* record of kpoint[3],nplwv */
-      fseek(infile,4,SEEK_CUR);
+      fread(&tmp,4,1,infile);
+      if (endian) reverse4(&tmp);
+      if (tmp!=3*8+4) error_exit("Error parsing kpoint");
       fread(kpoint,3*8,1,infile);
       fread(&nplwv,4,1,infile);
       if (endian) reverse8n(kpoint,3);
@@ -1210,7 +1213,7 @@ static void wave_read(FILE *infile, struct kpts *kp,
         k=1+find_kpt(kpoint,kp);
       if(debug>2) fprintf(stderr,"kpoint no %d (%f,%f,%f) nplwv=%d\n",
                           k,kpoint[0],kpoint[1],kpoint[2],nplwv);
-      fseek(infile,4,SEEK_CUR);
+      fread(junk,4,1,infile);
 /* Read component to FFT grid mapping */
       fread(&tmp,4,1,infile);
       if (endian) reverse4(&tmp);
@@ -1220,11 +1223,11 @@ static void wave_read(FILE *infile, struct kpts *kp,
 	  ((elect->nspinors==2)||(inrange(ns,spin_range)))){
         if (!(pwgrid=malloc(12*nplwv))) error_exit("Malloc error for pwgrid");
         fread(pwgrid,tmp,1,infile);
-        fseek(infile,8,SEEK_CUR);
+	fread(junk,8,1,infile);
         fread(pwgrid+nplwv,tmp,1,infile);
-        fseek(infile,8,SEEK_CUR);
+	fread(junk,8,1,infile);
         fread(pwgrid+2*nplwv,tmp,1,infile);
-        fseek(infile,4,SEEK_CUR);
+	fread(junk,4,1,infile);
         if(endian) reverse4n(pwgrid,3*nplwv);
         if (debug>2) fprintf(stderr,"Read pwgrid\n");
 /* CASTEP stores these reciprocal space coeffs as -n/2 to n/2, whereas
@@ -1248,6 +1251,7 @@ static void wave_read(FILE *infile, struct kpts *kp,
 
       else fseek(infile,tmp*3+5*4,SEEK_CUR);
 
+      bytes_to_skip=0;
       for(b=1;b<=nbands;b++){
         if (debug>2) fprintf(stderr,"Start band %d\n",b);
         for(nspr=0;nspr<elect->nspinors;nspr++){
@@ -1258,13 +1262,18 @@ static void wave_read(FILE *infile, struct kpts *kp,
 	      inrange(b,band_range)){
 	    if (debug>2) fprintf(stderr,"starting band read,"
 				 " kpt %d, band %d, spin %d\n",k,b,nsp);
+	    if (bytes_to_skip){
+	      fseek(infile,bytes_to_skip,SEEK_CUR);
+	      bytes_to_skip=0;
+	    }
 	    fread(&tmp,4,1,infile);
 	    if (endian) reverse4(&tmp);
 	    if (tmp!=16*nplwv) error_exit("Error parsing wavefunction band");
 	    if (!(dptr1=malloc(16*nplwv)))
 	      error_exit("Malloc error in band read");
 	    fread(dptr1,16*nplwv,1,infile);
-	    fseek(infile,4,SEEK_CUR);
+	    /* fseek(infile,4,SEEK_CUR); */
+	    fread(junk,4,1,infile);
 	    if(endian) reverse8n(dptr1,2*nplwv);
 
 	    /* Care: ns loop starts at 0, k and b loops at 1 */
@@ -1275,10 +1284,14 @@ static void wave_read(FILE *infile, struct kpts *kp,
 	    free(dptr1); 
 	  }  /* if (inrange) */
 	  /* Consecutive fseeks in glibc are expensive, as each is an
-	   * lseek followed by a read(!). So we could optimise better here */
-	  else fseek(infile,16*nplwv+8,SEEK_CUR);
+	   * lseek followed by a read(!). So we optimise here */
+	  else bytes_to_skip+=16*nplwv+8;
 	} /*for(nspr=...) */
       } /* for(b=...) */
+      if (bytes_to_skip){
+	fseek(infile,bytes_to_skip,SEEK_CUR);
+	bytes_to_skip=0;
+      }
       if (pwgrid) {free(pwgrid); pwgrid=NULL;}
       if (pwg2) {free(pwg2); pwg2=NULL;}
     } /* for(k=...) */
@@ -1300,7 +1313,7 @@ static void wave_read(FILE *infile, struct kpts *kp,
 
 /* Note that the two spinor components share the same occupancy */
 void occ_read(FILE *infile, struct es *elect, struct kpts *kp){
-  int i,tmp,k,k2,ns,nbands,nspins,hit;
+  int i,tmp,junk[2],k,k2,ns,nbands,nspins,hit;
   double *dptr1,*dptr2;
   double kpoint[3];
 
@@ -1321,7 +1334,7 @@ void occ_read(FILE *infile, struct es *elect, struct kpts *kp){
     if (tmp!=24) error_exit("Error parsing end of wavefunction");
     fread(kpoint,3*8,1,infile);
     if (endian) reverse8n(kpoint,3);
-    fseek(infile,4,SEEK_CUR);
+    fread(junk,4,1,infile);
     /* Orbitals files may have the same kpt multiple times... */
     if (aeq(kp->kpts[k2].frac[0],kpoint[0])&&
           aeq(kp->kpts[k2].frac[1],kpoint[1])&&
@@ -1353,13 +1366,13 @@ void occ_read(FILE *infile, struct es *elect, struct kpts *kp){
       dptr2=elect->eval+nspins*nbands*k+ns*nbands;
       fread(dptr1,8*nbands,1,infile);
       if (endian) reverse8n(dptr1,nbands);
-      fseek(infile,4,SEEK_CUR);
+      fread(junk,4,1,infile);
       fread(&tmp,4,1,infile);
       if (endian) reverse4(&tmp);
       if (tmp!=8*nbands) error_exit("Error parsing end of wavefunction");
       fread(dptr2,8*nbands,1,infile);
       if (endian) reverse8n(dptr2,nbands);
-      fseek(infile,4,SEEK_CUR);
+      fread(junk,4,1,infile);
     }
   }
   if (elect->eval)

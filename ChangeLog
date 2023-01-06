@@ -1,3 +1,28 @@
+2.40d
+-----
+
+Various fixes after clang static analysis
+Change order of flag processing to put cell transforms earlier
+Cease using "fortran" as variable name -- C99 says optional reservered word
+Accept fractions in -x=  and -P= arguments
+Removed some 2GB limits due to fseek(file, int, ...) and similar
+Drastically reduce number of fseeks in check_read.c to improve performance
+Same for Abinit wavefunction reader
+Add weighting and accumulating to radial averages
+Add spherical averages to 1D plots (-P=C:R)
+Remove underscores from key titles in gnuplot output
+Fix rare segfault caused by init_sym
+Retain old symops with -a
+Remove unused fix parameter from cart2abc()
+Again fix ident_sym's treatment of screw axes
+Retain old symops with --primitive_nr and --std
+Update Makefile.spglib for spglib 2.x
+Add sym op count to cell file as comment with -v
+Fix bugs in sym op conversion after -x
+Correct sym ops after shift with -m
+Add --nokinv
+Permit tabs in a Shelx SFAC line
+
 2.40c (19/2/22)
 -----
 

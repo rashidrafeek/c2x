@@ -65,7 +65,7 @@ void dict_strcat(struct dct *dict, char *key, char *value){
     dict=dict->next;
   }
 
-  if (strcmp(dict->key,key))
+  if ((!dict)||(!dict->key)||(strcmp(dict->key,key)))
     error_exit("Confusion in dict_strcat");
 
   dict->value=realloc(dict->value,strlen(dict->value)+strlen(value)+1);

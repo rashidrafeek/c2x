@@ -108,6 +108,9 @@ extent exp(-mu^2r^2). If the ionic charge differs from the atomic number,
 a further localised smoothing of the atomic potential occurs, unless the first
 character after the = is -.
 .TP
+.B \-f
+calculate first failure start of k-point set.
+.TP
 .B \-\-formats
 list supported formats.
 .TP
@@ -146,7 +149,7 @@ assume input is molecule, not crystal. Try to avoid outputing a cell,
 shift if some co-ordinates are negative, or if a,b,c given shift by
 those numbers of FFT grid cells.
 .TP
-.B \-m[=a,b,c]
+.B \-m=(a,b,c)
 assume input is molecule, not crystal. Try to avoid outputing a cell,
 shift atoms by fractional co-ordinates given.
 .TP
@@ -176,6 +179,18 @@ output data with cylindrical averaging. p1 is the centre of the cylinder,
 rl (literal "r", followed by a length, suffixed by "B" if Bohr) is the radius,
 and nn the number of points. The axis of the cylinder must be the c axis, and
 alpha and beta must be 90 degrees. Data are averaged over c and theta.
+Append "w" to number of points to weight samples by two pi times radius,
+or "a" to weight and accumulate.
+.TP
+.B \-P=p1:Rl:nn
+output data with spherical averaging. p1 is the centre of the sphere,
+Rl (literal "R", followed by a length, suffixed by "B" if Bohr) is the radius,
+and nn the number of points output. The number of points for sampling around
+the spherical surface is chosen to give a similar point separation to that
+along the line. A length of zero will set the length to the maximum possible
+given the periodicity. Data are averaged over theta and phi.
+Append "w" to number of points to weight samples by four pi times radius
+squared, or "a" to weight and accumulate.
 .TP
 .B \-q
 calculate post hoc energy correction for charged isolated system. Implies
@@ -505,7 +520,7 @@ call spg_standardize_cell(no_idealize=1)
 .B \-\-std_ideal
 call spg_standardize_cell(no_idealize=0)
 .TP
-.B \-\-symmetry
+\fB\-\-symmetry\fP or \fB\-\-symm\fP
 call spg_get_dataset() and keep symmetry ops
 
 .SH NOTES

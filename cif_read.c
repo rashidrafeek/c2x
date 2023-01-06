@@ -180,6 +180,7 @@ void sym_expand(struct unit_cell *c, struct contents *m, struct symmetry *s){
   if (!wt) error_exit("malloc error in sym_expand");
   satoms=NULL;
   sn=0;
+  init_atoms(&b,1);
 
   for(i=0;i<m->n;i++){
     for(j=0;j<s->n;j++){

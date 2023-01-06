@@ -273,7 +273,7 @@ void charge_corr(struct unit_cell *c, struct contents *m,
     }
 
     ctr[0]=ctr[1]=ctr[2]=0.5;
-    cart2abc(c,NULL,abc,NULL,0);
+    cart2abc(c,NULL,abc,NULL);
     dipole_calc(c,m,g,ctr,dpole);
     for(i=0;i<3;i++){
       if (fabs(dpole[i])>fabs(charge*abc[i])){
@@ -294,7 +294,7 @@ void charge_corr(struct unit_cell *c, struct contents *m,
 	    *elect->energy+energy-charge*quad/(6*EPS0*c->vol));
   }
   else{  /* 3D to 2D slab correction */
-    cart2abc(c,NULL,abc,NULL,0);
+    cart2abc(c,NULL,abc,NULL);
     dir=*elect->dip_corr_dir-'a';
     for(i=0;i<3;i++){
       if ((!aeq(abc[3+i],90))&&(dir!=i)){

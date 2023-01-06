@@ -205,14 +205,18 @@ void es_pot(struct unit_cell *c, struct contents *m,
     }
   }
 
-  if ((dict_get(m->dict,"charge_correction"))&&(*elect->dip_corr!='m')){
+  if ((dict_get(m->dict,"charge_correction"))&&(*elect->dip_corr)&&
+      (*elect->dip_corr!='m')){
     if (!dipole_ctr){
       dipole_ctr=malloc(3*sizeof(double));
       if (!dipole_ctr) error_exit("Malloc error for three doubles");
       for(i=0;i<3;i++) dipole_ctr[i]=0.5;
     }
     dipole_calc(c,m,g,dipole_ctr,dpole);
-    dipole_slab_dir=elect->dip_corr_dir[0]-'a';
+    if (elect->dip_corr_dir)
+      dipole_slab_dir=elect->dip_corr_dir[0]-'a';
+    else
+      dipole_slab_dir=-1;
     if ((dipole_slab_dir<0)||(dipole_slab_dir>2))
       error_exit("Impossible dipole slab dir");
     ql=0;

@@ -1,4 +1,4 @@
-#define C2XSF_VER "2.40c"
+#define C2XSF_VER "2.40d"
 
 /* Global variables for system description */
 
@@ -84,9 +84,9 @@
 #define BANDIMAG 64
 #define ACCUMULATE 128
 #define RAW 256
-#define PDBN 512
+#define NOKINV 512 
 #define CHDIFF 1024
-#define SHELX_AIRSS 2048
+#define SYM_ADD 2048
 #define LITTLE_OUT 4096
 #define BANDPARITY 8192
 #define FRAC 16384
@@ -101,6 +101,8 @@
 #define REPLACE_RHO 8388608
 /* Alternate output format: changes CELL to ONETEP,
  *                          changes CUBE to MO CUBE
+ *                          changes PDB to PDBN
+ *                          changes SHELX to SHELX_AIRSS
  */
 #define ALT_OUT 16777216
 #define CHGCAR 33554432
@@ -131,6 +133,7 @@
 #define CSPG_NO_SORT 1024
 #define CSPG_SNAP_TR 2048
 #define CSPG_STD_IDEAL 4096
+#define CSPG_PRIM_LATT (8192+CSPG_PRIM_NR)
 
 struct dct {char *key; void *value; struct dct *next;};
 struct cmt {char *txt; struct cmt *next;};
@@ -155,7 +158,7 @@ struct vector {double v[3]; double mod2;};
    identical to SPGlib's convention */
 struct sym_op {double mat[3][3]; double *tr;};
 struct unit_cell {double (*basis)[3]; double recip[3][3]; double vol;
-  double (*stress)[3];};
+  double (*stress)[3]; struct unit_cell *primitive;};
 struct contents {int n; int forces; int velocities; struct atom *atoms;
   char *title; struct cmt *comment; char *block_species; char *species_misc;
   struct dct *dict; int nspec; struct species *spec;};
@@ -198,12 +201,13 @@ void reduce_cell_tol(struct atom *a,int natoms, double basis[3][3], double eps);
 void abc2cart(double *abc, struct unit_cell *cell);
 void basis2abc(double basis[3][3], double abc[6]);
 void cart2abc(struct unit_cell *c, struct contents *m, double *abc, 
-              struct grid *g, int fix);
+              struct grid *g);
 void cart2abc_sym(struct unit_cell *c, struct contents *m, double *abc, 
-                  struct grid *g, int fix, struct symmetry *s);
+                  struct grid *g, struct symmetry *s);
 void init_atoms(struct atom *a, int n);
 void print_globals(int level);
-void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out);
+int ident_sym(struct sym_op *s, struct unit_cell *c,  struct contents *m,
+               FILE *out);
 void equiv_sym(struct sym_op *s, struct unit_cell *c, FILE *out);
 void mat_f2a(double m1[3][3], double m2[3][3], double basis[3][3],
              double recip[3][3]);
@@ -213,6 +217,7 @@ void equiv_read(struct sym_op *s, struct unit_cell *c, char *line);
 int atom_in_list(struct atom *b, struct atom *a, int n, double basis[3][3]);
 void sym_atom(struct atom *a, struct atom *b, struct sym_op *s,
               double recip[3][3]);
+void sym_shift(struct symmetry *s, double *tr, struct unit_cell *c);
 void sort_atoms(struct contents *mtf, int sort_style);
 void add_cmt(struct cmt *comment, char *txt);
 void sym_expand(struct unit_cell *c, struct contents *m, struct symmetry *s);
@@ -226,8 +231,8 @@ void print_elect(struct es *elect);
 void print_basis(double basis[3][3]);
 void print_bandwidths(struct es *elect, struct kpts *kp);
 void print_energy(double e);
+void print_old_in_new(double old_basis[3][3],double new_basis[3][3]);
 double calc_efermi(struct es *elect, struct kpts *kpt, double nel);
-void old_in_new(double old_basis[3][3],double new_recip[3][3]);
 
 unsigned int atsym2no(char* sym);
 char* atno2sym(unsigned no);
@@ -238,6 +243,8 @@ int spgr_is_double(int spgr);
 int ascan(char *in, double *result);
 int single_scan(char *buff, double *x, int *n);
 int multi_scan(char *buff, double *x, int rep, int *n);
+int point_scan(char *buff, double *v, int *n);
+int multi_point_scan(char *buff, double *v, int rep, int *n);
 
 void mp_gen(struct kpts *ks, struct unit_cell *c);
 
@@ -262,9 +269,12 @@ void simple_super(struct unit_cell *c, struct contents *m,
            struct grid *gptr);
 
 double dist(double a,double b);
+int minvert(double m[3][3]);
 double atom_dist(struct atom *a, struct atom *b, double basis[3][3]);
 double vmod2(double v[3]);
+void vcross(double a[3],double b[3],double c[3]);
 int is_identity(double m[3][3]);
+int is_rhs(double b[3][3]);
 void make_rhs(struct unit_cell *c, struct contents *m, double *abc,
               struct grid *gptr);
 void cell_check(struct unit_cell *c, struct contents *m);
@@ -281,12 +291,17 @@ int sscanfmsn(char *buffer, char **str, int *n);
 struct grid *grid_new(struct grid *gptr);
 void init_grid(struct grid *gptr);
 void init_cell(struct unit_cell *c);
+void free_cell(struct unit_cell *c);
 void init_motif(struct contents *m);
 void init_elect(struct es *e);
 void init_kpts(struct kpts *k);
 void init_sym(struct symmetry *s);
 void init_tseries(struct time_series *ts);
 void interpolate3d(struct grid *old_grid, struct grid *new_grid);
+void sym_basis(struct symmetry *s, struct unit_cell *c);
+void sym_group(struct symmetry *s, struct unit_cell *c);
+void add_primitive(struct unit_cell *c, struct contents *m);
+void add_basis(struct unit_cell *c, struct contents *m);
 
 void reverse4n(int *data,int n);
 void reverse8n(double *data,int n);

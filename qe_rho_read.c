@@ -10,8 +10,9 @@ void to235(int *i); /* from super.c */
 void qe_rho_read(FILE* infile, struct unit_cell *c, struct contents *m,
                  struct kpts *k, struct symmetry *s, struct grid *g,
 		 struct es *elect, int *i_grid){
-  int i,j,tmp;
-  int gamma_only,ngm_g,nspin;
+  int j;
+  unsigned int i,tmp,ngm_g;
+  int gamma_only,nspin;
   int *mill_g;
   double *rho_g,recip[3][3],*data,*data2;
   int ngx_min,ngx_max,ngy_min,ngy_max,ngz_min,ngz_max;
@@ -145,7 +146,7 @@ void qe_rho_read(FILE* infile, struct unit_cell *c, struct contents *m,
   ngz_min=-(ngz-1)/2;
     
   
-  data=malloc(ngx*ngy*ngz*16);
+  data=malloc(ngx*ngy*ngz*16L);
 
   if (!data) error_exit("Error in malloc for data in qe_bin_read");
 
@@ -175,7 +176,7 @@ void qe_rho_read(FILE* infile, struct unit_cell *c, struct contents *m,
 
   fft3d(data,fft,1);
 
-  data2=malloc(ngx*ngy*ngz*8);
+  data2=malloc(ngx*ngy*ngz*8L);
 
   if (!data2) error_exit("Error in malloc for data2 in qe_bin_read");
 

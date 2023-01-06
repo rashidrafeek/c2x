@@ -71,7 +71,7 @@ void cif_write(FILE* outfile, struct unit_cell *c, struct contents *m,
 
   if (m->title) fprintf(outfile,"_struct%ctitle %s\n",sep,m->title);
 
-  cart2abc_sym(c,m,abc,NULL,1,s);
+  cart2abc_sym(c,m,abc,NULL,s);
   //  make_rhs(c,m,NULL,NULL);
   //  cart2abc(c,NULL,abc,NULL,1);
 
@@ -216,7 +216,7 @@ struct contents *reduce_atoms(struct contents *m, struct symmetry *s,
 	fprintf(stderr,"Atom atno=%d (%lf,%lf,%lf)\n",m2->atoms[i].atno,
 		m2->atoms[i].frac[0],m2->atoms[i].frac[1],m2->atoms[i].frac[2]);
 	fprintf(stderr,"Sym op ");
-	ident_sym(s->ops+j,c,stderr);
+	ident_sym(s->ops+j,c,m,stderr);
 	fprintf(stderr,"New atom at (%lf,%lf,%lf)\n",new_atom.frac[0],
 		new_atom.frac[1],new_atom.frac[2]);
 	exit(1);

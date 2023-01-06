@@ -43,6 +43,8 @@ static int qe_readline(char **p, FILE* infile);
 static int qe_int_read(char **ptr,int *n){
   int i;
   
+  if (!*ptr) return 0;
+
   if ((sscanf(*ptr,"%d%n",n,&i)!=1)&&(sscanf(*ptr," = %d%n",n,&i)!=1))
     return 0;
 
@@ -56,6 +58,8 @@ static int qe_int_read(char **ptr,int *n){
 static int qe_float_read(char **ptr,double *x){
   int i,j,ok;
   
+  if (!*ptr) return 0;
+
   if ((sscanf(*ptr,"%lf%n",x,&i)!=1)&&(sscanf(*ptr," = %lf%n",x,&i)!=1))
     return 0;
 
@@ -80,7 +84,9 @@ static int qe_float_read(char **ptr,double *x){
 
 static int qe_logical_read(char **ptr,int *l){
 
-  while((*ptr)&&(isspace(**ptr))) (*ptr)++;
+  if (!*ptr) return 0;
+
+  while((**ptr)&&(isspace(**ptr))) (*ptr)++;
 
   if (!strncasecmp(*ptr,".true.",6)){
     *ptr+=6;
@@ -103,6 +109,8 @@ static int qe_string_read(char **ptr, char **str){
   int quote;
   char *p1,*p2;
   
+  if (!*ptr) return 0;
+
   while ((**ptr)&&(isspace(**ptr))) (*ptr)++;
 
   quote=0;

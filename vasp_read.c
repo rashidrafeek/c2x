@@ -589,8 +589,9 @@ void vasp_psi_read(FILE* infile, char *filename, struct unit_cell *c,
                    struct contents *m, struct kpts *k, struct grid *gptr,
                    struct es *elect, int *i_grid){
   int i,j,ns,tmp,nb,ik,ii;
-  int nspins,reclen,nkpts,nbands,nplwv,*pwgrid,fft[3];
+  int nspins,nkpts,nbands,nplwv,*pwgrid,fft[3];
   int gamma,wt_warn,khdr_len,okay;
+  long reclen;
   double junk,version,ecut,kpt[3];
   float *psi_float;
   double *psi,basis[3][3];
@@ -610,7 +611,7 @@ void vasp_psi_read(FILE* infile, char *filename, struct unit_cell *c,
   fread(&junk,8,1,infile);
   if (junk!=(int)junk) error_exit("Unable to read WAVECAR");
   reclen=junk;
-  if (debug>2) fprintf(stderr,"reclen=%d  (%d doubles)\n",reclen,reclen/8);
+  if (debug>2) fprintf(stderr,"reclen=%ld  (%ld doubles)\n",reclen,reclen/8);
   
   fread(&junk,8,1,infile);
   nspins=junk;
@@ -838,7 +839,7 @@ void vasp_psi_read(FILE* infile, char *filename, struct unit_cell *c,
   }
 
   if (debug>2)
-    fprintf(stderr,"Final offset %d  reclen=%d\n",(int)ftell(infile),reclen);
+    fprintf(stderr,"Final offset %d  reclen=%ld\n",(int)ftell(infile),reclen);
   
 }
 

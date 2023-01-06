@@ -1,6 +1,6 @@
 /* Conversion to arbitrary, specified supercells, with grid interpolation */
 
-/* Copyright (c) 2007 MJ Rutter 
+/* Copyright (c) 2007, 2022 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -18,30 +18,28 @@
 
 #include<stdio.h>
 #include<stdlib.h>
+#include<string.h>  /* memcpy() */
 #include<math.h>
 
 #include "c2xsf.h"
-
-void vcross(double a[3],double b[3],double c[3]);
-
 
 void to235(int *i);
 void grid_interp(struct unit_cell *c, struct grid *grid,int old_fft[3],
                     double old_basis[3][3],double old_recip[3][3]);
 /* From basis.c */
 int is_rhs(double b[3][3]);
-/* From ksym.c */
-void sym_basis(struct symmetry *s, struct unit_cell *c);
 /* From sort_atoms.c */
 int atom_sort(const void *a, const void *b);
 
 int super(struct unit_cell *c, struct contents *mtf,
            double new_basis[3][3], struct kpts *kp, struct symmetry *s, 
            struct grid *gptr, int sflags){
-  int i,j,k,l,m,na,at,old_fft[3],same,rhs,quiet,kpts_only;
+  int i,j,k,l,m,na,at,old_fft[3],same,rhs,quiet,kpts_only,hit;
+  int n_new_tr,finished;
   double old_basis[3][3],old_recip[3][3],old_vol,dtmp;
-  double new_in_old[3][3],abc[6],vtmp[3];
-  struct atom *old_atoms;
+  double new_in_old[3][3],abc[6],vtmp[3],vtmp2[3];
+  double (*new_tr)[3];
+  struct atom *old_atoms,old_axes[3];
   int *atom_ctr;
   int old_natoms;
   int scan_min[3],scan_max[3];
@@ -166,9 +164,14 @@ int super(struct unit_cell *c, struct contents *mtf,
   }
 
   if (kpts_only) return 0;
-  
+
   /* Save old cell */
 
+  init_atoms(old_axes,3);
+  for(i=0;i<3;i++)
+    for(j=0;j<3;j++)
+      old_axes[i].abs[j]=c->basis[i][j];
+  
   for(i=0;i<3;i++){
     for(j=0;j<3;j++){
       old_basis[i][j]=c->basis[i][j];
@@ -190,6 +193,9 @@ int super(struct unit_cell *c, struct contents *mtf,
 
   c->vol=fabs(c->vol);
 
+  addfrac(old_axes,3,c->recip);
+
+  if (debug) print_old_in_new(old_basis,c->basis);
 
   if (!quiet){
     if (debug) fprintf(stderr,"New cell volume %f (%g times old)\n",
@@ -211,8 +217,148 @@ int super(struct unit_cell *c, struct contents *mtf,
 
   /* Deal with symmetry operations */
 
-  if (s) sym_basis(s,c);
+  /* Do we have extra lattice vectors we wish to add to the sym ops? */
+  if ((s)&&(s->n)&&(dict_get(mtf->dict,"sym_expand"))){
+    n_new_tr=0;
+    new_tr=NULL;
+    for(i=0;i<3;i++){
+      for(j=0;j<3;j++){
+	old_axes[i].frac[j]=fmod(old_axes[i].frac[j],1.0);
+	if (old_axes[i].frac[j]<0) old_axes[i].frac[j]+=1;
+	if (aeq(old_axes[i].frac[j],1.0)) old_axes[i].frac[j]=0;
+      }
+      if (vmod2(old_axes[i].frac)>tol){
+	hit=0;
+	for(j=0;j<n_new_tr;j++){
+	  if ((dist(old_axes[i].frac[0],new_tr[j][0])<tol)&&
+	      (dist(old_axes[i].frac[1],new_tr[j][1])<tol)&&
+	      (dist(old_axes[i].frac[2],new_tr[j][2])<tol)){
+	    hit=1;
+	    break;
+	  }
+	}
+	if (!hit){
+	  new_tr=realloc(new_tr,(n_new_tr+1)*3*sizeof(double));
+	  if (!new_tr) error_exit("realloc error for new_tr");
+	  for(j=0;j<3;j++)
+	    new_tr[n_new_tr][j]=old_axes[i].frac[j];
+	  n_new_tr++;
+	}
+      }
+    }
+    if ((n_new_tr)&&(debug>1)){
+      fprintf(stderr,"Initial potential lattice vectors:\n");
+      for(i=0;i<n_new_tr;i++)
+	fprintf(stderr,"(%f,%f,%f)\n",new_tr[i][0],
+		new_tr[i][1],new_tr[i][2]);
+    }
+    finished=0;
+    while(!finished){
+      finished=1;
+      for(i=0;i<n_new_tr;i++){
+	for(j=i;j<n_new_tr;j++){
+	  for(k=0;k<3;k++){
+	    vtmp[k]=new_tr[i][k]+new_tr[j][k];
+	    vtmp[k]=fmod(vtmp[k],1.0);
+	    if (vtmp[k]<0) vtmp[k]+=1;
+	    if (aeq(vtmp[k],1.0)) vtmp[k]=0;
+	  }
+	  if (vmod2(vtmp)>tol){
+	    hit=0;
+	    for(k=0;k<n_new_tr;k++){
+	      if ((dist(vtmp[0],new_tr[k][0])<tol)&&
+		  (dist(vtmp[1],new_tr[k][1])<tol)&&
+		  (dist(vtmp[2],new_tr[k][2])<tol)){
+		hit=1;
+		break;
+	      }
+	    }
+	    if (!hit){
+	      new_tr=realloc(new_tr,(n_new_tr+1)*3*sizeof(double));
+	      if (!new_tr) error_exit("realloc error for new_tr");
+	      for(j=0;j<3;j++)
+		new_tr[n_new_tr][j]=vtmp[j];
+	      n_new_tr++;
+	      if (debug>1)
+		fprintf(stderr,"Adding (%f,%f,%f)\n",vtmp[0],vtmp[1],vtmp[2]);
+	      if (n_new_tr<20) finished=0;
+	      else error_exit("Too many new lattice vecs expanding symops");
+	    }
+	  }
+	}
+      }
+    }
+    
+    if ((n_new_tr)&&(debug>=1)){
+      fprintf(stderr,"Potential lattice vectors:\n");
+      for(i=0;i<n_new_tr;i++)
+	fprintf(stderr,"(%f,%f,%f)\n",new_tr[i][0],
+		new_tr[i][1],new_tr[i][2]);
+    }
+    
+    for(i=0;i<n_new_tr;i++){
+      for(j=0;j<3;j++)
+	vtmp[j]=new_tr[i][j];
+      hit=0;
+      for(j=0;j<s->n;j++){
+	if (!is_identity(s->ops[j].mat)) continue;
+	for(k=0;k<3;k++)
+	  vtmp2[k]=s->ops[j].tr[0]*c->recip[k][0]+
+	    s->ops[j].tr[1]*c->recip[k][1]+
+	    s->ops[j].tr[2]*c->recip[k][2];
+	if (debug>1)
+	  fprintf(stderr,"Comparing (%f,%f,%f) and (%f,%f,%f)\n",
+		  vtmp[0],vtmp[1],vtmp[2],
+		  vtmp2[0],vtmp2[1],vtmp2[2]);
+	if ((aeq(dist(vtmp[0],vtmp2[0]),0.0))&&
+	    (aeq(dist(vtmp[1],vtmp2[1]),0.0))&&
+	    (aeq(dist(vtmp[2],vtmp2[2]),0.0))){
+	  if (debug>1) fprintf(stderr,"Equal\n");
+	  hit=1;
+	  break;
+	}
+      }
+      if (hit) continue;
+      fprintf(stderr,"Trying to add translation of (%f,%f,%f) to sym ops\n",
+	      vtmp[0],vtmp[1],vtmp[2]);
+      if (debug) fprintf(stderr,"Starting with %d sym ops\n",s->n);
+      /* vtmp is in fractional coords, make vtmp2 in abs coords */
+      for(j=0;j<3;j++)
+	vtmp2[j]=new_tr[i][0]*c->basis[0][j]+
+	  new_tr[i][1]*c->basis[1][j]+
+	  new_tr[i][2]*c->basis[2][j];
 
+      s->ops=realloc(s->ops,2*s->n*sizeof(struct sym_op));
+      if (!s->ops){
+	fprintf(stderr,"realloc failed for %ld bytes\n",2*s->n*sizeof(struct sym_op));
+	exit(1);
+      }
+      //      if (!s->ops) error_exit("sym op realloc error in super.c");
+      for(j=0;j<s->n;j++){
+	memcpy(s->ops[s->n+j].mat,s->ops[j].mat,9*sizeof(double));
+	s->ops[s->n+j].tr=malloc(3*sizeof(double));
+	if (!s->ops[s->n+j].tr) error_exit("malloc error in super.c");
+	if (s->ops[j].tr)
+	  for(k=0;k<3;k++) s->ops[s->n+j].tr[k]=
+			     s->ops[j].tr[k]+vtmp2[k];
+	else
+	  for(k=0;k<3;k++) s->ops[s->n+j].tr[k]=vtmp2[k];
+      }
+      s->n*=2;
+
+      sym_basis(s,c);
+      if (debug) fprintf(stderr,"Ending with %d sym ops\n",s->n);
+    }
+
+  } /* if ((s)&&(dict_get(mtf->dict,"sym_expand"))) */
+
+  /* Remove excess sym ops */
+
+  if ((s)&&(s->n)){
+    sym_basis(s,c);
+    sym_group(s,c);
+  }
+  
   /* Worry about atoms */
 
   mtf->n=old_natoms*c->vol/old_vol+0.5;
@@ -361,7 +507,7 @@ int super(struct unit_cell *c, struct contents *mtf,
                               old_basis[i][2]*old_basis[i][2]);
       if (dtmp>fft_res) fft_res=dtmp;
     }
-    cart2abc(c,NULL,abc,NULL,0);
+    cart2abc(c,NULL,abc,NULL);
     for(i=0;i<3;i++){
       old_fft[i]=gptr->size[i];
       gptr->size[i]=abc[i]*fft_res;
@@ -518,7 +664,10 @@ void simple_super(struct unit_cell *c, struct contents *m,
   
   /* Deal with symmetry operations */
 
-  if (s) sym_basis(s,c);
+  if ((s)&&(s->n)){
+    sym_basis(s,c);
+    sym_group(s,c);
+  }
 
   /* Atoms */
   

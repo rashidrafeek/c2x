@@ -34,7 +34,7 @@
 #include "c2xsf.h"
 
 void molecule_fix(int m_abc[3], double m_rel[3], struct unit_cell *c,
-		  struct contents *m,
+		  struct contents *m, struct symmetry *s,
                   struct grid *gptr){
   int i,j,k,ii,jj,kk,off1,off2;
   int fft[3],shift[3];
@@ -90,6 +90,7 @@ void molecule_fix(int m_abc[3], double m_rel[3], struct unit_cell *c,
           m->atoms[i].frac[k]+=ashift[k];
 
       addabs(m->atoms,m->n,c->basis);
+      sym_shift(s,ashift,c);
       return;
     }
     else{
@@ -112,6 +113,12 @@ void molecule_fix(int m_abc[3], double m_rel[3], struct unit_cell *c,
       m->atoms[i].frac[k]+=(double)m_abc[k]/fft[k];
 
   addabs(m->atoms,m->n,c->basis);
+
+  /* Symmetry operations */
+
+  for(i=0;i<3;i++)
+    ashift[i]=(double)m_abc[i]/fft[i];
+  sym_shift(s,ashift,c);
 
     /* Grids are harder */
 

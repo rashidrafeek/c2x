@@ -43,33 +43,6 @@ static void reverse4(void *data){
    *((int*)data)=out;
 }
 
-#if 0
-static void reverse8n(double *data, int n){
-/* reverse endian n words of 8 byte data */
-   int i;
-   double out;
-   char *p1,*p2;
-
-   for(i=0;i<n;i++){
-     p1=(char*)(data+i);
-     p2=(char*)&out;
-  
-     p2=p2+7;
-  
-     *(p2--)=*(p1++);
-     *(p2--)=*(p1++);
-     *(p2--)=*(p1++);
-     *(p2--)=*(p1++);
-     *(p2--)=*(p1++);
-     *(p2--)=*(p1++);
-     *(p2--)=*(p1++);
-     *(p2--)=*(p1++);
-   
-     *(data+i)=out;
-   }
-}
-#endif
-
 void chdiff_read(FILE* infile, struct grid *gptr){
   int endian,tmp,i,j,k;
   int fft[3];
@@ -122,7 +95,8 @@ void chdiff_read(FILE* infile, struct grid *gptr){
     dptr1=gptr->data+((i-1)*fft[1]+(j-1))*fft[2];
     dptr2=column;
     for(k=0;k<fft[2];k++){*dptr1++=*dptr2; dptr2+=2;}
-    fseek(infile,4,SEEK_CUR);
+   /* fseek(infile,4,SEEK_CUR); */
+    fread(&tmp,4,1,infile);
     if (fread(&tmp,4,1,infile)==0) break;
     if (endian) reverse4(&tmp) ;
     if (tmp!=16*fft[2]+8) error_exit("Error reading .chdiff file");

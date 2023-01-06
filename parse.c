@@ -1,3 +1,25 @@
+/* Various functions for parsing text files, and for evaluating
+ * algebraic expressions
+ */
+
+
+/* Copyright (c) 2017-2022 MJ Rutter 
+ * 
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation, either version 3
+ * of the Licence, or (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see http://www.gnu.org/licenses/
+ */ 
+
+
 #include<stdio.h>
 #include<stdlib.h>
 #include<ctype.h>
@@ -69,7 +91,7 @@ int sscanfmsn(char *buffer, char **str, int *n){
 
 
 int parse(char* in);
-int evaluate_st(double *result);
+static int evaluate_st(double *result);
 static struct op {char *op; int prec;} *op_stack;
 static struct a {void *data; int type;} *stack;
 /* pointers point to free element at end of stack */
@@ -88,23 +110,37 @@ int ascan(char *in, double *result){
 /* act like sscanf(buff,"%lf%n",x,n)
  * but evaluate arithmetic expressions
  * and ignore n if NULL
+ * Return zero on failure, one on success, like sscan
  */
 int single_scan(char *buff, double *x, int *n){
-  char s[81];
+  char s[81],*comma;
   int i,dummy;
 
   if (!n) n=&dummy;
-  
+
+  /* Try a simple sscanf to see if it consumes whole string */
   i=sscanf(buff,"%lf%n",x,n);
-  if ((i>=1)&&((*(buff+(*n))==0)||(*(buff+(*n))==' '))) return 1;
+  if ((i>=1)&&((*(buff+(*n))==0)||
+	       (*(buff+(*n))==' ')||(*(buff+(*n))==','))) return 1;
   
   i=sscanf(buff,"%80s%n",s,n);
-  if (i==0) return 0;
+  if ((i==0)||(i==EOF)) return 0;
+  if (strlen(s)==0) return 0;
+  
+  comma=strchr(s,',');
+  if (comma){
+    *comma=0;
+    *n=(comma-s)+1;
+    if (*n==1) return 0;
+  }
   if (ascan(s,x)==0) return 0;
+
   return 1;
 }
 
-/* as single_scan, but have repeat count and read a vector */
+/* as single_scan, but have repeat count and read a vector
+ * items must be space or comma separated
+ */
 int multi_scan(char *buff, double *x, int rep, int *n){
   int i,n2,dummy;
   n2=0;
@@ -115,12 +151,76 @@ int multi_scan(char *buff, double *x, int rep, int *n){
   for(i=0;i<rep;i++){
     if (single_scan(buff+(*n),x+i,&n2)==0) return i;
     *n+=n2;
+    while (buff[*n]==' ') (*n)++;
+    if (buff[*n]==',') (*n)++;
   }
 
   return rep;
 }
 
+/* as single_scan, but read a vector enclosed by () with comma-separated data
+ * Return zero on failure, one on success, like sscan
+ */
+int point_scan(char *buff, double *v, int *n){
+  int i,level,start,n2,rtn,dummy;
+  char *ptr;
 
+  if (!n) n=&dummy;
+  *n=0;
+
+  /* check that first character is a ( */
+  i=0;
+  while(isspace(buff[i])) i++;
+  if (buff[i]!='(') return 0;
+  start=i+1;
+
+  level=1;
+  while((buff[i])&&(level)){
+    i++;
+    if (buff[i]=='(') level++;
+    if (buff[i]==')') level--;
+  }
+
+  if (level) return 0; /* Failed to find closing ')' */
+
+  ptr=malloc(i+1);
+  if (!ptr) error_exit("malloc error in point_scan");
+
+  strncpy(ptr,buff,i);
+  ptr[i]=0;
+
+  rtn=multi_scan(ptr+start,v,3,&n2);
+
+  while(isspace(ptr[start+n2])) n2++;
+  if (ptr[start+n2]!=0){
+    free(ptr);
+    return 0;
+  }
+  
+  free(ptr);
+  if (rtn==3){
+    *n=i+1;
+    return 1;
+  }
+  return 0;
+}
+
+/* do multiple point scans, returns number of triplets read */
+int multi_point_scan(char *buff, double *v, int rep, int *n){
+  int i,n2,dummy;
+  n2=0;
+
+  if (!n) n=&dummy;
+  *n=0;
+  
+  for(i=0;i<rep;i++){
+    if (point_scan(buff+(*n),v+3*i,&n2)==0) return i;
+    *n+=n2;
+  }
+
+  return rep;
+}
+  
 static void pop_op(void){
   stack=realloc(stack,(st_ptr+1)*sizeof(struct a));
   stack[st_ptr].type='O';
@@ -155,8 +255,9 @@ int parse(char* in){
   if (debug>2) fprintf(stderr,"Parsing '%s'\n",in);
 
   while (isspace(*p1)) p1++; /* consume whitespace */
+  if (*p1==0) return 1; /* we had an empty string */
   if ((*p1=='!')||(*p1=='#')) return 1; /* all we have is a comment */
- 
+  
   while(*p1){ /* Find end of token */
     implicit_mul=0;
     if (isdigit(*p1)||(*p1=='.')||(unitary&&((*p1=='+')||(*p1=='-')))){
@@ -337,7 +438,7 @@ int parse(char* in){
     return(1);}
 
 /* On success returns zero, on failure returns one */
-int evaluate_st(double *result){
+static int evaluate_st(double *result){
   double *num_st;
   char *op;
   int num_ptr,i,j;

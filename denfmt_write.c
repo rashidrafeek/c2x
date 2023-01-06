@@ -39,7 +39,7 @@ void denfmt_write(FILE* outfile, struct unit_cell *c, struct contents *m,
     fmt="  % 12.6f";
   }
   
-  cart2abc(c,NULL,abc,NULL,0);
+  cart2abc(c,NULL,abc,NULL);
   
   fprintf(outfile," BEGIN header\n \n");
 
@@ -107,9 +107,11 @@ void denfmt_write(FILE* outfile, struct unit_cell *c, struct contents *m,
   /* Now write the data */
 
   scale=c->vol;
-  if ((ngrids<=2)&&(!strncmp(g->name,"ELF",3))) scale=1;
-  if ((ngrids<=2)&&(!strncmp(g->name,"ESP",3))) scale=1/H_eV;
-  if ((ngrids<=2)&&(!strncmp(g->name,"Potential",9))) scale=1/H_eV;
+  if (g->name){
+    if ((ngrids<=2)&&(!strncmp(g->name,"ELF",3))) scale=1;
+    if ((ngrids<=2)&&(!strncmp(g->name,"ESP",3))) scale=1/H_eV;
+    if ((ngrids<=2)&&(!strncmp(g->name,"Potential",9))) scale=1/H_eV;
+  }
   if (flags&RAW) scale=1;
 
   if (debug) fprintf(stderr,"Scaling on writing by %lf\n",scale);

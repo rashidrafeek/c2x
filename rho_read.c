@@ -27,7 +27,7 @@
 void rho_read(FILE* infile, struct unit_cell *c, struct contents *m,
               struct grid *gptr, struct es *elect){
   int tmp,nspins,i,j,ix,iy,iz,grid[3],okay,csize,single;
-  int is_pot;
+  int is_pot,junk;
   void *column;
   double scale,basis[3][3],*dptr1,*dptr2;
   char *filename,*name,*cptr;
@@ -43,7 +43,7 @@ void rho_read(FILE* infile, struct unit_cell *c, struct contents *m,
   if (tmp!=72) error_exit("Unexpected start to RHO file");
 
   fread(basis,72,1,infile);
-  fseek(infile,4,SEEK_CUR);
+  fread(&junk,4,1,infile);
 
   fread(&tmp,4,1,infile);
   if (tmp!=16) error_exit("Unexpected second record length in RHO file");
@@ -86,7 +86,7 @@ void rho_read(FILE* infile, struct unit_cell *c, struct contents *m,
   fread(grid,12,1,infile);
   nspins=0;
   fread(&nspins,4,1,infile);
-  fseek(infile,4,SEEK_CUR);
+  fread(&junk,4,1,infile);
 
   if (debug) {
     if (is_pot)
@@ -128,7 +128,7 @@ void rho_read(FILE* infile, struct unit_cell *c, struct contents *m,
       if (tmp!=csize)
         error_exit("Unexpected column size");
       fread(column,csize,1,infile);
-      fseek(infile,4,SEEK_CUR);
+      fread(&junk,4,1,infile);
       if (single)
         for(ix=0;ix<grid[0];ix++)
           dptr1[iz+grid[2]*(iy+ix*grid[1])]=scale*((float*)column)[ix];
@@ -148,7 +148,7 @@ void rho_read(FILE* infile, struct unit_cell *c, struct contents *m,
         if (tmp!=csize)
           error_exit("Unexpected column size");
         fread(column,csize,1,infile);
-        fseek(infile,4,SEEK_CUR);
+	fread(&junk,4,1,infile);
       if (single)
         for(ix=0;ix<grid[0];ix++)
           dptr2[iz+grid[2]*(iy+ix*grid[1])]=scale*((float*)column)[ix];

@@ -12,7 +12,8 @@
 
 
 void npy_read(FILE* infile, struct grid *gptr){
-  int i,j,k,hdr_len,version,float_len,ndata,fortran,data_little_endian;
+/* NB "fortran" is an optionally-reserved word in C99, so fortrn here */
+  int i,j,k,hdr_len,version,float_len,ndata,fortrn,data_little_endian;
   char magic[6]={0x93,'N','U','M','P','Y'};
   unsigned char buff[6];
   char *hdr,*cptr;
@@ -46,7 +47,7 @@ void npy_read(FILE* infile, struct grid *gptr){
 
   cptr=strstr(hdr,"'shape'");
   if (!cptr) error_exit("Failed to find array shape");
-  cptr=index(cptr,'(');
+  cptr=strchr(cptr,'(');
   if (!cptr) error_exit("Failed to parse array shape");
   cptr++;
   if (sscanf(cptr,"%d, %d, %d",gptr->size,gptr->size+1,gptr->size+2)!=3){
@@ -57,7 +58,7 @@ void npy_read(FILE* infile, struct grid *gptr){
   
   cptr=strstr(hdr,"'descr'");
   if (!cptr) error_exit("Failed to find array datatype");
-  cptr=index(cptr,':');
+  cptr=strchr(cptr,':');
   if (!cptr) error_exit("Failed to parse array datatype");
   cptr++;
   while(*cptr==' ') cptr++;
@@ -86,16 +87,16 @@ void npy_read(FILE* infile, struct grid *gptr){
   if ((float_len!=4)&&(float_len!=8))
     error_exit("Unexpected float len in descr");
 
-  fortran=0;
-  cptr=strstr(hdr,"'fortran_order'");
+  fortrn=0;
+  cptr=strstr(hdr,"'fortrn_order'");
   if (cptr){
-    cptr=index(cptr,':');
+    cptr=strchr(cptr,':');
     if (cptr){
       cptr++;
       while(*cptr==' ') cptr++;
-      if (!strncmp(cptr,"True",4)) fortran=1;
-      else if (!strncmp(cptr,"False",5)) fortran=0;
-      else error_exit("Failed to parse fortran_order");
+      if (!strncmp(cptr,"True",4)) fortrn=1;
+      else if (!strncmp(cptr,"False",5)) fortrn=0;
+      else error_exit("Failed to parse fortrn_order");
     }
   }
   
@@ -118,7 +119,7 @@ void npy_read(FILE* infile, struct grid *gptr){
   
   gptr=grid_new(gptr);
 
-  if ((!fortran)&&(float_len==8)){
+  if ((!fortrn)&&(float_len==8)){
     gptr->data=(double*)data;
     return;
   }
@@ -136,7 +137,7 @@ void npy_read(FILE* infile, struct grid *gptr){
 				    k*gptr->size[0]*gptr->size[1]];
   }
   else{
-    if (!fortran)
+    if (!fortrn)
       for(i=0;i<ndata;i++)
 	gptr->data[i]=((float*)data)[i];
     else{

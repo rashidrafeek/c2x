@@ -272,7 +272,7 @@ void dipole(struct unit_cell *c, struct contents *m,
 
   if ((elect->dip_corr_dir)&&(*elect->dip_corr_dir=='m')){
     double abc[6];
-    cart2abc(c,NULL,abc,NULL,0);
+    cart2abc(c,NULL,abc,NULL);
     if ((aeq(abc[3],90))&&(aeq(abc[4],90))&&(aeq(abc[3],90))){
       if ((aeq(abc[0],abc[1]))&&(aeq(abc[1],abc[2]))){
         mag=0;

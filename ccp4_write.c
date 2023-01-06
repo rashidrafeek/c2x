@@ -51,7 +51,7 @@ void ccp4_write(FILE* outfile,struct unit_cell *c, struct grid *g){
 
   /* This may change g->size if a lhs to rhs conversion is req. */
 
-  cart2abc(c,&m,abc,g,1);
+  cart2abc(c,&m,abc,g);
   
   /* NX, NY, NZ */
   

@@ -57,10 +57,17 @@ void qe_psi_read(char *dir, char *prefix, struct unit_cell *c,
   char *file,*sspin;
   int ik,ispin,gamma,ngw,igwx,npol,nbnd,ngpts;
   int *pwgrid;
+  long bytes_to_skip;
   double xk[3],scalef,b[9],kpoint[3],*wtmp,*psi;
   double lat_tmp[3][3];
   FILE *infile;
 
+  
+  if ((elect->nspins!=1)&&(elect->nspins!=2)){
+    fprintf(stderr,"Error: cannot read wavefunction for nspins=%d\n",
+	    elect->nspins);
+    return;
+  }
   
   if (dir==NULL) dir=".";
   file=malloc(strlen(dir)+30+(prefix?strlen(prefix):0));
@@ -69,12 +76,6 @@ void qe_psi_read(char *dir, char *prefix, struct unit_cell *c,
   dict_add(m->dict,"band_read_order",NULL); /* Delete any old entry */
   dict_strcat(m->dict,"band_read_order","skbS"); /* Malloc for new */
     
-  if ((elect->nspins!=1)&&(elect->nspins!=2)){
-    fprintf(stderr,"Error: cannot read wavefunction for nspins=%d\n",
-	    elect->nspins);
-    return;
-  }
-  
   for(ns=0;ns<elect->nspins;ns++){
     
     if (elect->nspins==1)
@@ -211,14 +212,20 @@ void qe_psi_read(char *dir, char *prefix, struct unit_cell *c,
 
       psi=malloc(ngpts*2*sizeof(double));
       if (!psi) error_exit("Malloc error for psi");
-    
+
+      bytes_to_skip=0;
       for(nb=1;nb<=nbnd;nb++){
-	if (debug>2) fprintf(stderr,"Start band %d\n",nb);
-	fread(&tmp,4,1,infile);
-	if (tmp!=16*npol*igwx) error_exit("Error parsing wavefunction band");
 	if (inrange(nb,elect->band_range)){
+	  if (debug>2) fprintf(stderr,"Start band %d\n",nb);
+	  if (bytes_to_skip){
+	    fseek(infile,bytes_to_skip,SEEK_CUR);
+	    bytes_to_skip=0;
+	  }
+	  fread(&tmp,4,1,infile);
+	  if (tmp!=16*npol*igwx) error_exit("Error parsing wavefunction band");
 	  if (debug>2) fprintf(stderr,"Reading band %d\n",nb);
-	  fread(wtmp,16,npol*igwx,infile);
+	  if (fread(wtmp,16,npol*igwx,infile)!=npol*igwx)
+	    error_exit("Error in fread of band");
 	  fread(&tmp,4,1,infile);
 
           for(ii=0;ii<npol;ii++){
@@ -229,11 +236,11 @@ void qe_psi_read(char *dir, char *prefix, struct unit_cell *c,
 	    
 	  } /* End spinor loop */
 	}
-	else fseek(infile,4+16*npol*igwx,SEEK_CUR);
-    
-
+	else bytes_to_skip+=8+16*npol*igwx;
       } /* End loop over bands */
   
+      /* No need for final fseek, as we are about to close the file */
+      
       free(wtmp);
       free(psi);
       free(pwgrid);

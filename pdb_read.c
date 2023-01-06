@@ -209,7 +209,7 @@ void add_basis(struct unit_cell *c, struct contents *m){
     greatest=least=m->atoms[0].abs[i];
     for(j=0;j<m->n;j++){
       greatest=max(greatest,m->atoms[j].abs[i]);
-      least=min(greatest,m->atoms[j].abs[i]);
+      least=min(least,m->atoms[j].abs[i]);
     }
     greatest=greatest-least;
     c->basis[i][i]=ceil(greatest)+7;

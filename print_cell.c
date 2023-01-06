@@ -43,7 +43,7 @@ void print_cell(struct unit_cell *c, struct contents *m){
       fmt="%c=% 19.15f ";
     else
       fmt="%c=% 11.7f ";
-    cart2abc(c,NULL,abc,NULL,0);
+    cart2abc(c,NULL,abc,NULL);
     for(i=0;i<3;i++)
       fprintf(stderr,fmt,'a'+i,abc[i]);
     if (flags&HIPREC)

@@ -903,16 +903,16 @@ void dequote(char **str){
 
   p=*str;
   
-  if (((*p)=='"')&&(index(p+1,'"'))){
+  if (((*p)=='"')&&(strchr(p+1,'"'))){
     p++;
-    *(index(p,'"'))=0;
+    *(strchr(p,'"'))=0;
     *str=p;
     return;
   }
 
-  if (((*p)=='\'')&&(index(p+1,'\''))){
+  if (((*p)=='\'')&&(strchr(p+1,'\''))){
     p++;
-    *(index(p,'\''))=0;
+    *(strchr(p,'\''))=0;
     *str=p;
     return;
   }

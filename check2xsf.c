@@ -98,7 +98,7 @@ void cell_read(FILE* infile, struct unit_cell *c, struct contents *m,
                struct kpts *k, struct symmetry *s);
 
 void molecule_fix(int m_abc[3], double m_rel[3],struct unit_cell *c,
-		  struct contents *m, struct grid *g);
+		  struct contents *m, struct symmetry *s, struct grid *g);
 void rotation(struct unit_cell *c, struct contents *m, double new_basis[3][3]);
 void primitive(struct unit_cell *c, struct contents *m, double basis[3][3]);
 void shorten(double basis[3][3]);
@@ -124,6 +124,7 @@ void bxsf_write(FILE* outfile, struct unit_cell *c, struct contents *m,
 void tube(struct unit_cell *c, struct contents *m, int rpt[3], double spacing);
 void print_gap(struct es *elect, struct kpts *kpt, struct contents *m);
 double lda(double dens);
+void sort_symops(struct symmetry *s, int sort_style);
 void data_combine(int op, struct unit_cell *c,
 		  struct contents *m, struct kpts *k, struct symmetry *s,
 		  struct grid *g, struct es *elect, struct time_series *ts,
@@ -169,7 +170,7 @@ int main(int argc, char **argv)
   int i,j,k,n,opt=1,expand,rotate,half_shift=0,no_mp=0,prim=0,compact=0;
   int molecule=0,reduce=0,vexpand=0,lflags=0,pr_occ=0,pr_gap=0,xc=0;
   int sort_style=0,calc_ef=0,firstfile_arg=0,op=0,replace_rho=0;
-  int no_sym=0;
+  int no_sym=0,sym_group_check=0;
   int circ[3];
   int spg_op;
   int gen_mp=0, failure=0,calc_esp=0,sym_k=0,sym_list=0;
@@ -203,6 +204,7 @@ int main(int argc, char **argv)
   
   init_cell(&cell);
   cell2=cell;
+  nc.primitive=NULL;
 
   init_sym(&sym);
   sym2=sym;
@@ -213,7 +215,6 @@ int main(int argc, char **argv)
   m_abc=i_grid=i_frame=NULL;
   m_rel=NULL;
   new_mp=NULL;
-  sym.gen=NULL;
 
   init_grid(&grid1);
   grid2=grid1;
@@ -251,7 +252,7 @@ int main(int argc, char **argv)
         else if (!strcmp(optp,"--mocube")) {format=CUBE; flags|=ALT_OUT;}
         else if (!strcmp(optp,"--xplor")) format=XPLOR;
         else if (!strcmp(optp,"--pdb")) format=PDB;
-        else if (!strcmp(optp,"--pdbn")) {format=PDB; flags|=PDBN;}
+        else if (!strcmp(optp,"--pdbn")) {format=PDB; flags|=ALT_OUT;}
         else if (!strcmp(optp,"--pdbx"))
 	  {format=CIF; dict_strcat(motif.dict,"CIF_is_PDBx","");}
         else if (!strcmp(optp,"--cell")) format=CELL;
@@ -277,7 +278,7 @@ int main(int argc, char **argv)
         else if (!strcmp(optp,"--fdf_bp")) {format=FDF_BP; sym_k=1; no_mp=0;}
         else if (!strcmp(optp,"--gnu")) lflags|=1;
         else if (!strcmp(optp,"--shelx")) format=SHELX;
-        else if (!strcmp(optp,"--airss")) {format=SHELX; flags|=SHELX_AIRSS;}
+        else if (!strcmp(optp,"--airss")) {format=SHELX; flags|=ALT_OUT;}
         else if (!strcmp(optp,"--fbin")) format=FBIN;
         else if (!strcmp(optp,"--nibf")) {format=FBIN; flags|=LITTLE_OUT;}
         else if (!strcmp(optp,"--fort15")) format=FORT15;
@@ -348,6 +349,7 @@ int main(int argc, char **argv)
           exit(0);
         }
         else if (!strcmp(optp,"--vel")) keep_velocities=1;
+        else if (!strcmp(optp,"--nokinv")) flags|=NOKINV;
         else if (!strcmp(optp,"--gap")) {
 	  flags|=OCCUPANCIES;
 	  pr_gap=1;
@@ -373,6 +375,9 @@ int main(int argc, char **argv)
 	else if (!strcmp(optp,"--mask")) op=(op&~C2X_EXC_MASK)+C2X_MASK;
 	else if (!strcmp(optp,"--mult")) op=(op&~C2X_EXC_MASK)+C2X_MASK;
 	else if (!strcmp(optp,"--replace_rho")) replace_rho=1;
+	else if (!strcmp(optp,"--sym_add")) flags|=SYM_ADD;
+	else if (!strcmp(optp,"--sym_del")) flags&=(~SYM_ADD);
+	else if (!strcmp(optp,"--sym_group")) sym_group_check=1;
 	else {
           fprintf(stderr,"Invalid option %s.\n%s -h for usage.\n",
                    optp,argv[0]);
@@ -432,8 +437,9 @@ int main(int argc, char **argv)
             optp++;
           }
           if(*(optp+1)=='='){
-            i=sscanf(optp+2,"%lf,%lf,%lf",elect.dip_ctr,elect.dip_ctr+1,
-                     elect.dip_ctr+2);
+	    /* i=sscanf(optp+2,"%lf,%lf,%lf",elect.dip_ctr,elect.dip_ctr+1,
+	       elect.dip_ctr+2); */
+	    i=multi_scan(optp+2,elect.dip_ctr,3,NULL);
             if ((i==0)||(i==EOF))
               elect.dip_ctr[0]=elect.dip_ctr[1]=elect.dip_ctr[2]=0.5;
             else if (i!=3) error_exit("malformed option -D=");
@@ -662,12 +668,17 @@ int main(int argc, char **argv)
           flags|=K_WEIGHT;
           break;
         case 'x':
+	  if ((*(optp+1)=='s')&&(*(optp+2)=='=')){
+	    dict_strcat(motif.dict,"sym_expand","");
+	    optp++;
+	  }
           if(*(optp+1)=='='){
-            if (sscanf(optp+2,"(%lf,%lf,%lf)(%lf,%lf,%lf)(%lf,%lf,%lf)",
+    /*       if (sscanf(optp+2,"(%lf,%lf,%lf)(%lf,%lf,%lf)(%lf,%lf,%lf)",
 	         &new_cell_rel[0][0],&new_cell_rel[0][1],&new_cell_rel[0][2],
                  &new_cell_rel[1][0],&new_cell_rel[1][1],&new_cell_rel[1][2],
 	         &new_cell_rel[2][0],&new_cell_rel[2][1],&new_cell_rel[2][2])
-		==9){
+		 ==9){ */
+	    if (multi_point_scan(optp+2,&new_cell_rel[0][0],3,NULL)==3){
 	      while(*((++optp)+1));
 	      expand=2;
 	      break;
@@ -682,6 +693,10 @@ int main(int argc, char **argv)
           }
           else error_exit ("malformed option -x=");
         case 'X':
+	  if ((*(optp+1)=='s')&&(*(optp+2)=='=')){
+	    dict_strcat(motif.dict,"sym_expand","");
+	    optp++;
+	  }
           if(*(optp+1)=='='){
             if (sscanf(optp+2,"(%lf,%lf,%lf)(%lf,%lf,%lf)(%lf,%lf,%lf)",
                        &new_cell[0][0],&new_cell[0][1],&new_cell[0][2],
@@ -947,7 +962,7 @@ int main(int argc, char **argv)
     print_basis(cell.recip);
   }
   if (debug){
-    fprintf(stderr,"Cell volume %f\n",cell.vol);
+    fprintf(stderr,"Cell volume %f A^3\n",cell.vol);
     fprintf(stderr,"natoms      %d\n",motif.n);
     if (ionic_charge) fprintf(stderr,"Total ionic charge %f\n",ionic_charge);
     print_elect(&elect);
@@ -962,7 +977,7 @@ int main(int argc, char **argv)
   }
 
   if (sym_list&&sym.n){
-    for(i=0;i<sym.n;i++) ident_sym(&sym.ops[i],&cell,stderr);
+    for(i=0;i<sym.n;i++) ident_sym(&sym.ops[i],&cell,&motif,stderr);
   }
   
   if ((molecule)&&(m_abc)&&(i_grid)&&(!grid1.data)){
@@ -973,7 +988,7 @@ int main(int argc, char **argv)
     m_abc=NULL;
   }
   
-  if ((molecule)||(m_rel)) molecule_fix(m_abc,m_rel,&cell,&motif,&grid1);
+  if ((molecule)||(m_rel)) molecule_fix(m_abc,m_rel,&cell,&motif,&sym,&grid1);
 
   if (reduce) molecule=0;
   
@@ -1013,7 +1028,7 @@ int main(int argc, char **argv)
       if (debug>1){
         g_cut=2*sqrt(2.0*elect.cut_off/H_eV)/BOHR;
         fprintf(stderr,"2|g_max| %g A^-1\n",g_cut);
-        cart2abc(&cell,NULL,abc,NULL,0);
+        cart2abc(&cell,NULL,abc,NULL);
         fprintf(stderr,"Full FFT grid based on 2|g_max|: %ix%ix%i\n",
                 2*(int)(ceil(g_cut*abc[0]/(2*M_PI)))+1,
                 2*(int)(ceil(g_cut*abc[1]/(2*M_PI)))+1,
@@ -1133,6 +1148,97 @@ int main(int argc, char **argv)
     }
   }
 
+  if (prim) {
+    double nb1[3][3],ob[3][3];
+    for(i=0;i<3;i++)
+      for(j=0;j<3;j++)
+        ob[i][j]=cell.basis[i][j];
+    primitive(&cell,&motif,nb1);
+    if (debug>2){
+      fprintf(stderr,"Primitive cell is:\n");
+      for(i=0;i<3;i++){
+        fprintf(stderr,"(%f,%f,%f)\n",nb1[i][0],nb1[i][1],nb1[i][2]);
+      }
+    }
+    super(&cell,&motif,nb1,&kp,&sym,&grid1,0);
+    if (debug) print_old_in_new(ob,cell.basis);
+  }
+
+  if (compact){
+    double nb1[3][3];
+    for (i=0;i<3;i++)
+      for(j=0;j<3;j++)
+        nb1[i][j]=cell.basis[i][j];
+
+    shorten(nb1);
+    super(&cell,&motif,nb1,&kp,&sym,&grid1,0);
+  }
+
+
+  if (expand){
+    switch(expand){
+    case 6:
+      simple_super(&cell,&motif,i_expand,&kp,&sym,&grid1);
+      break;
+    case 5: /* First vector given in relative terms */
+      for(i=0;i<3;i++){
+        new_cell[0][i]=new_cell_rel[0][0]*cell.basis[0][i]+
+                       new_cell_rel[0][1]*cell.basis[1][i]+
+                       new_cell_rel[0][2]*cell.basis[2][i];
+        new_cell[1][i]=new_cell_rel[1][i];
+        new_cell[2][i]=new_cell_rel[2][i];
+      }
+      rotation(&cell,&motif,new_cell);
+      sym.n=0;
+      break;
+    case 4:
+      rotation(&cell,&motif,new_cell);
+      sym.n=0;
+      break;
+    case 3:  /* New basis given explicitly in absolute terms */
+      nc.basis=new_cell;
+      cart2abc(&nc,NULL,abc,&grid1);
+      super(&cell,&motif,new_cell,&kp,&sym,&grid1,0);
+      break;
+    case 2:  /* New basis given explicitly in relative terms */
+      for(i=0;i<3;i++)
+        for(j=0;j<3;j++){
+          new_cell[i][j]=0;
+          for(k=0;k<3;k++)
+            new_cell[i][j]+=new_cell_rel[i][k]*cell.basis[k][j];
+        }
+      nc.basis=new_cell;
+      cart2abc(&nc,NULL,abc,&grid1);
+      super(&cell,&motif,new_cell,&kp,&sym,&grid1,0);
+      break;
+    case 1:  /* We were expected to guess the appropriate new basis */
+      fprintf(stderr,"-x: feature not present\n");
+      break;
+    default:
+      error_exit("Internal error in expansion selection");
+    } /* select(expand) ... */
+  }  /* if (expand) ... */
+
+  if (vexpand){
+    vacuum_adjust(&cell,&motif,new_abc);
+    gptr=&grid1;
+    while (gptr->data){
+      free(gptr->data);
+      gptr->data=NULL;
+      if (gptr->next){
+	struct grid *g;
+	g=gptr->next;
+	gptr->next=NULL;
+	gptr=g;
+      }
+    }
+  }
+
+  if ((circ[0])||(circ[1])||(circ[2]))
+    tube(&cell,&motif,circ,tube_spacing);
+  
+  if (rotate) cart2abc_sym(&cell,&motif,abc,&grid1,&sym);
+
   if (gen_mp){
     if (kp.mp) mp_gen(&kp,&cell);
     else fprintf(stderr,"Warning: ignoring -M as no MP parameters found\n");
@@ -1172,101 +1278,10 @@ int main(int argc, char **argv)
     }
     free(ksym.ops);
   }
-
   
-  if (prim) {
-    double nb1[3][3],ob[3][3];
-    for(i=0;i<3;i++)
-      for(j=0;j<3;j++)
-        ob[i][j]=cell.basis[i][j];
-    primitive(&cell,&motif,nb1);
-    if (debug>2){
-      fprintf(stderr,"Primitive cell is:\n");
-      for(i=0;i<3;i++){
-        fprintf(stderr,"(%f,%f,%f)\n",nb1[i][0],nb1[i][1],nb1[i][2]);
-      }
-    }
-    super(&cell,&motif,nb1,&kp,&sym,&grid1,0);
-    if (debug){
-      fprintf(stderr,"Old basis in terms of new: ");
-      old_in_new(ob,cell.recip);
-    }
-  }
-
-  if (compact){
-    double nb1[3][3];
-    for (i=0;i<3;i++)
-      for(j=0;j<3;j++)
-        nb1[i][j]=cell.basis[i][j];
-
-    shorten(nb1);
-    super(&cell,&motif,nb1,&kp,&sym,&grid1,0);
-  }
-
-
-  if (expand){
-    switch(expand){
-    case 6:
-      simple_super(&cell,&motif,i_expand,&kp,&sym,&grid1);
-      break;
-    case 5: /* First vector given in relative terms */
-      for(i=0;i<3;i++){
-        new_cell[0][i]=new_cell_rel[0][0]*cell.basis[0][i]+
-                       new_cell_rel[0][1]*cell.basis[1][i]+
-                       new_cell_rel[0][2]*cell.basis[2][i];
-        new_cell[1][i]=new_cell_rel[1][i];
-        new_cell[2][i]=new_cell_rel[2][i];
-      }
-      rotation(&cell,&motif,new_cell);
-      break;
-    case 4:
-      rotation(&cell,&motif,new_cell);
-      break;
-    case 3:  /* New basis given explicitly in absolute terms */
-      nc.basis=new_cell;
-      cart2abc(&nc,NULL,abc,&grid1,0);
-      super(&cell,&motif,new_cell,&kp,&sym,&grid1,0);
-      break;
-    case 2:  /* New basis given explicitly in relative terms */
-      for(i=0;i<3;i++)
-        for(j=0;j<3;j++){
-          new_cell[i][j]=0;
-          for(k=0;k<3;k++)
-            new_cell[i][j]+=new_cell_rel[i][k]*cell.basis[k][j];
-        }
-      nc.basis=new_cell;
-      cart2abc(&nc,NULL,abc,&grid1,0);
-      super(&cell,&motif,new_cell,&kp,&sym,&grid1,0);
-      break;
-    case 1:  /* We were expected to guess the appropriate new basis */
-      fprintf(stderr,"-x: feature not present\n");
-      break;
-    default:
-      error_exit("Internal error in expansion selection");
-    } /* select(expand) ... */
-  }  /* if (expand) ... */
-
-  if (vexpand){
-    vacuum_adjust(&cell,&motif,new_abc);
-    gptr=&grid1;
-    while (gptr->data){
-      free(gptr->data);
-      gptr->data=NULL;
-      if (gptr->next){
-	struct grid *g;
-	g=gptr->next;
-	gptr->next=NULL;
-	gptr=g;
-      }
-    }
-  }
-
-  if ((circ[0])||(circ[1])||(circ[2]))
-    tube(&cell,&motif,circ,tube_spacing);
-  
-  if (rotate) cart2abc(&cell,&motif,abc,&grid1,1);
   if ((no_mp)&&(kp.mp)) {free(kp.mp);kp.mp=NULL;}
-  if (sort_style) sort_atoms(&motif,sort_style);
+  if (sort_style&3) sort_atoms(&motif,sort_style&3);
+  if ((sort_style>3)&&(sym.n)) sort_symops(&sym,sort_style);
   if (no_sym){
     sym.n=0;
     if (sym.ops) free(sym.ops);
@@ -1280,6 +1295,8 @@ int main(int argc, char **argv)
     }
   }
 
+  if (sym_group_check) sym_group(&sym,&cell);
+  
   if (calc_ef){
     if (elect.eval){
       chg=elect.nel;
@@ -1477,6 +1494,7 @@ void help(void){
          "               give twice to discard k-points too\n"
          "-N           normalise by reducing fractional coords to 0<=x<1\n"
 	 "               with -m, do write cell into .xsf file\n"
+	 "--nokinv     do not add inversion to k-space symmetry operations\n"
          "-O           print band occupancies and eigenvalues\n"
 	 "-p           partial charges in cols 61-66 of PDB input\n");
   printf("-P           find primitive cell\n"
@@ -1488,6 +1506,10 @@ void help(void){
 	 "-P=C:rl:npts ditto as centre, radius, points for cylindrical"
 	 " symmetry with c\n"
 	 "               cylindrical axis. E.g. (0.5,0.5,0.5):r10B:100\n"
+	 "               append \"w\" to points to weight by 2pi*radius\n"
+	 "               append \"a\" to points to weight an accumulate\n"
+	 "-P=C:Rl:npts ditto, centre, radius, points for spherical symmetry\n"
+	 "               weighting with \"w\" and \"a\" is 4pi*radius^2\n"
          "-q           post hoc energy correction for charged cells (0D)\n"
          "-q[abc]      post hoc energy correction for charged cells, 2D\n"
 	 "               non-periodic axis as specified\n"
@@ -1502,6 +1524,9 @@ void help(void){
          "to include\n"
          "               c2x's usual rescaling\n"
          "-s           include spin densities\n"
+	 "--sym_add    add symmetry operations to make consistent group\n"
+	 "--sym_del    delete symmetry operations to make consistent group "
+	 "(default)\n"
 	 "--sym_list   list symmetry operations read without calling spglib\n"
          "-S=range     include given spins/spinors (0 or 1) for bands\n");
   printf("-t=(x1,y1,z1)(x2,y2,z2)[(x3,y3,z3)]\n"
@@ -1527,6 +1552,8 @@ void help(void){
 	 "-x=ixjxk     trivial tiling to make a supercell\n"
          "-X=(x1,y1,z1)(x2,y2,z2)(x3,y3,z3)\n"
          "             re-express in new basis given in absolute terms\n"
+	 "-xs= -Xs=    as -x or -X, but add old lattice vectors to symmetry "
+	 "operations\n"
 	 "-X[abc]=x    expand given axes to given length by adjusting vacuum\n"
 	 "               length may be suffixed with B (Bohr) or nm, "
          "else A assumed\n"
@@ -1686,7 +1713,7 @@ void formats(void){
 	 " Elk format\n\n"
          "Otherwise "
          "automatic detection of .cell or .check input. Compatible with\n"
-         ".check files from CASTEP 3.0 to 20.11 (and perhaps beyond).\n\n");
+         ".check files from CASTEP 3.0 to 23.1 (and perhaps beyond).\n\n");
   printf("\nFurther documentation at https://www.c2x.org.uk/\n");
   exit(0);
 }

@@ -74,11 +74,11 @@ void shelx_write(FILE* outfile, struct unit_cell *c, struct contents *m){
   else
     fprintf(outfile,"TITL shelx file written by c2x\n");
 
-  cart2abc(c,m,abc,NULL,1);
+  cart2abc(c,m,abc,NULL);
   fprintf(outfile,fmt1,
                   abc[0],abc[1],abc[2],abc[3],abc[4],abc[5]);
 
-  if (!(flags&SHELX_AIRSS)) fprintf(outfile,"ZERR 1 .0 .0 .0 0 0 0\n");
+  if (!(flags&ALT_OUT)) fprintf(outfile,"ZERR 1 .0 .0 .0 0 0 0\n");
   fprintf(outfile,"LATT -1\n");
 
   fprintf(outfile,"SFAC");
@@ -89,7 +89,7 @@ void shelx_write(FILE* outfile, struct unit_cell *c, struct contents *m){
     fprintf(outfile," %s",cspec);
   }
 
-  if (!(flags&SHELX_AIRSS)){
+  if (!(flags&ALT_OUT)){
     fprintf(outfile,"\nUNIT");
     for(i=1;i<nspec;i++){
       fprintf(outfile," %d",atom_present[atom_list[i]]);
@@ -101,7 +101,7 @@ void shelx_write(FILE* outfile, struct unit_cell *c, struct contents *m){
     fprintf(outfile,fmt2,atno2sym(m->atoms[i].atno),
 	    atom_spec[m->atoms[i].atno],m->atoms[i].frac[0],m->atoms[i].frac[1],
 	    m->atoms[i].frac[2]);
-    if (flags&SHELX_AIRSS) fprintf(outfile," 11\n");
+    if (flags&ALT_OUT) fprintf(outfile," 11\n");
     else fprintf(outfile,"\n");
   }
 

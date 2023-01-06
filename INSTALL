@@ -1,6 +1,10 @@
 This version of c2x is intended to be built with spglib
-( https://github.com/atztogo/spglib/releases ).
-It has been tested with spglib 1.16.0.
+( https://github.com/atztogo/spglib/releases ), although it can be
+built without it.
+
+C2x should build straightforwardly with an ANSI C compiler on a
+POSIX-compliant system, including Cygwin and MSYS2, as well as MacOS X
+and most UNIXes.
 
 The build of c2x itself is controlled by its Makefile. This can be edited,
 and then one simply types "make" and the result should be an
@@ -12,19 +16,16 @@ There are three options for spglib
 some functionality. For this simply do not define SPGLIB in the
 makefile (i.e. comment out references to "-DSPGLIB").
 
-2/ Use a pre-installed system spglib. It should not be
-necessary to set CPPFLAGS and LDFLAGS, for presumably the relevant
-header files and library files will be found automatically.
+2/ Use a pre-installed system spglib. It should not be necessary to
+set CPPFLAGS and LDFLAGS, for presumably the relevant header files and
+library files will be found automatically. However, if spglib has been
+built with OpenMP support, Windows users may need to add -fopenmp or
+similar to LDFLAGS.
 
-3/ Download and compile your own version of SPGLIB. This is how
-c2x is developed. In this case one needs to build a static
-version of the spglib library. For some versions of spglib this can
-be achieved with
-
-./configure --disable-shared ; make
-
-Further notes on compiling spglib can be found at the end of this
-file.
+3/ Download and compile your own version of SPGLIB. This is how c2x is
+developed. In this case one needs to build a static version of the
+spglib library. Further notes on compiling spglib can be found at the
+end of this file.
 
 The only two files from spglib that c2x needs to build are
 spglib.h and libsymspg.a. One approach is to copy them from the spglib
@@ -38,55 +39,38 @@ LDFLAGS=-L.
 otherwise replace the above two dots with the path to the directory
 containing the include file and the library respectively.
 
-
-C2x itself should build straightforwardly with an ANSI C compiler.
-
 If one wishes to validate one's build of c2x, a basic test suite is
-available at www.c2x.org.uk.
+available at www.c2x.org.uk/downloads .
 
-MJR 1/2017, 2/2019
+MJR 1/2017, 2/2019, 12/2022
 
 
-Further notes on compiling spglib
-=================================
+Further notes on compiling spglib 2.0
+=====================================
 
-With aclocal / autotools
-------------------------
+Download the latest version with
 
-The following recipe worked with spglib 1.9.9, 1.10.3 and 1.11.2.
+curl -o spglib.zip -L https://github.com/spglib/spglib/archive/master.zip
 
-curl -o spglib.zip https://codeload.github.com/atztogo/spglib/zip/master
-unzip spglib.zip 
+Unpack archive with
+
+unzip spglib.zip
+
+and change to its directory
+
 cd spglib-master
-aclocal
-autoheader
-libtoolize
-touch INSTALL NEWS README AUTHORS
-automake -acf
-autoconf
-./configure --disable-shared
-make
 
-Then
+If you have cmake, consider the instructions at
+https://spglib.github.io/spglib/install.html
 
-cp src/spglib.h src/.libs/libsymspg.a [c2x build directory]
+If you don't, or if you don't like cmake, then the following may work.
 
-allows one to build with the makefile as supplied.
-
-Without aclocal / autotools
----------------------------
-
-If you lack aclocal / autoheader / etc., which is likely to be the case
-if you are using MacOS, then the following recipe might also work.
-It has been tested with spglib 1.9.9, 1.10.3, 1.12.2 and 1.16.0.
-
-curl -o spglib.zip https://codeload.github.com/atztogo/spglib/zip/master
-unzip spglib.zip 
-cd spglib-master/src
+cd src
 cp [c2x build directory]/Makefile.spglib Makefile
-[if using spglib 1.9.9 comment out MORE_OBJS line]
+[if using spglib before 2.0, comment out MORE_OBJS lines as appropriate]
 make
 cp spglib.h libsymspg.a [c2x build directory]
 
-
-
+If one uses the cmake method, spglib will be built with OpenMP
+support, and then, for static linking, -fopenmp should be added to
+LDFLAGS.

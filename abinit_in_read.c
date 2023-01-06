@@ -828,6 +828,9 @@ static int ab_int_read(char *line, int off, int *data, int n,
   return off;
 }
 
+/* sets s2 to a malloc'd pointer to string read, and returns new
+ * offset in line. Deals with concatenation
+ */
 static int ab_string_read(char *line, int off, char **str, FILE *infile){
   char *p1,*p2,*s,*s2;
 
@@ -841,7 +844,6 @@ static int ab_string_read(char *line, int off, char **str, FILE *infile){
   if (!s) error_exit("malloc error in string_read");
   memcpy(s,p1,p2-p1);
   s[p2-p1]=0;
-  *str=s;
   p2++;
   while(isspace(*p2)) p2++;
   if ((*p2=='/')&&(*(p2+1)=='/')){
@@ -856,7 +858,9 @@ static int ab_string_read(char *line, int off, char **str, FILE *infile){
     s=realloc(s,strlen(s)+strlen(s2)+1);
     if (!s) error_exit("realloc failure in ab_string_read");
     strcat(s,s2);
+    free(s2);
   }
+  *str=s;
   return(p2-line);
 }
 
@@ -917,7 +921,7 @@ void abinit_eig_read(FILE* infile, struct unit_cell *c, struct contents *m,
     ptr=strstr(buffer,"Fermi");
     if ((ptr)&&((ptr-buffer)<6)){
       scale=0;
-      ptr2=index(buffer,'=');
+      ptr2=strchr(buffer,'=');
       ptr=strstr(buffer,"hartree");
       if ((ptr)&&(ptr<ptr2)) scale=H_eV;
       ptr=strstr(buffer,"eV");
@@ -940,7 +944,7 @@ void abinit_eig_read(FILE* infile, struct unit_cell *c, struct contents *m,
     ptr=strstr(buffer,"Eigenvalues");
     if ((ptr)&&((ptr-buffer)<6)){
       scale=0;
-      ptr2=index(buffer,'=');
+      ptr2=strchr(buffer,'=');
       ptr=strstr(buffer,"hartree");
       if ((ptr)&&(ptr<ptr2)) scale=H_eV;
       ptr=strstr(buffer,"eV");

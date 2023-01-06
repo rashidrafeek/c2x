@@ -1,14 +1,17 @@
-# A Makefile for spglib 1.9.9  and 1.10.3 for those lacking autoconf tools.
-# MJR 2/2017
+# A Makefile for spglib 1.9.9, 1.10.3  and 2.0.1
+# for those lacking autoconf tools or cmake
+# MJR 2/2017, 10/2022
 
 OBJ = arithmetic.o cell.o debug.o delaunay.o hall_symbol.o kgrid.o \
     kpoint.o mathfunc.o niggli.o pointgroup.o primitive.o \
     refinement.o site_symmetry.o sitesym_database.o spacegroup.o \
     spg_database.o spglib.o spin.o symmetry.o
 
-# If using 1.9.9 comment out next line
+# If using 1.9.9 or earlier, comment out next line
 MORE_OBJ=determination.o overlap.o
 
+# If using versions prior to 2.0, comment out the next line
+MORE_OBJ+=magnetic_spacegroup.o msg_database.o
 
 libsymspg.a: $(OBJ) $(MORE_OBJ)
 	-[ -f libsymspg.a ] && rm libsymspg.a

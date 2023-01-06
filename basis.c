@@ -30,6 +30,7 @@ void grid_interp(struct unit_cell *c, struct grid *grid,int old_fft[3],
 
 /* From primitive.c */
 void shorten(double vfinal[3][3]);
+void primitive(struct unit_cell *c, struct contents *m, double basis[3][3]);
 
 /* Check whether set is right- or left-handed */
 int is_rhs(double b[3][3]){
@@ -207,7 +208,7 @@ void abc2cart(double *abc, struct unit_cell *c){
 }
 
 /* Convert from cartesian basis set to a,b,c,alpha,beta,gamma */
-/* If m and gptr are NULL, and fix==0, just calculate a,b,c,alpha,beta,gamma */
+/* If m and gptr are NULL, just calculate a,b,c,alpha,beta,gamma */
 /* If m not NULL, rotate axes to a along x, b in x-y plane, etc */
 
 /* Note: basis2abc implies a rotation in Cartesian space if one
@@ -225,7 +226,7 @@ void abc2cart(double *abc, struct unit_cell *c){
  */
 
 void cart2abc(struct unit_cell *c, struct contents *m, double *abc, 
-              struct grid *gptr, int fix){
+              struct grid *gptr){
 
   if (debug>2) fprintf(stderr,"cart2abc called with motif %s\n",
                        m?"present":"absent");
@@ -242,13 +243,18 @@ void cart2abc(struct unit_cell *c, struct contents *m, double *abc,
     addabs(m->atoms,m->n,c->basis);
   }
 
+  if (c->primitive){
+    free_cell(c->primitive);
+    c->primitive=NULL;
+  }
+  
 }
 
 /* As cart2abc, but also correct symmetry operations for any rotation
    which occurs */
 
 void cart2abc_sym(struct unit_cell *c, struct contents *m, double *abc, 
-		  struct grid *gptr, int fix, struct symmetry *s){
+		  struct grid *gptr, struct symmetry *s){
   int i,j,k;
   double basis_t[3][3],recip_t[3][3];
   double (*rot)[3][3],(*tr)[3];
@@ -270,7 +276,7 @@ void cart2abc_sym(struct unit_cell *c, struct contents *m, double *abc,
     }
   }
 
-  cart2abc(c,m,abc,gptr,fix);
+  cart2abc(c,m,abc,gptr);
 
   if (s){
 
@@ -490,6 +496,10 @@ void vacuum_adjust(struct unit_cell *c, struct contents *m, double new_abc[3]){
   real2rec(c);
   c->vol=fabs(c->vol);
   addfrac(m->atoms,m->n,c->recip);
+  if (c->primitive){
+    free_cell(c->primitive);
+    c->primitive=NULL;
+  }
 
 }
 
@@ -497,6 +507,10 @@ void vacuum_adjust(struct unit_cell *c, struct contents *m, double new_abc[3]){
 void old_in_new(double old_basis[3][3],double new_recip[3][3]){
   int i,j,k;
   double dot;
+  char *fmt;
+
+  fmt="%g";
+  if (flags&HIPREC) fmt="%.14g";
   
   for(i=0;i<3;i++){
     fprintf(stderr,"(");
@@ -504,16 +518,41 @@ void old_in_new(double old_basis[3][3],double new_recip[3][3]){
       dot=0;
       for(k=0;k<3;k++)
         dot+=old_basis[i][k]*new_recip[j][k];
-      if (aeq(dot,floor(dot+0.5)))
-        fprintf(stderr,"%d",(int)floor(dot+0.5));
-      else
-        fprintf(stderr,"*");
+
+      fprintf(stderr,fmt,dot);
       if (j!=2)fprintf(stderr,",");
     }
     fprintf(stderr,")");
   }
   fprintf(stderr,"\n");
 
+}
+
+void print_old_in_new(double old_basis[3][3], double new_basis[3][3]){
+  int i,j;
+  double buff[9];
+  struct unit_cell c;
+
+  init_cell(&c);
+  c.basis=(void*)buff;
+  
+  for(i=0;i<3;i++)
+    for(j=0;j<3;j++)
+      c.basis[i][j]=new_basis[i][j];
+
+  real2rec(&c);
+
+  fprintf(stderr,"Old basis in terms of new: ");
+  old_in_new(old_basis,c.recip);
+
+  for(i=0;i<3;i++)
+    for(j=0;j<3;j++)
+      c.basis[i][j]=old_basis[i][j];
+  
+  real2rec(&c);
+
+  fprintf(stderr,"New basis in terms of old: ");
+  old_in_new(new_basis,c.recip);
 }
 
 void cell_check(struct unit_cell *c, struct contents *m){
@@ -625,6 +664,43 @@ void addspec(struct contents *m){
   
 }
 
+void add_primitive(struct unit_cell *c, struct contents *m){
+#ifdef SPGLIB
+  int i,j;
+  double old_basis[3][3],old_recip[3][3];
+#endif
+  c->primitive=malloc(sizeof(struct unit_cell));
+  if (!c->primitive) error_exit("malloc error in add_primitive for cell");
+  init_cell(c->primitive);
+  c->primitive->basis=malloc(9*sizeof(double));
+  if (!c->primitive->basis)
+    error_exit("malloc error in add_primitive for vectors");
+  
+#ifdef SPGLIB
+  for(i=0;i<3;i++){
+    for(j=0;j<3;j++){
+      old_basis[i][j]=c->basis[i][j];
+      old_recip[i][j]=c->recip[i][j];
+    }
+  }
+
+  cspg_op(c,m,NULL,NULL,CSPG_PRIM_LATT,tol);
+
+  for(i=0;i<3;i++){
+    for(j=0;j<3;j++){
+      c->primitive->basis[i][j]=c->basis[i][j];
+      c->basis[i][j]=old_basis[i][j];
+      c->primitive->recip[i][j]=c->recip[i][j];
+      c->recip[i][j]=old_recip[i][j];
+    }
+  }
+#else
+  primitive(c,m,c->primitive->basis);
+  real2rec(c->primitive);
+#endif
+}  
+  
+  
 struct grid *grid_new(struct grid *gptr){
   if (gptr->next) gptr=gptr->next;
   gptr->next=malloc(sizeof(struct grid));
@@ -638,10 +714,20 @@ void init_cell(struct unit_cell *c){
   
   c->basis=NULL;
   c->stress=NULL;
+  c->primitive=NULL;
   c->vol=0;
   for(i=0;i<3;i++)
     for(j=0;j<3;j++)
       c->recip[i][j]=0.0;
+}
+
+void free_cell(struct unit_cell *c){
+
+  if (!c) return;
+  if (c->primitive) free_cell(c->primitive);
+  if (c->stress) free(c->stress);
+  if (c->basis) free(c->basis);
+  free(c);
 }
 
 void init_elect(struct es *e){
@@ -714,6 +800,7 @@ void init_kpts(struct kpts *k){
 void init_sym(struct symmetry *s){
   s->tol=NULL;
   s->ops=NULL;
+  s->gen=NULL;
   s->n=0;
 }
 

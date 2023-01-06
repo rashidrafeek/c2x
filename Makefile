@@ -25,6 +25,8 @@ OBJS=check2xsf.o check_read.o xsf_write.o molecule_fix.o cube_write.o \
 
 DEFS=-DSPGLIB
 CPPFLAGS=-I.
+# Add "-fopenmp" to next line if the linker complains about various
+# missing threads
 LDFLAGS=-L.
 LIBS=-lsymspg
 

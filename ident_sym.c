@@ -1,4 +1,4 @@
-/* Copyright (c) 2013 -- 2021 MJ Rutter 
+/* Copyright (c) 2013 -- 2022 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -26,6 +26,22 @@
 
 void vcross(double a[3],double b[3],double c[3]);
 int minvert(double m[3][3]);
+
+/* Greatest Common Divisor */
+int gcd(int a, int b){
+
+  a=abs(a);
+  b=abs(b);
+  
+  while((a)&&(b)){
+    if (a>b) a=a%b;
+    else if (b>a) b=b%a;
+    else break;
+  }
+
+  if (a) return a;
+  else return b;
+}
 
 void frac_print(FILE *out, double x){
   int i;
@@ -199,19 +215,16 @@ void equiv_read(struct sym_op *s, struct unit_cell *c, char *line){
 
 }
 
-void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
-  int i,j,inv,mult,screw,glide;
+int ident_sym(struct sym_op *s, struct unit_cell *c, struct contents *motif,
+	       FILE *out){
+  int i,j,inv,mult,screw,glide,frac_sc_tr[3],s_sign;;
   double m[3][3];
   double a[3],af[3],off[3],glide_tr[3];
-  double v[3],v2[3];
+  double v[3],v2[3],sc_tr[3];
+  double vset[3][3];
   double det,angle,x;
-#if 0
   struct atom atm;
-  struct unit_cell scell;
-  double sreal[3][3];
 
-  scell.basis=sreal; /* avoid a malloc */
-#endif  
   inv=0;
   screw=0;
   glide=0;
@@ -228,7 +241,7 @@ void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
   if(!aeq(fabs(det),1)){
     fprintf(stderr,"Surprise: determinant is %f\n",det);
     fprintf(out,"(Error)\n");
-    return;
+    return 0;
   }
 
   if (aeq(det,1)){
@@ -260,12 +273,14 @@ void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
   if (mult==0){
     fprintf(stderr,"Impossible angle %f in ident_sym\n",angle);
     fprintf(out,"(Error)\n");
-    return;
+    return 0;
   }
 
+  if (!out) return (inv==0)?mult:-mult;
+  
   /* Now need axis. It will be e-vector with e-value +1 */
 
-  if (mult==1){
+  if (mult==1){ /* Identity -- axis irrelevant */
     v[0]=v[1]=0;
     v[2]=1;
   }
@@ -278,13 +293,17 @@ void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
     if (aeq(vmod2(v),0)){
       fprintf(stderr,"Surprise! 1\n");
       fprintf(out,"(Error in ident_sym)\n");
-      return;
+      return 0;
     }
   }
 
-  for(i=0;i<3;i++) a[i]=v[i];
-  if (debug>2) fprintf(stderr,"Axis looks like (%f,%f,%f)\n",a[0],a[1],a[2]);
+  x=v[0]*v[0]+v[1]*v[1]+v[2]*v[2];
+  x=sqrt(x);
+  for(i=0;i<3;i++)
+    a[i]=v[i]/x;
 
+  if (debug>2) fprintf(stderr,"Axis looks like (%f,%f,%f)\n",v[0],v[1],v[2]);
+  
   /* Try that in a fractional basis */
 
   for(i=0;i<3;i++)
@@ -294,7 +313,7 @@ void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
   if ((fabs(v2[1])>tol)&&(fabs(v2[1])<x)) x=fabs(v2[1]);
   if ((fabs(v2[2])>tol)&&(fabs(v2[2])<x)) x=fabs(v2[2]);
   for(i=0;i<3;i++) v2[i]/=x;
-  for(i=0;i<3;i++) a[i]/=x;
+  //  for(i=0;i<3;i++) a[i]/=x;
     
   for(i=0;i<3;i++) af[i]=v2[i];
   if (debug>2)
@@ -302,25 +321,118 @@ void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
 
   /* Now deal with any offset */
 
+  /* Reminder to self. A screw axis n_m after n applications
+   * rotates by 2pi and translates by m lattice repeat distances
+   * in the direction of the axis
+   */
+  
   if (s->tr){
     for(i=0;i<3;i++) v[i]=s->tr[i];
     if(!(aeq(v[0],0)&&aeq(v[1],0)&&aeq(v[2],0))&&(mult>1)){
+      /* Dot with axis unit vector */
       x=v[0]*a[0]+v[1]*a[1]+v[2]*a[2];
       if((inv==0)&&(!aeq(x,0))){   /* we have a screw */
-	x/=vmod2(a);  /* dot with unit vector parallel to axis, then divide by
-		       * repeat length in that direction. Hence no sqrt. */
-	for(i=0;i<3;i++) v[i]-=x*a[i];
-        if (x<0) x+=1;
-        screw=x*mult+0.5;
+	/* Set sc_tr to be translation along axis
+	 * and v to be translation perpendicular to axis */
+	for(i=0;i<3;i++){
+	  sc_tr[i]=x*a[i];
+	  v[i]=v[i]-x*a[i];
+	}
+	if ((!c->primitive)&&(motif)){
+	  if (debug) fprintf(stderr,"Finding primitive cell to assist "
+			     "in identifying screw axis\n");
+	  add_primitive(c,motif);
+	}
+
+	/* Reduce translation to (primitive) unit cell */
+
+	for(i=0;i<3;i++)
+	  atm.abs[i]=sc_tr[i];
+	if (c->primitive){
+	  addfrac(&atm,1,c->primitive->recip);
+	}
+	else{
+	  addfrac(&atm,1,c->recip);
+	}
+	/* Want absolute distance from origin within (primitive) cell */
+	for(i=0;i<3;i++)
+	  atm.frac[i]=fabs(fmod(atm.frac[i],1.0));
+
+	/* multiply translation by multiplicity */
+	for(i=0;i<3;i++)
+	  atm.frac[i]*=mult;
+
+	for(i=0;i<3;i++)
+	  frac_sc_tr[i]=(int)(floor(atm.frac[i]+0.1));
+
+	screw=gcd(gcd(frac_sc_tr[0],frac_sc_tr[1]),frac_sc_tr[2]);
         if (screw==mult) screw=0;
-        if ((screw)&&((screw>mult)||(!aeq(x*mult,screw)))){
+
+	if((!aeq((double)frac_sc_tr[0],atm.frac[0]))||
+	   (!aeq((double)frac_sc_tr[1],atm.frac[1]))||
+	   (!aeq((double)frac_sc_tr[2],atm.frac[2]))){
+	    fprintf(stderr,"Screw problem, "
+		    "(%f,%f,%f) not a vector of integers\n",
+		    atm.frac[0],atm.frac[1],atm.frac[2]);
+	    fprintf(stderr,"Is (%f,%f,%f) a lattice vector?\n",sc_tr[0],
+		    sc_tr[1],sc_tr[2]);
+	  if (!c->primitive) fprintf(stderr,"(Primitive cell unavailable)\n");
           screw=0;
-	  fprintf(stderr,"Screw problem, x=%f mult=%d screw=%d\n",x,mult,screw);
-	  fprintf(stderr,"Axis (%f,%f,%f) Disp (%f,%f,%f)\n",
-		  a[0],a[1],a[2],s->tr[0],s->tr[1],s->tr[2]);
-          if (screw>mult) fprintf(stderr,"Is (%f,%f,%f) a lattice vector?\n",
-				  mult*x*a[0],mult*x*a[1],mult*x*a[2]);
-        }
+	}
+
+	if (screw>mult){
+	  fprintf(stderr,"Screw problem. Unexpectedly large multiplicity %d\n",
+		  screw);
+	  for(i=0;i<3;i++)
+	    atm.abs[i]=x*a[i];
+	  if (c->primitive)
+	    addfrac(&atm,1,c->primitive->recip);
+	  else
+	    addfrac(&atm,1,c->recip);
+	  fprintf(stderr,"Sym tr is (%f,%f,%f) in frac prim coords\n",
+		  atm.frac[0],atm.frac[1],atm.frac[2]);
+	}
+
+	if ((mult>2)&&(screw>0)){
+	/* Now need to work out sign of screw */
+
+	/* Find vector orthogonal to rotation axis */
+
+	  vset[0][0]=a[1];
+	  vset[0][1]=-a[0];
+	  vset[0][2]=0;
+
+	  if (vmod2(vset[0])<tol){ /* i.e. a=(0,0,x) */
+	    vset[0][0]=1;
+	    vset[0][1]=vset[0][2]=0;
+	  }
+
+	/* Set second vector to be the result of acting matrix on first */
+
+	  for(i=0;i<3;i++){
+	    vset[1][i]=0;
+	    for(j=0;j<3;j++)
+	      vset[1][i]+=s->mat[i][j]*vset[0][j];
+	  }
+
+	/* Set third vector to be a */
+
+	  for(i=0;i<3;i++)
+	    vset[2][i]=a[i];
+
+	/* Is a parallel or antiparallel to tr? */
+	  
+	  x=0;
+	  for(i=0;i<3;i++)
+	    x+=a[i]*sc_tr[i];
+	  
+	  s_sign=1;
+	  if (x<0) s_sign=-1;
+	  
+	  if (!is_rhs(vset)) s_sign*=-1;
+	  
+	  if ((screw>0)&&(s_sign==-1)) screw=mult-screw;
+	}
       }
     }
     if(!(aeq(v[0],0)&&aeq(v[1],0)&&aeq(v[2],0))){ /* we have a translation */
@@ -344,7 +456,7 @@ void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
 	  glide_tr[i]=v2[0]*c->recip[i][0]+v2[1]*c->recip[i][1]+
 	    v2[2]*c->recip[i][2];
 	  glide_tr[i]=fmod(glide_tr[i],1);
-	  if (glide_tr[i]<-0.5+tol) glide_tr[i]+=1;
+	  if (glide_tr[i]<-tol) glide_tr[i]+=1;
 	  if (glide_tr[i]>1-tol) glide_tr[i]=0;
 	  if (fabs(glide_tr[i])<tol) glide_tr[i]=0;
 	}
@@ -387,28 +499,10 @@ void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
 	  fprintf(stderr,"Original translation:\n");
 	  fprintf(stderr,"( %6f %6f %6f )\n",s->tr[0],s->tr[1],s->tr[2]);
 
-	  return;
+	  return 0;
 	}
 	for(i=0;i<3;i++)
 	  off[i]=m[i][0]*v[0]+m[i][1]*v[1]+m[i][2]*v[2];
-#if 0
-	/* Should we reduce this vector? */
-	for(i=0;i<3;i++)
-	  for(j=0;j<3;j++)
-	    scell.basis[i][j]=m[j][0]*c->basis[i][0]+
-	      m[j][1]*c->basis[i][1]+m[j][2]*c->basis[i][2];
-	real2rec(&scell);
-	init_atoms(&atm,1);
-	for(i=0;i<3;i++) atm.abs[i]=off[i];
-	addfrac(&atm,1,scell.recip);
-	/*
-	fprintf(stderr,"Alt0=%f %f %f\n",atm.frac[0],atm.frac[1],atm.frac[2]);
-	*/
-	reduce_cell_tol(&atm,1,scell.basis,tol);
-	for(i=0;i<3;i++) if (atm.frac[i]>0.5) atm.frac[i]-=1;
-	addabs(&atm,1,scell.basis);
-	for(i=0;i<3;i++) off[i]=atm.abs[i];
-#endif 
       }
     }
   }
@@ -427,12 +521,12 @@ void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
     if ((s->tr)&&(!aeq(v[0]*v[0]+v[1]*v[1]+v[2]*v[2],0)))
 	fprintf(out,"Translation of (%6.3f,%6.3f,%6.3f)\n",v[0],v[1],v[2]);
     else fprintf(out,"Identity\n");
-    return;
+    return 1;
   }
 
   if (mult==-1){
     fprintf(out,"Inversion point at (%f,%f,%f)\n",v[0],v[1],v[2]);
-    return;
+    return -1;
   }
   
   if (screw)
@@ -453,7 +547,7 @@ void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
       fprintf(out," offset (%g,%g,%g)\n",
 	      v[0],v[1],v[2]);
     }
-    return;
+    return -2;
   }
   else
     fprintf(out,"%2d  axis along (%6.3f,%6.3f,%6.3f)",mult,
@@ -464,7 +558,7 @@ void ident_sym(struct sym_op *s, struct unit_cell *c, FILE *out){
   else
     fprintf(out," through (%f,%f,%f)\n",v[0],v[1],v[2]);
 
-  
+  return (inv==0)?mult:-mult;
 }
 
 void mpr(double m[3][3]){
@@ -527,3 +621,4 @@ int minvert(double m[3][3]){
 
   return 0;
 }
+

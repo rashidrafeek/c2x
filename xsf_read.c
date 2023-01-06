@@ -1,6 +1,6 @@
 /* Read data set from an XSF file */
 
-/* Copyright (c) 2017 MJ Rutter 
+/* Copyright (c) 2017, 2022 MJ Rutter 
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -41,21 +41,27 @@ void xsf_read(FILE* infile, struct unit_cell *c, struct contents *m,
 
   xsfreadline(buffer,LINE_SIZE,infile);
 
+  if(!strncasecmp(buffer,"molecule",8))
+    xsfreadline(buffer,LINE_SIZE,infile);
+
   if(!strncasecmp(buffer,"atoms",5)){
     n=0;
     m->atoms=malloc(sizeof(struct atom));
+    if (!m->atoms) error_exit("malloc error in xsf_read");
+    init_atoms(m->atoms,1);
     while(xsfreadatom(m,n,infile)){
       n++;
-      m->atoms=realloc(m->atoms,n*sizeof(struct atom));
+      m->atoms=realloc(m->atoms,(n+1)*sizeof(struct atom));
+      if (!m->atoms) error_exit("realloc error in xsf_read");
+      init_atoms(m->atoms+n,1);
     }
     m->n=n;
     if (debug) fprintf(stderr,"%d atoms read from xsf molecule file\n",n);
-    fprintf(stderr,"Warning, no unit cell in xsf file\n"
-	    "Creating dummy 10A box\n");
-    for(i=0;i<3;i++)
-      for(j=0;j<3;j++)
-	c->basis[i][j]=0;
-    for(i=0;i<3;i++) c->basis[i][i]=10;
+    c->basis=malloc(9*sizeof(double));
+    if (!c->basis) error_exit("malloc error in xsf_read");
+    add_basis(c,m);
+    real2rec(c);
+    addfrac(m->atoms,n,c->recip);
     return;
   }
   else if(!strncasecmp(buffer,"crystal",7)){
@@ -272,7 +278,6 @@ static int xsfreadline(char *buffer, int len, FILE* infile){
 }
 
 static int xsfreadatom(struct contents *m, int i, FILE* infile){
-  int j;
   char buffer[LINE_SIZE+1],sym[4];
   
   if (!xsfreadline(buffer,LINE_SIZE,infile)) return 0;
@@ -299,17 +304,15 @@ static int xsfreadatom(struct contents *m, int i, FILE* infile){
 		  &(m->atoms[i].atno),
 		  &(m->atoms[i].abs[0]),
 		  &(m->atoms[i].abs[1]),
-		  &(m->atoms[i].abs[2]))==4)
-    for(j=0;j<3;j++) m->atoms[i].force[j]=0.0;
+		  &(m->atoms[i].abs[2]))==4);
   else if (sscanf(buffer,"%3s %lf %lf %lf",
 		  sym,
 		  &(m->atoms[i].abs[0]),
 		  &(m->atoms[i].abs[1]),
 		  &(m->atoms[i].abs[2]))==4){
-    for(j=0;j<3;j++) m->atoms[i].force[j]=0.0;
     m->atoms[i].atno=atsym2no(sym);
   }
   else	  
-    error_exit("error parsing atoms line in xsf_read");
+    return 0;
   return 1;
 }
